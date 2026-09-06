@@ -8,6 +8,7 @@ A voyage-planning prototype connecting fertilizer trading and chartering: select
 
 - **PLANNER** — multiple parcels, loading/discharge rotation, preliminary hold allocation and voyage cost allocation.
 - **SALE** — create and edit sales, select registered ports, and add sales to PLANNER.
+- **MARKET** — eight archived FAOX Market Sentiment reports (21 May–9 July 2026), with report dates, regional filtering, basin commentary and publication-time outlooks. Offline, read-only, explicitly not a live feed; no automatic updates or independent verification. Browsing does not change voyage inputs. Report and region selection persist for the browser session.
 - **CARGO** — 25 bulk cargoes with a reference SF in the default working register; add bulk cargoes with a positive SF. Full reference records are retained internally.
 - **PORT** — port names, terminals, restrictions and reference DA. Used ports cannot be removed or renamed until their sales are reassigned.
 - **VESSEL** — TBN 1 · 33K plus editable reference profiles TBN 2 · 38K and TBN 3 · 57K. New reference profiles are incomplete: missing hold/performance parameters must be confirmed and entered before applying to a voyage. Unknown values are not assumed to be zero.
@@ -38,7 +39,9 @@ node platform/audit-fixtures.cjs /tmp/projectx-fixtures.json
 python3 tools/check_math_reference.py /tmp/projectx-fixtures.json
 ```
 
-The current release passes 84 automated tests; the unchanged financial engine was previously checked against 120 independent rational-arithmetic fixtures. Browser acceptance checks the built HTML, five tabs, English labels and messages, cargo creation, sale validation, rejection of unregistered ports, planner persistence, print action and confirmations. User-entered text is preserved as entered. Validation against a complete real voyage remains outstanding.
+The current release passes 86 automated tests; the unchanged financial engine was previously checked against 120 independent rational-arithmetic fixtures. Browser acceptance checks the built HTML, six tabs, all eight MARKET reports, region filters, session restoration, mobile layout, English labels and messages, cargo creation, sale validation, rejection of unregistered ports, planner persistence, print action and confirmations. User-entered text is preserved as entered. Validation against a complete real voyage remains outstanding.
+
+The bundled MARKET archive lives in `platform/market.js`. Only the selected published report content was imported; no source inbox files are included. New reports require an explicit content update and rebuild. The application does not contact the FAOX server.
 
 ## Calculation scope
 

@@ -19,8 +19,34 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
     return result;
    });assert.deepEqual(bad,[]);
   }
-  async function tabs(){for(const tab of ['planner','sale','cargo','ports','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
+  async function tabs(){for(const tab of ['planner','sale','cargo','ports','market','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
   await tabs();
+  await page.locator('#tab-market').click();
+  const beforeMarket=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
+  assert.equal(await page.locator('#market-report option').count(),8);
+  const reportIds=await page.locator('#market-report option').evaluateAll(options=>options.map(o=>o.value));
+  for(const id of reportIds){
+   await page.locator('#market-report').selectOption(id);await scan();
+   assert.equal(await page.locator('.market-date time').getAttribute('datetime'),id.replace('dry-bulk-',''));
+   assert.ok(await page.locator('.market-region').count()>0);
+   assert.equal(await page.evaluate(()=>document.activeElement.id),'market-report');
+  }
+  await page.locator('#market-region').selectOption('US Gulf');
+  assert.equal(await page.locator('.market-region').count(),1);
+  assert.equal(await page.locator('.market-region h4').textContent(),'US Gulf');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'market-region');
+  assert.equal(await page.locator('#planner-actions').isVisible(),false);
+  assert.equal(await page.locator('#planner-footer').isVisible(),true);
+  assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),beforeMarket);
+  await page.reload();
+  assert.equal(await page.locator('#tab-market').getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#market-region').inputValue(),'US Gulf');
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  const marketTabBox=await page.locator('#tab-market').boundingBox();
+  assert.ok(marketTabBox.x>=0&&marketTabBox.x+marketTabBox.width<=390);
+  await page.setViewportSize({width:1440,height:1000});
+  await page.locator('#tab-vessel').click();
   assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 2 · 38K'}).count(),1);
   assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 3 · 57K'}).count(),1);
   await page.locator('[data-action="apply-vessel"][data-id="tbn-2"]').click();
@@ -75,6 +101,6 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.deepEqual(errors,[]);
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
-  console.log('PASS: shipped HTML, five tabs, English text and attributes, CARGO creation, SALE validation, port tampering, planner, persistence, print action, confirmations and unchanged user text.');
+  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, planner, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

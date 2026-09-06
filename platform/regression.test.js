@@ -1,6 +1,23 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),cp=require('node:child_process'),M=require('./model');
 const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
+test('MARKET archive has dated reports, complete regional content and escaped rendering',()=>{
+ const market=require('./market');assert.equal(market.reports.length,8);
+ assert.equal(new Set(market.reports.map(r=>r.id)).size,8);
+ let previous='9999-12-31';
+ for(const r of market.reports){
+  assert.ok(r.publishedDate<previous);previous=r.publishedDate;
+  assert.equal(r.id,'dry-bulk-'+r.publishedDate);assert.ok(r.overview.paragraphs.length);
+  const html=market.render(r.id);assert.ok(html.includes('Updates are not automatic'));
+  for(const b of r.basins)for(const region of b.regions){
+   assert.ok(region.forecast);assert.ok(region.cargoes.length);
+   const filtered=market.render(r.id,region.name);assert.equal((filtered.match(/class="market-region"/g)||[]).length,1);
+  }
+ }
+ const report=market.reports[0],old=report.summary;
+ try{report.summary='<img src=x onerror=alert(1)>';const html=market.render(report.id);assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));}finally{report.summary=old;}
+ assert.ok(market.render('invalid','invalid').includes('All regions'));
+});
 test('Requested reference catalogs migrate once without overwriting saved edits or the voyage',()=>{
  const s=M.demo();M.ensureCatalogs(s);delete s.catalogAdditions;
  s.portRecords=[{id:'CUSTOM',name:'Murmansk',terminal:'Keep',da:123,restrictions:'User data'}];
@@ -28,15 +45,15 @@ test('The shipped HTML preserves script bytes and every embedded script parses',
  cp.execFileSync(process.execPath,[path.join(__dirname,'build.cjs')]);
  const html=fs.readFileSync(path.join(__dirname,'ProjectX.html'),'utf8');
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
- assert.equal(scripts.length,4);
- ['arithmetic.js','cargo-catalog.js','model.js','app.js'].forEach((name,i)=>{
+ assert.equal(scripts.length,5);
+ ['arithmetic.js','cargo-catalog.js','model.js','market.js','app.js'].forEach((name,i)=>{
   assert.equal(scripts[i],fs.readFileSync(path.join(__dirname,name),'utf8').replace(/<\/script/gi,'<\\/script'));
   assert.doesNotThrow(()=>new vm.Script(scripts[i]));
  });
  assert.ok(!html.includes('<script src='));
 });
 test('UI templates and model messages are English without a runtime translator',()=>{
- for(const file of ['app.js','model.js','arithmetic.js','index.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,file),'utf8'),/[А-Яа-яЁё]/,file);
+ for(const file of ['app.js','model.js','market.js','arithmetic.js','index.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,file),'utf8'),/[А-Яа-яЁё]/,file);
  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
  assert.doesNotMatch(app,/translateHtml|translateDom|MutationObserver/);
 });
