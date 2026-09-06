@@ -1,5 +1,13 @@
 'use strict';const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),M=require('./model');
 // Boot smoke test with a minimal document sink, not a browser or visual test.
+test('PLANNER empty sales placeholder appears only with no added sales',()=>{
+ const blank=boot(null).elements.get('app').innerHTML;
+ assert.ok(blank.includes('empty-state planner-empty'));assert.ok(blank.includes('No sales in voyage yet'));
+ assert.ok(!blank.includes('<th scope="col">Sale / cargo</th>'));
+ const saved=M.demo();assert.ok(!boot(JSON.stringify(saved)).elements.get('app').innerHTML.includes('planner-empty'));
+ saved.lots.forEach(l=>l.selected=false);
+ assert.ok(!boot(JSON.stringify(saved)).elements.get('app').innerHTML.includes('planner-empty'));
+});
 test('MARKET restores as a read-only archive and does not change the saved voyage',()=>{
  const saved=M.demo();const {app,elements}=boot(JSON.stringify(saved),'market');
  const before=JSON.stringify(app.getState());
