@@ -1,0 +1,11 @@
+{
+  "name": "projectx-voyage-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-parcel fertilizer voyage planning prototype",
+  "scripts": {
+    "build": "node build.cjs",
+    "test": "node --test platform/*.test.js"
+  },
+  "engines": {"node": ">=22"}
+}
