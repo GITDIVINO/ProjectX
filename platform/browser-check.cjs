@@ -95,6 +95,11 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.setViewportSize({width:390,height:844});await tabs();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.locator('#tab-planner').click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-planner').click();
   const confirmations=[];page.on('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});await page.locator('#reset').click();await page.locator('[data-action="allocate"]').click();
+  assert.equal(await page.locator('[data-path^="lots."][data-path$=".sf"]').count(),0);
+  const beforePropertyEdit=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
+  await page.evaluate(()=>{const input=document.createElement('input');input.dataset.path='lots.0.sf';input.type='number';input.value='99';document.getElementById('app').append(input);input.dispatchEvent(new Event('change',{bubbles:true}));});
+  assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),beforePropertyEdit);
+  assert.match(await page.locator('#status').textContent(),/read-only/);
   assert.equal(confirmations.length,2);assert.ok(confirmations.every(x=>!/[А-Яа-яЁё]/.test(x)));
   // User-entered text must be preserved, even if it is not English.
   await page.locator('#notes > summary').click();await page.locator('[data-path="notes"]').fill('User text: Груз клиента');await page.locator('[data-path="notes"]').dispatchEvent('change');await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),'User text: Груз клиента');

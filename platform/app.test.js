@@ -1,5 +1,13 @@
 'use strict';const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),M=require('./model');
 // Boot smoke test with a minimal document sink, not a browser or visual test.
+test('PLANNER displays SF as text and preserves stored cargo properties',()=>{
+ const s=M.demo();s.lots[0].sf=0.98765;
+ const {app,elements}=boot(JSON.stringify(s));const html=elements.get('app').innerHTML;
+ assert.ok(html.includes('<td>0.98765</td>'));
+ assert.ok(!html.includes('data-path="lots.0.sf"'));assert.ok(html.includes('data-path="lots.0.selected"'));
+ assert.equal(app.getState().lots[0].sf,0.98765);
+ elements.get('tab-cargo').onclick();assert.match(elements.get('app').innerHTML,/data-path="cargoTypes\.\d+\.sf"/);
+});
 test('PLANNER empty sales placeholder appears only with no added sales',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(blank.includes('empty-state planner-empty'));assert.ok(blank.includes('No sales in voyage yet'));
