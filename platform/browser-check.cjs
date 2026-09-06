@@ -48,12 +48,15 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.emulateMedia({media:'print'});await scan();await page.emulateMedia({media:'screen'});
   // A fully populated case exercises totals, audit rows and technical warnings.
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2',JSON.stringify(ProjectXModel.demo())));await page.reload();await tabs();
+  await page.setViewportSize({width:390,height:844});await tabs();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.locator('#tab-planner').click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-planner').click();
   const confirmations=[];page.on('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});await page.locator('#reset').click();await page.locator('[data-action="allocate"]').click();
   assert.equal(confirmations.length,2);assert.ok(confirmations.every(x=>!/[А-Яа-яЁё]/.test(x)));
   // User-entered text must be preserved, even if it is not English.
   await page.locator('#notes > summary').click();await page.locator('[data-path="notes"]').fill('User text: Груз клиента');await page.locator('[data-path="notes"]').dispatchEvent('change');await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),'User text: Груз клиента');
   assert.deepEqual(errors,[]);
+  await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
+  await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
   console.log('PASS: shipped HTML, five tabs, English text and attributes, CARGO creation, SALE validation, port tampering, planner, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
