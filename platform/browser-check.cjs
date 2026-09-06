@@ -94,6 +94,15 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2',JSON.stringify(ProjectXModel.demo())));await page.reload();await tabs();
   await page.setViewportSize({width:390,height:844});await tabs();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.locator('#tab-planner').click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-planner').click();
+  // One unrestricted cargo can be spread across multiple holds automatically or manually.
+  await page.evaluate(()=>{const s=ProjectXModel.demo();s.lots=s.lots.slice(0,1);s.sales=s.sales.filter(x=>x.id===s.lots[0].saleId);s.lots[0].quantity=10000;s.allocations=[];localStorage.setItem('projectx-current-v2',JSON.stringify(s));});
+  await page.reload();await page.locator('[data-action="allocate"]').click();
+  const singleCargoCells=page.locator('[data-lot="S1"][data-hold]:not(:disabled)');
+  assert.equal(await singleCargoCells.count(),5);assert.equal(await singleCargoCells.evaluateAll(inputs=>inputs.filter(x=>Number(x.value)>0).length),5);
+  assert.ok(Math.abs(await singleCargoCells.evaluateAll(inputs=>inputs.reduce((n,x)=>n+Number(x.value),0))-10000)<.01);
+  await page.evaluate(()=>{const s=ProjectXApp.getState();s.allocations=[];localStorage.setItem('projectx-current-v2',JSON.stringify(s));});await page.reload();
+  const manualCells=page.locator('[data-lot="S1"][data-hold]:not(:disabled)');await manualCells.nth(0).fill('100');await manualCells.nth(1).fill('200');await page.reload();
+  assert.equal(await page.locator('[data-lot="S1"][data-hold="1"]').inputValue(),'100');assert.equal(await page.locator('[data-lot="S1"][data-hold="2"]').inputValue(),'200');
   // Input events persist synchronously, even when the user reloads before blur/change.
   await page.locator('[data-path="hire"]').fill('14789.25');
   await page.reload();assert.equal(await page.locator('[data-path="hire"]').inputValue(),'14789.25');
@@ -115,6 +124,6 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.deepEqual(errors,[]);
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
-  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
+  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, one-cargo multi-hold stowage, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
