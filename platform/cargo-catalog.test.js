@@ -21,11 +21,11 @@ test('Solid fertilizer creates a linked lot with supplied SF, never a guessed SF
  const l=M.addLot(s,{name:c.name,quantity:100,sf:1.25,port:'Santos'});assert.equal(l.cargoId,c.id);assert.equal(l.sf,1.25);assert.equal(l.group,'C');assert.equal(l.sfBasis,'user-entered');
 });
 test('Liquids, gas and packaged products cannot enter bulk planning by manual name',()=>{
- const s=M.initial();for(const c of s.cargoTypes.filter(c=>!M.isBulkCargo(c))){assert.throws(()=>M.addLot(s,{name:c.name,quantity:100,sf:1,port:'Santos'}),/формы перевозки/);c.sf=1;assert.throws(()=>M.applyCargo(s,c.id),/навалочного/);}
+ const s=M.initial();for(const c of s.cargoTypes.filter(c=>!M.isBulkCargo(c))){assert.throws(()=>M.addLot(s,{name:c.name,quantity:100,sf:1,port:'Santos'}),/carriage mode/);c.sf=1;assert.throws(()=>M.applyCargo(s,c.id),/bulk/);}
  assert.equal(s.lots.length,0);
 });
 test('Unsupported product in restored state is excluded from allocation and flagged',()=>{
- const s=M.demo();s.lots[0].cargoId='rf-app';assert.ok(M.stowage(s).errors.some(e=>e.includes('форма перевозки')));assert.ok(M.allocate(s).every(a=>a.lot!==s.lots[0].id));
+ const s=M.demo();s.lots[0].cargoId='rf-app';assert.ok(M.stowage(s).errors.some(e=>e.includes('carriage mode')));assert.ok(M.allocate(s).every(a=>a.lot!==s.lots[0].id));
 });
 
 test('English/property migration updates seed names once and retains shipment SF and user overrides',()=>{

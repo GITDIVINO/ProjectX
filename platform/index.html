@@ -1,1 +1,28 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ProjectX · Voyage Planner Prototype</title><link rel="stylesheet" href="styles.css"></head><body><header class="site-header"><div class="brand-block"><h1>ProjectX</h1><p>Voyage Planner Prototype</p></div><div class="workspace-tabs" role="tablist" aria-label="Разделы"><button id="tab-planner" role="tab" aria-selected="true">PLANNER</button><button id="tab-sale" role="tab" aria-selected="false">SALE</button><button id="tab-cargo" role="tab" aria-selected="false">CARGO</button><button id="tab-ports" role="tab" aria-selected="false">PORTS</button><button id="tab-vessel" role="tab" aria-selected="false">VESSEL</button></div></header><main><div id="planner-actions" class="planner-actions"><button id="save">Сохранить</button><button id="pdf">Сохранить PDF</button></div><div id="status" role="status" aria-live="polite"></div><div id="app"></div></main><footer id="planner-footer" class="projectx-footer" aria-label="Подвал ProjectX"><div class="projectx-footer__inner"><div class="projectx-footer__meta"><span><strong>ProjectX</strong> © 2026</span><span class="projectx-footer__sep" aria-hidden="true">·</span><span>Предварительный расчёт · USD · MT · NM</span><span class="projectx-footer__sep" aria-hidden="true">·</span><button id="reset" class="projectx-footer__action">Очистить расчёт</button></div><p class="projectx-footer__credit">Voyage Planner Prototype</p></div></footer><script src="arithmetic.js"></script><script src="cargo-catalog.js"></script><script src="model.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ProjectX · Voyage Planner Prototype</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="site-header">
+<div class="brand-block"><h1>ProjectX</h1><p>Voyage Planner Prototype</p></div>
+<div class="workspace-tabs" role="tablist" aria-label="Sections">
+<button id="tab-planner" role="tab" aria-selected="true">PLANNER</button>
+<button id="tab-sale" role="tab" aria-selected="false">SALE</button>
+<button id="tab-cargo" role="tab" aria-selected="false">CARGO</button>
+<button id="tab-ports" role="tab" aria-selected="false">PORT</button>
+<button id="tab-vessel" role="tab" aria-selected="false">VESSEL</button>
+</div>
+</header>
+<main>
+<div id="planner-actions" class="planner-actions"><button id="save">Save</button><button id="pdf">Save PDF</button><button id="reset">Clear calculation</button></div>
+<div id="status" role="status" aria-live="polite"></div>
+<div id="app"></div>
+</main>
+<footer id="planner-footer" class="projectx-footer" aria-label="ProjectX footer"><div class="projectx-footer__inner"><div class="projectx-footer__meta"><span><strong>ProjectX</strong> © 2026 Voyage Planner Prototype</span></div><p class="projectx-footer__credit">A Alexander Pikul production</p></div></footer>
+<script src="arithmetic.js"></script><script src="cargo-catalog.js"></script><script src="model.js"></script><script src="app.js"></script>
+</body>
+</html>

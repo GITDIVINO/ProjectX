@@ -7,19 +7,24 @@ A voyage-planning prototype connecting fertilizer trading and chartering: select
 ## Features
 
 - **PLANNER** — multiple parcels, loading/discharge rotation, preliminary hold allocation and voyage cost allocation.
-- **CARGO** — 95 fertilizer/feedstock entries plus two sulphur types, English names, search, manufacturer links and transport-property references.
+- **SALE** — create and edit sales, select registered ports, and add sales to PLANNER.
+- **CARGO** — 25 bulk cargoes with a reference SF in the default working register; add bulk cargoes with a positive SF. Full reference records are retained internally.
+- **PORT** — port names, terminals, restrictions and reference DA. Used ports cannot be removed or renamed until their sales are reassigned.
 - **VESSEL** — a standard TBN 1 profile and editable vessel types.
-- Browser-local save and JSON export. No application backend, shared database, login or analytics.
+- Browser-local save, a previous valid backup, and Save PDF through the browser print dialog. No application backend, shared database, login or analytics.
 
 Open `index.html` directly, or use the hosted link. Each visitor starts with their own calculation. Saving uses browser storage on the current device; it does not upload the calculation to this repository or share it with other visitors. Existing local-file calculations are not automatically transferred to the hosted site. JSON import is not implemented.
 
 ## Development
 
-Node.js 22 or later; no third-party npm dependencies.
+Node.js 22 or later. The application has no runtime dependencies. Browser acceptance uses Playwright as a development dependency.
 
 ```sh
 npm test
 npm run build
+npm install
+npx playwright install chromium
+npm run test:browser
 ```
 
 Edit the source in `platform/`, run the tests and build, and commit both the source and the regenerated root `index.html`. GitHub Pages publishes the `main` branch from the repository root. No custom workflow or deployment token is needed.
@@ -31,12 +36,12 @@ node platform/audit-fixtures.cjs /tmp/projectx-fixtures.json
 python3 tools/check_math_reference.py /tmp/projectx-fixtures.json
 ```
 
-The current release passes 71 automated tests and 120 independent rational-arithmetic fixtures. Browser acceptance and validation against a complete real voyage remain outstanding.
+The current release passes 82 automated tests and 120 independent rational-arithmetic fixtures. Browser acceptance checks the built HTML, five tabs, English labels and messages, cargo creation, sale validation, rejection of unregistered ports, planner persistence, print action and confirmations. User-entered text is preserved as entered. Validation against a complete real voyage remains outstanding.
 
 ## Calculation scope
 
 This is a preliminary vessel cost model, not a certified loading computer or a contractual exporter budget. It does not calculate approved stability, longitudinal strength, port clearance or cargo compatibility. Reference SF values are estimates and need shipment confirmation. Some cargo properties remain unresolved; missing values are not proof of a non-hazardous classification.
 
-The application contains 25 numerical reference planning SF values and 26 IMSBC groups across 97 catalogue entries. Exact-product SDS and shipper declarations are still needed for unresolved grades. Cargo entries link to their sources and state applicability; IMSBC references use amendment 07-23. Liquid, gaseous and packaged products remain outside the bulk-hold planning model.
+The internal catalogue contains 25 numerical reference planning SF values and 26 IMSBC groups across 97 entries. The working CARGO view includes only bulk cargoes with a positive SF. Sources and applicability remain in the catalogue data; technical details are not shown in the simplified table. Exact-product SDS and shipper declarations are still needed for unresolved grades. Liquid, gaseous and packaged products remain outside the bulk-hold planning model.
 
 No confidential voyage files, original vessel questionnaires, private working notes or saved user calculations are included in this public repository.

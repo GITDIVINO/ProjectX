@@ -5,7 +5,9 @@
   "description": "Multi-parcel fertilizer voyage planning prototype",
   "scripts": {
     "build": "node build.cjs",
-    "test": "node --test platform/*.test.js"
+    "test": "node --test platform/*.test.js",
+    "test:browser": "node platform/browser-check.cjs index.html"
   },
-  "engines": {"node": ">=22"}
+  "engines": {"node": ">=22"},
+  "devDependencies": {"playwright": "1.62.1"}
 }
