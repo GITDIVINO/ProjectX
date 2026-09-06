@@ -25,5 +25,6 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 @media(max-width:900px){.site-header{grid-template-columns:1fr;padding:8px 18px 0}.brand-block{grid-column:1}.site-header .workspace-tabs{grid-column:1;justify-content:flex-start;overflow-x:auto}.site-header .workspace-tabs button{min-width:auto}.wide-cell input{width:260px}}
 @media(max-width:700px){.catalog-toolbar{align-items:stretch;flex-direction:column}.catalog-toolbar .catalog-search,.catalog-toolbar #cargo-family{width:100%;max-width:none}.cargo-name-cell{min-width:250px}}
 .split>div{min-width:0}.totals td:first-child{white-space:normal;overflow-wrap:anywhere;padding-right:12px}
+@media screen{body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}body>main{flex:1 0 auto;width:100%;margin:0 auto}body>.site-header,body>.projectx-footer{flex-shrink:0}}
 @media(max-width:480px){dialog .grid{grid-template-columns:minmax(0,1fr)}.planner-actions{flex-wrap:wrap}.heading{flex-wrap:wrap}.vessel-choice .field{min-width:0}}
 @media print{.site-header .workspace-tabs,.planner-actions,.projectx-footer{display:none!important}.site-header{position:static;padding-bottom:8px;background:#fff;color:#000;break-after:avoid}section{break-inside:avoid-page}.table-wrap{overflow:visible}details:not([open])>*:not(summary){display:block}}
