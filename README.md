@@ -12,9 +12,9 @@ A voyage-planning prototype connecting fertilizer trading and chartering: select
 - **CARGO** — 25 bulk cargoes with a reference SF in the default working register; add bulk cargoes with a positive SF. Full reference records are retained internally.
 - **PORT** — port names, terminals, restrictions and reference DA. Used ports cannot be removed or renamed until their sales are reassigned.
 - **VESSEL** — TBN 1 · 33K plus editable reference profiles TBN 2 · 38K and TBN 3 · 57K. New reference profiles are incomplete: missing hold/performance parameters must be confirmed and entered before applying to a voyage. Unknown values are not assumed to be zero.
-- Browser-local save, a previous valid backup, and Save PDF through the browser print dialog. No application backend, shared database, login or analytics.
+- Browser-local autosave on every accepted change (including calculation input before leaving the field), a previous valid backup, explicit Save, and Save PDF through the browser print dialog. No application backend, shared database, login or analytics.
 
-Open `index.html` directly, or use the hosted link. Each visitor starts with their own calculation. Saving uses browser storage on the current device; it does not upload the calculation to this repository or share it with other visitors. Existing local-file calculations are not automatically transferred to the hosted site. JSON import is not implemented.
+Open `index.html` directly, or use the hosted link. Each visitor starts with their own calculation. Accepted edits are saved automatically in browser storage on the current device; the Save button remains available as an explicit action. Reloading the same URL in the same browser restores the calculation. This does not upload it to the repository or share it with other visitors. Existing local-file calculations are not automatically transferred to the hosted site because local and hosted pages use different storage origins. JSON import is not implemented.
 
 The default PORT register contains 13 entries. A one-time migration adds the requested ports and reference vessels to older saves without overwriting user edits or the current voyage snapshot. Click Save in PLANNER to retain your own edits after reloading; there is no autosave or shared database.
 
@@ -39,7 +39,7 @@ node platform/audit-fixtures.cjs /tmp/projectx-fixtures.json
 python3 tools/check_math_reference.py /tmp/projectx-fixtures.json
 ```
 
-The current release passes 86 automated tests; the unchanged financial engine was previously checked against 120 independent rational-arithmetic fixtures. Browser acceptance checks the built HTML, six tabs, all eight MARKET reports, region filters, session restoration, mobile layout, English labels and messages, cargo creation, sale validation, rejection of unregistered ports, planner persistence, print action and confirmations. User-entered text is preserved as entered. Validation against a complete real voyage remains outstanding.
+The current release passes 89 automated tests; the unchanged financial engine was previously checked against 120 independent rational-arithmetic fixtures. Browser acceptance checks the built HTML, six tabs, all eight MARKET reports, region filters, session restoration, mobile layout, English labels and messages, cargo creation, sale validation, rejection of unregistered ports, planner autosave before blur, reload persistence, print action and confirmations. User-entered text is preserved as entered. Validation against a complete real voyage remains outstanding.
 
 The bundled MARKET archive lives in `platform/market.js`. Only the selected published report content was imported; no source inbox files are included. New reports require an explicit content update and rebuild. The application does not contact the FAOX server.
 

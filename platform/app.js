@@ -54,7 +54,7 @@ if(b){const amount=kind=>b.rows.filter(r=>r.kind===kind).reduce((n,r)=>n+r.cents
 html+=`${ship.errors.length||ship.remaining.some(x=>x.quantity===null||Math.abs(x.quantity)>.01)?'<p class="notice">The cargo plan is incomplete or exceeds limits. The financial result does not confirm voyage feasibility.</p>':''}<p class="form-note">This is a vessel cost model. Under voyage chartering, the exporter budget consists of contractual freight and applicable surcharges: do not add hire and bunkers from this model again.</p></section><section><div class="heading"><h2>5. Cost by sale</h2>${select('allocation','Allocation method',[['route','By legs and ports'],['tonnage','Entire budget by tonnage']])}</div>${b?table(['Sale','Port','Tonnage','Allocated, USD','USD/t'],b.allocation.map(a=>{const l=state.lots.find(l=>l.id===a.id);return `<tr><td class="name"><span class="tag" style="background:${l.color}"></span>${esc(l.name)}</td><td>${esc(l.port)}</td><td>${fmt(a.quantity,0)}</td><td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td></tr>`;})):'<p class="empty">Allocation appears after the voyage calculation is complete.</p>'}<p class="form-note">Proposed method: leg costs — to cargo on board; port call costs — to handled sales; ballast and additional items — to all cargo. This is allocated cost, not the incremental cost of adding a sale.</p><details id="notes"><summary>Calculation sources and notes</summary><textarea data-path="notes" aria-label="Calculation sources" placeholder="Enter sources and dates for distances, PDA, rates, SF and vessel data">${esc(state.notes)}</textarea></details></section>`;
 $('app').innerHTML=html;open.forEach(id=>{if($(id))$(id).open=true;});}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);}
-function changed(){ensureLegs();$('status').textContent='';render();}
+function changed(){ensureLegs();$('status').textContent='';saveCalculation(false);render();}
 function editableLotField(path){return !path?.startsWith('lots.')||/^lots\.\d+\.selected$/.test(path);}
 $('app').addEventListener('change',e=>{const el=e.target;if(!editableLotField(el.dataset.path)){$('status').textContent='Cargo properties are read-only in PLANNER. Edit them in CARGO.';render();return;}if(el.dataset.path==='vesselId'){try{M.applyVessel(state,el.value);changed();}catch(error){$('status').textContent=error.message;render();}return;}if(el.dataset.path){let value=el.type==='checkbox'?el.checked:el.type==='number'?(el.value===''?null:Number(el.value)):el.value;if(el.dataset.path.startsWith('sales.')){
  const [,index,fieldName]=el.dataset.path.split('.');
@@ -71,14 +71,14 @@ set(el.dataset.path,value);if(el.dataset.path.endsWith('.sf')){const prefix=el.d
 function focusHold(target){const h=target.closest('[data-hold-target]');if(!h)return false;const cell=document.querySelector('input[data-hold="'+h.dataset.holdTarget+'"]:not(:disabled)');if(cell){cell.focus();cell.select();}return true;}
 $('app').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-hold-target]')){e.preventDefault();focusHold(e.target);}});
 $('app').addEventListener('click',e=>{if(focusHold(e.target))return;const el=e.target.closest('[data-action]');if(!el)return;switch(el.dataset.action){case'new-sale':showSaleDialog();return;case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',terminal:'',restrictions:'',da:null});break;case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;case'add-hold':{const v=state.vesselProfiles.find(v=>v.id===el.dataset.id);v.holdData.push({id:v.holdData.length+1,volume:null,massLimit:null});v.holds=v.holdData.length;break;}case'remove-hold':{const v=state.vesselProfiles.find(v=>v.id===el.dataset.id);if(v.holdData.length>1){v.holdData.pop();v.holds=v.holdData.length;}break;}case'new-cargo':showCargoDialog();return;case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'add-lot':showLotDialog();return;case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}case'allocate':if(state.allocations.length&&!confirm('Replace manual stowage with volume-based allocation?'))return;state.allocations=M.allocate(state);break;case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();if(el.dataset.action==='add-cost')$('costs').open=true;});
-function saveCalculation(){
+function saveCalculation(clearStatus=true){
  try{
   const previous=localStorage.getItem(key);
   if(previous){try{readSave(previous);localStorage.setItem(backupKey,previous);}catch{}}
-  localStorage.setItem(key,JSON.stringify(state));$('status').textContent='';return true;
+  localStorage.setItem(key,JSON.stringify(state));if(clearStatus)$('status').textContent='';return true;
  }catch{$('status').textContent='Storage is unavailable. Your changes have not been saved.';return false;}
 }
-$('save').onclick=saveCalculation;
+$('save').onclick=()=>saveCalculation(true);
 
 $('reset').onclick=()=>{if(!confirm('Clear the current calculation and its local save?'))return;const catalogs={cargoTypes:state.cargoTypes,vesselProfiles:state.vesselProfiles,sales:state.sales,portRecords:state.portRecords};state=M.initial();Object.assign(state,catalogs);ensureLegs();try{localStorage.setItem(key,JSON.stringify(state));}catch{}$('status').textContent='';render();};
 $('pdf').onclick=()=>{window.print();};
@@ -106,7 +106,21 @@ function setupChrome(){if(document.documentElement)document.documentElement.lang
 function syncWorkspace(){for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
 for(const tab of tabs)$('tab-'+tab).onclick=()=>{currentTab=tab;try{sessionStorage.setItem(tabKey,tab);}catch{}syncWorkspace();render();};
 function filterCargo(){const q=($('cargo-search')?.value||'').toLowerCase().trim();const family=$('cargo-family')?.value||'';document.querySelectorAll('[data-catalog-name]').forEach(row=>row.hidden=!(q.split(/\s+/).every(word=>row.dataset.catalogName.includes(word))&&(!family||row.dataset.family===family)));}
-$('app').addEventListener('input',e=>{if(e.target.id==='cargo-search')filterCargo();});
+$('app').addEventListener('input',e=>{
+ const el=e.target;if(el.id==='cargo-search'){filterCargo();return;}
+ if(currentTab!=='planner')return;
+ if(el.dataset.path&&editableLotField(el.dataset.path)){
+  const value=el.type==='checkbox'?el.checked:el.type==='number'?(el.value===''?null:Number(el.value)):el.value;
+  set(el.dataset.path,value);saveCalculation(false);return;
+ }
+ if(el.dataset.lot){
+  const quantity=el.value===''?0:Number(el.value),hold=Number(el.dataset.hold);
+  if(!M.ok(quantity))return;
+  state.allocations=state.allocations.filter(a=>!(a.lot===el.dataset.lot&&a.hold===hold));
+  if(quantity>0)state.allocations.push({lot:el.dataset.lot,hold,quantity});
+  saveCalculation(false);
+ }
+});
 $('app').addEventListener('change',e=>{if(e.target.id==='cargo-family')filterCargo();});
 
 if(document.addEventListener){document.addEventListener('invalid',e=>{const el=e.target;if(el.setCustomValidity)el.setCustomValidity(el.validity.valueMissing?'Complete this field.':'Enter a valid value for this field.');},true);document.addEventListener('input',e=>{if(e.target.setCustomValidity)e.target.setCustomValidity('');},true);}

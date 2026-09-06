@@ -94,6 +94,15 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2',JSON.stringify(ProjectXModel.demo())));await page.reload();await tabs();
   await page.setViewportSize({width:390,height:844});await tabs();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.locator('#tab-planner').click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-planner').click();
+  // Input events persist synchronously, even when the user reloads before blur/change.
+  await page.locator('[data-path="hire"]').fill('14789.25');
+  await page.reload();assert.equal(await page.locator('[data-path="hire"]').inputValue(),'14789.25');
+  await page.locator('#costs > summary').click();await page.locator('[data-action="add-cost"]').click();
+  await page.locator('[data-path="costs.0.amount"]').fill('4321.75');
+  await page.reload();assert.equal(await page.locator('[data-path="costs.0.amount"]').inputValue(),'4321.75');
+  const firstAllocation=page.locator('[data-lot][data-hold]:not(:disabled)').first();
+  await firstAllocation.fill('123.45');await page.reload();
+  assert.equal(await page.locator('[data-lot][data-hold]:not(:disabled)').first().inputValue(),'123.45');
   const confirmations=[];page.on('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});await page.locator('#reset').click();await page.locator('[data-action="allocate"]').click();
   assert.equal(await page.locator('[data-path^="lots."][data-path$=".sf"]').count(),0);
   const beforePropertyEdit=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
@@ -106,6 +115,6 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.deepEqual(errors,[]);
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
-  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, planner, persistence, print action, confirmations and unchanged user text.');
+  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
