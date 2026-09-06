@@ -71,7 +71,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.locator('dialog button[type="submit"]').click();await page.locator('dialog').waitFor({state:'detached'});
   assert.equal(await page.locator('[data-catalog-name]').count(),26);
   const cargo=await page.evaluate(()=>ProjectXApp.getState().cargoTypes.find(c=>c.name==='Audit bulk cargo'));
-  await page.locator('#tab-sale').click();await page.locator('[data-action="new-sale"]').click();await scan();await page.locator('#close-sale').click();assert.equal(await page.locator('dialog[open]').count(),0);
+  await page.locator('#tab-sale').click();assert.equal(await page.locator('.empty-state').evaluate(e=>getComputedStyle(e).borderTopColor),'rgb(252, 111, 58)');assert.equal(await page.locator('.empty-state').evaluate(e=>getComputedStyle(e).borderTopStyle),'dashed');await page.locator('[data-action="new-sale"]').click();await scan();await page.locator('#close-sale').click();assert.equal(await page.locator('dialog[open]').count(),0);
   await page.locator('[data-action="new-sale"]').click();
   for(const [name,value] of Object.entries({dealDate:'2026-09-01',quantity:'1000',fob:'250',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20'}))await page.locator(`dialog [name="${name}"]`).fill(value);
   await page.locator('dialog [name="cargoId"]').selectOption(cargo.id);
