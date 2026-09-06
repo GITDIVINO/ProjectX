@@ -1,6 +1,29 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),cp=require('node:child_process'),M=require('./model');
 const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
+test('Requested reference catalogs migrate once without overwriting saved edits or the voyage',()=>{
+ const s=M.demo();M.ensureCatalogs(s);delete s.catalogAdditions;
+ s.portRecords=[{id:'CUSTOM',name:'Murmansk',terminal:'Keep',da:123,restrictions:'User data'}];
+ s.vesselProfiles=[{...s.vesselProfiles[0],name:'Custom 33K'}, {...s.vesselProfiles[1],id:'USER',dwt:39000}];
+ const snapshot=JSON.stringify(s.vesselSnapshot),lots=JSON.stringify(s.lots);
+ M.ensureCatalogs(s);
+ assert.equal(s.portRecords.length,10);assert.equal(s.portRecords[0].da,123);
+ assert.equal(s.vesselProfiles.length,3);assert.equal(s.vesselProfiles[1].dwt,39000);
+ assert.equal(JSON.stringify(s.vesselSnapshot),snapshot);assert.equal(JSON.stringify(s.lots),lots);
+ M.removePortRecord(s,s.portRecords.findIndex(p=>p.name==='Itaqui'));
+ const saved=JSON.parse(JSON.stringify(s));M.ensureCatalogs(saved);
+ assert.ok(!saved.portRecords.some(p=>p.name==='Itaqui'));assert.equal(saved.vesselProfiles.length,3);
+});
+test('New defaults contain requested ports and incomplete reference vessels cannot silently replace the voyage',()=>{
+ const s=M.initial();assert.equal(s.portRecords.length,13);assert.equal(s.vesselProfiles.length,3);
+ for(const name of ['St. Petersburg','Murmansk','Itaqui','Santarem','Vitoria','Rio Grande','San Francisco do Sul','Suape','Aratu','Pecem'])assert.equal(s.portRecords.filter(p=>p.name===name).length,1);
+ for(const id of ['tbn-2','tbn-3']){
+  const v=s.vesselProfiles.find(v=>v.id===id);assert.equal(v.holdData.length,5);assert.equal(v.aux,null);assert.equal(v.boiler,null);
+  const before=JSON.stringify(s);assert.throws(()=>M.applyVessel(s,id));assert.equal(JSON.stringify(s),before);
+ }
+ const sale=M.addSale(s,{...saleData(s),loadPort:'St. Petersburg',dischargePort:'Itaqui'});M.addSaleToPlanner(s,sale.id);
+ assert.equal(s.lots[0].port,'Itaqui');
+});
 test('The shipped HTML preserves script bytes and every embedded script parses',()=>{
  cp.execFileSync(process.execPath,[path.join(__dirname,'build.cjs')]);
  const html=fs.readFileSync(path.join(__dirname,'ProjectX.html'),'utf8');

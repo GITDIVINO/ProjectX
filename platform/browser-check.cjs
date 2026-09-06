@@ -21,6 +21,24 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   }
   async function tabs(){for(const tab of ['planner','sale','cargo','ports','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
   await tabs();
+  assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 2 · 38K'}).count(),1);
+  assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 3 · 57K'}).count(),1);
+  await page.locator('[data-action="apply-vessel"][data-id="tbn-2"]').click();
+  assert.match(await page.locator('#status').textContent(),/Check vessel parameter/);
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().vesselId),'tbn-1');
+  await page.evaluate(()=>{
+   const s=ProjectXApp.getState();delete s.catalogAdditions;
+   s.vesselProfiles=s.vesselProfiles.filter(v=>v.id==='tbn-1');
+   s.portRecords=s.portRecords.filter(p=>['Ust-Luga','Santos','Paranaguá'].includes(p.name));
+   s.portRecords[0].terminal='Saved terminal';
+   localStorage.setItem('projectx-current-v2',JSON.stringify(s));
+  });
+  await page.reload();await tabs();
+  const migrated=await page.evaluate(()=>ProjectXApp.getState());
+  assert.equal(migrated.portRecords.length,13);assert.equal(migrated.vesselProfiles.length,3);
+  assert.equal(migrated.portRecords[0].terminal,'Saved terminal');
+  await page.locator('#tab-planner').click();await page.locator('#save').click();await page.reload();
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().portRecords.length),13);
   await page.locator('#tab-cargo').click();assert.equal(await page.locator('[data-catalog-name]').count(),25);
   await page.locator('[data-action="new-cargo"]').click();await scan();
   await page.locator('dialog [name="name"]').fill('Audit bulk cargo');await page.locator('dialog [name="sf"]').fill('1.15');
