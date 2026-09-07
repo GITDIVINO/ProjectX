@@ -56,6 +56,11 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
  assert.ok(stale.includes('Preliminary intake: <strong>—</strong>'),'an edited deduction withdraws the figure');
  assert.ok(stale.includes('calc-intake'),'and brings the button back');});
 
+test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
+ assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
+ assert.ok(!/Bale/.test(html),'bale capacity is not shown in PLANNER');
+ assert.match(html,/deductions from DWT<\/summary><div class="grid">/,'no separate particulars paragraph is left inside the details');});
+
 test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));
  assert.ok(html.includes('class="grid holds-grid"'));
