@@ -72,8 +72,8 @@ test('Cargo volume sits under Holds and is the tonnage times SF of the selected 
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = <strong>27,000.00 m³</strong></small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
  for(const gone of ['weighted SF','free of','hold volumes incomplete'])assert.ok(!html.includes(gone),gone+' should not be in the line');
- assert.ok(html.indexOf('holds-grid')<html.indexOf('intake-line'),'intake follows the hold volumes');
- assert.ok(html.indexOf('intake-line')<html.indexOf('cargo-volume'),'cargo volume closes the block');
+ assert.ok(html.indexOf('intake-line')<html.indexOf('holds-grid'),'intake sits with the deductions it comes from');
+ assert.ok(html.indexOf('holds-grid')<html.indexOf('cargo-volume'),'cargo volume follows the hold volumes it is compared against');
  const mixed=M.demo();mixed.lots[1].sf=1.2;
  const weighted=boot(JSON.stringify(mixed)).elements.get('app').innerHTML;
  assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = <strong>28,800.00 m³</strong>'),'each parcel keeps its own SF in the sum');
