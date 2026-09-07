@@ -40,3 +40,17 @@ test('Corrupt or obsolete saved state falls back to blank',()=>{for(const value 
 test('CARGO retains catalog records while rendering the simplified register',()=>{const {app,elements}=boot(null);elements.get('tab-cargo').onclick();const html=elements.get('app').innerHTML;assert.equal((html.match(/data-catalog-name=/g)||[]).length,25);assert.ok(app.getState().cargoTypes.length>=97);assert.ok(html.includes('Planning SF, m³/t'));assert.ok(html.includes('IMSBC Group'));for(const removed of ['Hold restriction','Properties / source','Apply to parcels','UN number','Transport hazard class','SDS / declaration required','Reference estimate','N/A to this carriage mode','cargo-meta'])assert.ok(!html.includes(removed));});
 test('SALE and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();assert.ok(elements.get('app').innerHTML.includes('Charterer port and terminal register'));assert.ok(elements.get('app').innerHTML.includes('Ust-Luga'));});
 test('ProjectX footer is shared across tabs; calculation controls remain in PLANNER',()=>{const html=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(html.includes('id="planner-actions"'));assert.ok(html.includes('id="planner-footer" class="projectx-footer"'));assert.ok(html.includes('Voyage Planner Prototype'));assert.ok(html.includes('id="pdf">Save PDF'));const {elements}=boot(null);for(const tab of ['planner','sale','cargo','ports','vessel','market']){elements.get('tab-'+tab).onclick();assert.equal(elements.get('planner-actions').hidden,tab!=='planner');assert.equal(elements.get('planner-footer').hidden,false);}});
+test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
+ const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
+ const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ for(const id of ['vessel','stowage','legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
+ for(const text of ['Distance / (speed × 24)','Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','7200 NM','24000','automatic capacity'])assert.ok(html.includes(text),text);
+ assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
+});
+test('Calculation evidence escapes labels and updates when selected stage changes',()=>{
+ const s=M.demo();s.costs=[{name:'<img src=x onerror=alert(1)>',amount:0,days:0,burn:0,fuel:'main'}];s.stage='Paranaguá';
+ const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));
+ const start=html.indexOf('id="calc-stowage"'),end=html.indexOf('id="technical"');const trace=html.slice(start,end);
+ assert.ok(trace.includes('stage mass'));assert.ok(trace.includes('0 t'));assert.ok(trace.includes('unassigned in loading plan'));
+});

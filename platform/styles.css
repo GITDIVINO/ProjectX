@@ -31,3 +31,14 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 @media screen{body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}body>main{flex:1 0 auto;width:100%;margin:0 auto}body>.site-header,body>.projectx-footer{flex-shrink:0}}
 @media(max-width:480px){dialog .grid{grid-template-columns:minmax(0,1fr)}.planner-actions{flex-wrap:wrap}.heading{flex-wrap:wrap}.vessel-choice .field{min-width:0}}
 @media print{.site-header .workspace-tabs,.planner-actions,.projectx-footer{display:none!important}.site-header{position:static;padding-bottom:8px;background:#fff;color:#000;break-after:avoid}section{break-inside:avoid-page}.table-wrap{overflow:visible}details:not([open])>*:not(summary){display:block}}
+
+/* Calculation evidence stays next to the result and opens on demand. */
+.calculation-details { margin-block: 14px; }
+.calculation-details summary { cursor: pointer; }
+.calculation-details td { vertical-align: top; }
+.calculation-expression { min-width: 230px; max-width: 650px; white-space: normal; overflow-wrap: anywhere; }
+.calculation-expression code { display: block; margin-top: 6px; font: inherit; font-variant-numeric: tabular-nums; color: inherit; white-space: normal; }
+.calculation-result { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 140px; }
+@media print { .calculation-details { break-inside: auto; } .calculation-details table { font-size: 10px; } }
+
+@media print { .calculation-details th, .calculation-details td { min-width: 0; white-space: normal; overflow-wrap: anywhere; } }
