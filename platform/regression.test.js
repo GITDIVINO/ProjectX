@@ -3,15 +3,18 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
 test('MARKET archive has dated reports, complete regional content and escaped rendering',()=>{
  const market=require('./market');assert.equal(market.reports.length,8);
+ assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'market.js'),'utf8'),/faox/i,'no source tool name left in the module');
  assert.equal(new Set(market.reports.map(r=>r.id)).size,8);
  let previous='9999-12-31';
  for(const r of market.reports){
   assert.ok(r.publishedDate<previous);previous=r.publishedDate;
   assert.equal(r.id,'dry-bulk-'+r.publishedDate);assert.ok(r.overview.paragraphs.length);
   const html=market.render(r.id);assert.ok(html.includes('Updates are not automatic'));
+  assert.doesNotMatch(html,/faox/i,'the archive is presented without the source tool name');
   for(const b of r.basins)for(const region of b.regions){
    assert.ok(region.forecast);assert.ok(region.cargoes.length);
    const filtered=market.render(r.id,region.name);assert.equal((filtered.match(/class="market-region"/g)||[]).length,1);
+   assert.doesNotMatch(filtered,/faox/i,region.name);
   }
  }
  const report=market.reports[0],old=report.summary;

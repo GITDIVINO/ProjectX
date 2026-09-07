@@ -1,6 +1,6 @@
 (function(root){
 'use strict';
-// Published FAOX archive only; imported 2026-09-06. No inbox, accounts or private voyage data.
+// Published report archive only; imported 2026-09-06. No inbox, accounts or private voyage data.
 const reports=[
   {
     "id": "dry-bulk-2026-07-09",
@@ -1370,11 +1370,11 @@ function render(reportId,regionName=''){
  const selectedRegion=regions.includes(regionName)?regionName:'';
  const option=(value,label,selected)=>'<option value="'+esc(value)+'"'+(selected?' selected':'')+'>'+esc(label)+'</option>';
  const regionCard=r=>'<article class="market-region"><h4>'+esc(r.name)+'</h4>'+(r.tone?'<p class="market-tone">'+esc(r.tone)+'</p>':'')+paragraphs(r.paragraphs)+(r.bullets?.length?'<ul>'+r.bullets.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul>':'')+(r.reason?'<p><strong>Drivers</strong><br>'+esc(r.reason)+'</p>':'')+(r.forecast?'<p><strong>Outlook at publication</strong><br>'+esc(r.forecast)+'</p>':'')+(r.cargoes?.length?'<p class="market-cargoes"><strong>Main export cargoes</strong><br>'+r.cargoes.map(esc).join(' · ')+'</p>':'')+(r.benchmark?'<pre>'+esc(r.benchmark)+'</pre>':'')+'</article>';
- return '<section class="market"><div class="heading"><div><h2>MARKET</h2><p class="section-intro">Dry bulk market sentiment · FAOX report archive</p></div><span class="market-badge">Archive · '+reports.length+' reports</span></div>'+
- '<p class="market-disclaimer">Archived FAOX commentary, not a live market feed or independently verified market data. Latest available report: '+dateLabel(reports[0].publishedDate)+'. Forecasts refer to their publication date. Updates are not automatic.</p>'+
+ return '<section class="market"><div class="heading"><div><h2>MARKET</h2><p class="section-intro">Dry bulk market sentiment archive.</p></div><span class="market-badge">Archive · '+reports.length+' reports</span></div>'+
+ '<p class="market-disclaimer">Archived commentary, not a live market feed or independently verified market data. Latest available report: '+dateLabel(reports[0].publishedDate)+'. Forecasts refer to their publication date. Updates are not automatic.</p>'+
  '<div class="market-filters"><label class="field">Report date<select id="market-report" aria-label="Market report date">'+reports.map(r=>option(r.id,dateLabel(r.publishedDate),r.id===report.id)).join('')+'</select></label>'+
  '<label class="field">Region<select id="market-region" aria-label="Market region">'+option('','All regions',!selectedRegion)+regions.map(r=>option(r,r,r===selectedRegion)).join('')+'</select></label></div>'+
- '<article class="market-report"><div class="market-report-title"><p class="market-date"><time datetime="'+esc(report.publishedDate)+'">'+dateLabel(report.publishedDate)+'</time> · FAOX archive</p><h3>'+esc(report.title)+'</h3><p>'+esc(report.summary)+'</p></div>'+
+ '<article class="market-report"><div class="market-report-title"><p class="market-date"><time datetime="'+esc(report.publishedDate)+'">'+dateLabel(report.publishedDate)+'</time></p><h3>'+esc(report.title)+'</h3><p>'+esc(report.summary)+'</p></div>'+
  (!selectedRegion?'<div class="market-overview"><h3>Market overview</h3>'+paragraphs(report.overview.paragraphs)+'</div>':'')+
  '<div class="market-basins">'+report.basins.map(b=>{const visible=b.regions.filter(r=>!selectedRegion||r.name===selectedRegion);return visible.length?'<div class="market-basin"><h3>'+esc(b.name)+'</h3>'+(!selectedRegion&&b.intro?'<p class="market-basin-intro">'+esc(b.intro)+'</p>':'')+visible.map(regionCard).join('')+'</div>':'';}).join('')+'</div>'+
  (!selectedRegion?(report.segments||[]).map(s=>'<div class="market-overview"><h3>'+esc(s.name)+'</h3>'+paragraphs(s.paragraphs)+(s.benchmark?'<pre>'+esc(s.benchmark)+'</pre>':'')+'</div>').join('')+(report.notes?.length?'<div class="market-overview"><h3>Desk notes</h3>'+paragraphs(report.notes)+'</div>':''):'')+
