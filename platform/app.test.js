@@ -54,7 +54,10 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
  s.deductions.fuel=951;
  const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(stale.includes('Preliminary intake: <strong>—</strong>'),'an edited deduction withdraws the figure');
- assert.ok(stale.includes('calc-intake'),'and brings the button back');});
+ assert.ok(stale.includes('calc-intake'),'and brings the button back');
+ assert.ok(!blank.includes('does not verify draft'),'the caveat line is replaced by the calculation');
+ assert.ok(!blank.includes('intake-formula'),'no calculation before the figure is asked for');
+ assert.ok(shown.includes('DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 = 35,692.00 t'),'the calculation is written out with the entered values');});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
