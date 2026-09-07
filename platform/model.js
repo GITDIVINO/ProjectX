@@ -19,32 +19,49 @@ const VESSELS=[
  standardVessel('tbn-3','TBN 57K',{model:'DOLPHIN 57',source:'User-supplied average profile, 7 September 2026',dwt:56565.45,draft:12.8,tpc:58.8,loa:199.99,beam:32.26,grain:71634,gt:33033,nrt:19132,speed:12,burn:30,ballastSpeed:12,ballastBurn:28,working:5.5,idle:3.5,aux:0.1,auxWorking:0.1,auxIdle:0.1,holdData:[13009.86,15333.25,14553.08,15333.27,13404.64].map((volume,i)=>({id:i+1,volume,massLimit:null}))})
 ];
 const CATALOG_ADDITIONS='ports-vessels-2026-09-06';
-const PORT_PROFILE_REVISION='port-profiles-2026-09-07';
+const PORT_PROFILE_REVISION='port-limits-2026-09-07';
+// Numeric limits are the most permissive value the source states for the port or terminal.
+// A vessel above one of them fits no berth; a vessel below it still needs the assigned berth confirmed.
+const PORT_LIMIT_FIELDS=['maxDraft','maxLoa','maxBeam','maxAirDraft','maxDwt'];
 const PORT_PROFILES={
- 'Murmansk':{terminal:'Murmansk Sea Commercial Port',restrictions:'Berth 4: draft 11.0 m, beam 32.2 m, LOA 230 m. Berth 7: draft 10.0 m, beam 32 m, LOA 225 m. Berths 9/10: draft 10.5 m, beam 36 m, LOA 240 m. Berth 13: draft 12.5 m, beam 36 m, LOA 240 m. Berth 6: draft 7.0 m, beam 16 m, LOA 120 m. Air draft 14.5 m at all berths. Confirm the assigned berth.'},
- 'St. Petersburg':{terminal:'Sea Port of Saint Petersburg, First and Second Cargo Areas',restrictions:'Operator lists 31 dry cargo berths. Confirm the assigned berth and its current permissible draft.'},
- 'Ust-Luga':{terminal:'European Sulphur Terminal / EuroChem Ust-Luga Terminal',restrictions:'EuroChem berth 1: LOA 334 m, draft 13.1 m. Berth 2: LOA 295 m, draft 8.5 m. Status of berths 3-4 to be confirmed.'},
- 'Santos':{terminal:'STS20, Outeirinhos, berths 22/23',restrictions:'Combined berth face 283 m, depth 11.3 m in the source study. Check the current operational draft in the port table.'},
- 'Paranaguá':{terminal:'TEFER, public fertilizer terminal',restrictions:'Published draft 12.5 m. A 2023 announcement gives 12.8 m at fertilizer berths 209/211. Confirm before fixing.'},
- 'Itaqui':{terminal:'COPI / public berths 100-103',restrictions:'Confirm the exact berth and the current draft, LOA and beam with EMAP/COPI.'},
- 'Santarem':{terminal:'Solid Bulk Terminal, Pier 400 berth 401',restrictions:'About 250 m, depth 16 m, up to 60,000 DWT. Confirm fertilizer handling and the river level.'},
- 'Vitoria':{terminal:'Vports, Vila Velha terminal',restrictions:'Berth assignment and current limits are absent from the public profile used. Confirm with Vports.'},
- 'Rio Grande':{terminal:'Yara Brasil Fertilizantes, North/South',restrictions:'South draft 12.19 m, North 10.0 m. The terminal limit prevails over the channel.'},
- 'San Francisco do Sul':{terminal:'Public berth 201 / Bulk Terminal',restrictions:'Draft 14 m, max LOA 250 m. Confirm the current structural and operational limits.'},
- 'Suape':{terminal:'SUA Graneis, quay 5',restrictions:'Quay 343-344 m, max operational draft 15 m, max LOA 300 m. Confirm fertilizer handling.'},
- 'Aratu':{terminal:'TGS, Pier 1 North/South',restrictions:'South max LOA 250 m, North 200 m, depth 12 m. Another source page reports a lower South draft: confirmation required.'},
- 'Pecem':{terminal:'Pier 3 / TMUT',restrictions:'TMUT berths 7-9 draft 15.3 m. Pier 1 internal 14 m, external 15 m. Confirm the berth and the fertilizer scheme.'}
+ 'Murmansk':{terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Best berth 13: draft 12.5 m, beam 36 m, LOA 240 m. Berths 9/10: draft 10.5 m, beam 36 m, LOA 240 m. Berth 4: draft 11.0 m, beam 32.2 m, LOA 230 m. Berth 7: draft 10.0 m, beam 32 m, LOA 225 m. Berth 6: draft 7.0 m, beam 16 m, LOA 120 m. Air draft 14.5 m at all berths.'},
+ 'St. Petersburg':{terminal:'Sea Port of Saint Petersburg, First and Second Cargo Areas',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Operator lists 31 dry cargo berths without published per-berth limits. Confirm the assigned berth and its current permissible draft.'},
+ 'Ust-Luga':{terminal:'European Sulphur Terminal / EuroChem Ust-Luga Terminal',maxDraft:13.1,maxLoa:334,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'EuroChem berth 1: LOA 334 m, draft 13.1 m. Berth 2: LOA 295 m, draft 8.5 m. Status of berths 3-4 to be confirmed.'},
+ 'Santos':{terminal:'STS20, Outeirinhos, berths 22/23',maxDraft:11.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 11.3 m in the source study, not a permitted draft: check the current operational draft in the port table. The 283 m face is berths 22 and 23 combined, so it is not a single-ship LOA limit.'},
+ 'Paranaguá':{terminal:'TEFER, public fertilizer terminal',maxDraft:12.5,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'General published draft 12.5 m. A 2023 announcement gives 12.8 m at fertilizer berths 209/211; the lower figure is kept until confirmed.'},
+ 'Itaqui':{terminal:'COPI / public berths 100-103',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'No per-berth limits in the public profile used. Confirm the exact berth and the current draft, LOA and beam with EMAP/COPI.'},
+ 'Santarem':{terminal:'Solid Bulk Terminal, Pier 400 berth 401',maxDraft:16,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:60000,notes:'Depth 16 m is the quay depth, not a permitted draft, and the river level governs. Berth about 250 m, up to 60,000 DWT. Confirm fertilizer handling.'},
+ 'Vitoria':{terminal:'Vports, Vila Velha terminal',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Berth assignment and current limits are absent from the public profile used. Confirm with Vports.'},
+ 'Rio Grande':{terminal:'Yara Brasil Fertilizantes, North/South',maxDraft:12.19,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'South draft 12.19 m, North 10.0 m. The terminal limit prevails over the channel.'},
+ 'San Francisco do Sul':{terminal:'Public berth 201 / Bulk Terminal',maxDraft:14,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Draft 14 m, max LOA 250 m. Confirm the current structural and operational limits.'},
+ 'Suape':{terminal:'SUA Graneis, quay 5',maxDraft:15,maxLoa:300,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Max operational draft 15 m, max LOA 300 m; quay length 343-344 m. Confirm fertilizer handling.'},
+ 'Aratu':{terminal:'TGS, Pier 1 North/South',maxDraft:12,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 12 m. Pier 1 South max LOA 250 m, North 200 m. Another source page reports a lower South draft: confirmation required.'},
+ 'Pecem':{terminal:'Pier 3 / TMUT',maxDraft:15.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'TMUT berths 7-9 draft 15.3 m. Pier 1 internal 14 m, external 15 m. Confirm the berth and the fertilizer scheme.'}
 };
 const normalizePortName=name=>String(name??'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function portProfileOf(name){const key=normalizePortName(name);const match=Object.keys(PORT_PROFILES).find(n=>normalizePortName(n)===key||(n==='San Francisco do Sul'&&key==='sao francisco do sul'));return match?PORT_PROFILES[match]:null;}
-function portRecord(id,name){const profile=portProfileOf(name);return {id,name,terminal:profile?.terminal??'',restrictions:profile?.restrictions??'',da:null};}
+function portRecord(id,name){const profile=portProfileOf(name);const record={id,name,terminal:profile?.terminal??'',notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=profile?.[k]??null;return record;}
+// Screening only: a limit the vessel exceeds rules the port out, the reverse never approves a call.
+function portLimitBreaches(record,vessel){
+ if(!record||!vessel)return [];
+ const pairs=[['maxDraft','draft'],['maxLoa','loa'],['maxBeam','beam'],['maxDwt','dwt']];
+ return pairs.filter(([limit,param])=>ok(record[limit],true)&&ok(vessel[param],true)&&vessel[param]>record[limit]).map(([limit])=>limit);
+}
 function mergePortProfiles(s){
+ // Shape always converges, so a record from any older save has the current fields.
+ for(const p of s.portRecords||[]){
+  // Free-text restrictions predate the numeric columns; keep whatever the user wrote there.
+  if('restrictions' in p){if(!String(p.notes??'').trim())p.notes=p.restrictions;delete p.restrictions;}
+  p.notes??='';
+ }
+ // Reference content is seeded once, so a field the user clears stays cleared.
  if(s.portProfileRevision===PORT_PROFILE_REVISION)return;
  for(const p of s.portRecords||[]){
   const profile=portProfileOf(p.name);
   if(!profile)continue;
   if(!String(p.terminal??'').trim())p.terminal=profile.terminal;
-  if(!String(p.restrictions??'').trim())p.restrictions=profile.restrictions;
+  if(!String(p.notes).trim())p.notes=profile.notes;
+  for(const k of PORT_LIMIT_FIELDS)if(p[k]===undefined)p[k]=profile[k];
  }
  s.portProfileRevision=PORT_PROFILE_REVISION;
 }
@@ -250,7 +267,7 @@ function ensureBusinessData(s){
   if(!sale){sale={id:'SALE-'+l.id,legacyLotId:l.id,dealDate:'',cargoId:l.cargoId||'',cargoName:l.name,quantity:l.quantity,loadPort:l.loadPort||'Ust-Luga',dischargePort:l.port,shipmentFrom:'',shipmentTo:'',fob:null};s.sales.push(sale);}
   l.saleId=sale.id;
  }
- if(migratePorts)for(const name of [...new Set(s.ports.map(p=>p.name))])s.portRecords.push({id:'P'+(s.portRecords.length+1),name,terminal:'',restrictions:'',da:s.ports.find(p=>p.name===name)?.da??null});
+ if(migratePorts)for(const name of [...new Set(s.ports.map(p=>p.name))])s.portRecords.push({...portRecord('P'+(s.portRecords.length+1),name),da:s.ports.find(p=>p.name===name)?.da??null});
 }
 function syncSalesToLots(s){ensureBusinessData(s);for(const l of s.lots){const sale=s.sales.find(x=>x.id===l.saleId);if(sale){l.quantity=sale.quantity;l.loadPort=sale.loadPort;l.port=sale.dischargePort;}}syncRoute(s);}
 function validateSale(s,data,{legacy=false}={}){
@@ -292,6 +309,7 @@ function updatePortRecord(s,index,key,value){
   if(value!==record.name&&(s.sales.some(x=>x.loadPort===record.name||x.dischargePort===record.name)||s.lots.some(x=>x.loadPort===record.name||x.port===record.name)))throw Error('This port is used by a sale. Reassign the sale before renaming the port.');
  }
  if(key==='da'&&value!==null&&!ok(value))throw Error('DA must be non-negative');
+ if(PORT_LIMIT_FIELDS.includes(key)&&value!==null&&!ok(value,true))throw Error('Port limits must be positive or empty');
  record[key]=value;return record;
 }
 function addSaleToPlanner(s,saleId){ensureCatalogs(s);const sale=s.sales.find(x=>x.id===saleId);if(!sale)throw Error('Sale not found');validateSale(s,sale,{legacy:!!sale.legacyLotId});if(s.lots.some(l=>l.saleId===saleId))throw Error('Sale is already added to PLANNER');const cargo=s.cargoTypes.find(c=>c.id===sale.cargoId);if(!cargo||!isBulkCargo(cargo))throw Error('This cargo is unavailable for bulk planning');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;const l={id:'S'+n,saleId:sale.id,name:cargo.name,selected:true,quantity:sale.quantity,cargoId:cargo.id,sf:cargo.sf,sfBasis:cargo.sf===cargo.sfDefault?cargo.sfBasis:'catalog',propertySource:cargo.propertyUrl||'',hazardClass:cargo.hazardClass||'',loadPort:sale.loadPort,port:sale.dischargePort,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:cargo.group||'',un:cargo.un||''};s.lots.push(l);syncRoute(s);return l;}
@@ -315,5 +333,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);

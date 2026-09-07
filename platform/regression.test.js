@@ -19,12 +19,13 @@ test('MARKET archive has dated reports, complete regional content and escaped re
  assert.ok(market.render('invalid','invalid').includes('All regions'));
 });
 test('Requested reference catalogs migrate once without overwriting saved edits or the voyage',()=>{
- const s=M.demo();M.ensureCatalogs(s);delete s.catalogAdditions;
+ const s=M.demo();M.ensureCatalogs(s);delete s.catalogAdditions;delete s.portProfileRevision;
  s.portRecords=[{id:'CUSTOM',name:'Murmansk',terminal:'Keep',da:123,restrictions:'User data'}];
  s.vesselProfiles=[{...s.vesselProfiles[0],name:'Custom 33K'}, {...s.vesselProfiles[1],id:'USER',dwt:39000}];
  const snapshot=JSON.stringify(s.vesselSnapshot),lots=JSON.stringify(s.lots);
  M.ensureCatalogs(s);
  assert.equal(s.portRecords.length,10);assert.equal(s.portRecords[0].da,123);
+ assert.equal(s.portRecords[0].terminal,'Keep');assert.equal(s.portRecords[0].notes,'User data');assert.equal(s.portRecords[0].maxDraft,12.5);
  assert.equal(s.vesselProfiles.length,3);assert.equal(s.vesselProfiles[1].dwt,39000);
  assert.equal(JSON.stringify(s.vesselSnapshot),snapshot);assert.equal(JSON.stringify(s.lots),lots);
  M.removePortRecord(s,s.portRecords.findIndex(p=>p.name==='Itaqui'));
