@@ -68,6 +68,10 @@ test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const 
 test('Cargo volume sits under Holds and is the tonnage times SF of the selected sales',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(blank.includes('Cargo volume: — · needs a selected sale with a quantity and an SF.'),'an empty voyage says why it cannot be computed');
+ assert.ok(blank.includes('Grain capacity: 7,781.4 + 9,489.1 + 9,484.5 + 9,487.6 + 9,274.2 = <strong>45,516.80 m³</strong>'),'the hold volumes are summed even before any sale exists');
+ assert.ok(blank.indexOf('grain-capacity')<blank.indexOf('cargo-volume'),'grain capacity comes first');
+ const missing=M.demo();missing.holds[2].volume=null;
+ assert.ok(boot(JSON.stringify(missing)).elements.get('app').innerHTML.includes('Grain capacity: — · enter every hold volume.'),'one empty hold makes the total unknown, not partial');
  const s=M.demo();
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = <strong>27,000.00 m³</strong></small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
