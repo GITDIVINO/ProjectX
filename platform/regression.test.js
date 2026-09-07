@@ -31,12 +31,12 @@ test('Requested reference catalogs migrate once without overwriting saved edits 
  const saved=JSON.parse(JSON.stringify(s));M.ensureCatalogs(saved);
  assert.ok(!saved.portRecords.some(p=>p.name==='Itaqui'));assert.equal(saved.vesselProfiles.length,3);
 });
-test('New defaults contain requested ports and incomplete reference vessels cannot silently replace the voyage',()=>{
+test('New defaults contain requested ports and three complete editable vessel profiles',()=>{
  const s=M.initial();assert.equal(s.portRecords.length,13);assert.equal(s.vesselProfiles.length,3);
  for(const name of ['St. Petersburg','Murmansk','Itaqui','Santarem','Vitoria','Rio Grande','San Francisco do Sul','Suape','Aratu','Pecem'])assert.equal(s.portRecords.filter(p=>p.name===name).length,1);
  for(const id of ['tbn-2','tbn-3']){
-  const v=s.vesselProfiles.find(v=>v.id===id);assert.equal(v.holdData.length,5);assert.equal(v.aux,null);assert.equal(v.boiler,null);
-  const before=JSON.stringify(s);assert.throws(()=>M.applyVessel(s,id));assert.equal(JSON.stringify(s),before);
+  const v=s.vesselProfiles.find(v=>v.id===id);assert.equal(v.holdData.length,5);assert.equal(v.aux,.1);assert.equal(v.boiler,null);
+  assert.doesNotThrow(()=>M.applyVessel(s,id));assert.equal(s.vesselId,id);
  }
  const sale=M.addSale(s,{...saleData(s),loadPort:'St. Petersburg',dischargePort:'Itaqui'});M.addSaleToPlanner(s,sale.id);
  assert.equal(s.lots[0].port,'Itaqui');
