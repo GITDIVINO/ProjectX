@@ -62,7 +62,8 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
  assert.ok(!/Bale/.test(html),'bale capacity is not shown in PLANNER');
- assert.match(html,/deductions from DWT<\/summary><div class="grid">/,'no separate particulars paragraph is left inside the details');});
+ assert.match(html,/<h3>Vessel parameters and deductions from DWT<\/h3><div class="grid">/,'the block is a permanent heading, not a disclosure');
+ assert.ok(!html.includes('id="vessel"'),'nothing left to collapse');});
 
 test('Cargo volume sits under Holds and is the tonnage times SF of the selected sales',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
