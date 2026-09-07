@@ -4796,8 +4796,7 @@ function cargoVolumeLine(){
  const v=M.cargoVolume(state);
  if(v.volume===null)return '<small class="cargo-volume muted">Cargo volume: — · needs a selected sale with a quantity and an SF.</small>';
  const terms=v.terms.map(t=>`${num(t.quantity)} × ${num(t.sf)}`).join(' + ');
- const room=v.holdTotal===null?'hold volumes incomplete':`${fmt(v.free,2)} m³ free of ${num(v.holdTotal)} m³`;
- return `<small class="cargo-volume">Cargo volume: ${terms} = <strong>${fmt(v.volume,2)} m³</strong> · weighted SF ${num(Math.round(v.weightedSf*1e6)/1e6)} m³/t · ${esc(room)}</small>`;
+ return `<small class="cargo-volume">Cargo volume: ${terms} = <strong>${fmt(v.volume,2)} m³</strong></small>`;
 }
 const num=x=>Number.isFinite(x)?x.toLocaleString('en-GB',{maximumFractionDigits:2}):'—';
 const intakeKey=()=>JSON.stringify([M.vesselOf(state)?.dwt,...M.DEDUCTIONS.map(k=>state.deductions[k])]);

@@ -69,12 +69,13 @@ test('Cargo volume sits under Holds and is the tonnage times SF of the selected 
  assert.ok(blank.includes('Cargo volume: — · needs a selected sale with a quantity and an SF.'),'an empty voyage says why it cannot be computed');
  const s=M.demo();
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = <strong>27,000.00 m³</strong> · weighted SF 0.9 m³/t · 19,730.00 m³ free of 46,730 m³'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
+ assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = <strong>27,000.00 m³</strong></small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
+ for(const gone of ['weighted SF','free of','hold volumes incomplete'])assert.ok(!html.includes(gone),gone+' should not be in the line');
  assert.ok(html.indexOf('holds-grid')<html.indexOf('intake-line'),'intake follows the hold volumes');
  assert.ok(html.indexOf('intake-line')<html.indexOf('cargo-volume'),'cargo volume closes the block');
  const mixed=M.demo();mixed.lots[1].sf=1.2;
  const weighted=boot(JSON.stringify(mixed)).elements.get('app').innerHTML;
- assert.ok(weighted.includes('= <strong>28,800.00 m³</strong> · weighted SF 0.96 m³/t'),'a different SF per parcel is weighted by tonnage, not averaged');
+ assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = <strong>28,800.00 m³</strong>'),'each parcel keeps its own SF in the sum');
  const unselected=M.demo();unselected.lots.forEach(l=>l.selected=false);
  assert.ok(boot(JSON.stringify(unselected)).elements.get('app').innerHTML.includes('Cargo volume: —'),'nothing selected, nothing claimed');});
 
