@@ -25,6 +25,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   const originalState=await page.evaluate(()=>ProjectXApp.getState());
   await page.evaluate(()=>{const s=ProjectXModel.initial();const sale=ProjectXModel.addSale(s,{cargoId:'cargo-2',quantity:30000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});const l=ProjectXModel.addSaleToPlanner(s,sale.id);l.onlyHold=4;s.cargoTypes.find(c=>c.id==='cargo-2').onlyHold=4;delete s.sulphurHoldScopeMigrated;localStorage.setItem('projectx-current-v2',JSON.stringify(s));});
   await page.reload();await page.locator('#tab-planner').click();
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().lots[0].name),'Crushed lump sulphur');
   assert.equal(await page.locator('[data-lot][data-hold]:not(:disabled)').count(),5);
   await page.locator('[data-action="allocate"]').click();await page.reload();
   const sulphurState=await page.evaluate(()=>ProjectXApp.getState());assert.equal(sulphurState.lots[0].sf,.95);assert.equal(sulphurState.allocations.length,5);assert.ok(Math.abs(sulphurState.allocations.reduce((n,a)=>n+a.quantity,0)-30000)<1e-8);
@@ -55,6 +56,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.ok(marketTabBox.x>=0&&marketTabBox.x+marketTabBox.width<=390);
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-vessel').click();
+  assert.equal(await page.locator('[data-path$=".direction"]').count(),0);
   assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 2 · 38K'}).count(),1);
   assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 3 · 57K'}).count(),1);
   await page.locator('[data-action="apply-vessel"][data-id="tbn-2"]').click();
