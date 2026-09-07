@@ -2851,11 +2851,10 @@ const sulphur=[
     "angleOfRepose": "Not applicable",
     "bcsn": "SULPHUR UN 1350",
     "propertyStatus": "Schedule reference",
-    "propertyNote": "Hold 4 restriction is the user's case requirement, not a general IMSBC requirement.",
+    "propertyNote": "Hold restrictions belong to the individual voyage plan.",
     "propertyUrl": "https://www.mlit.go.jp/maritime/content/001852905.pdf#page=433",
     "source": "IMSBC 07-23 · SULPHUR UN 1350",
-    "propertyRevision": "en-properties-2",
-    "onlyHold": 4
+    "propertyRevision": "en-properties-3"
   },
   {
     "name": "BULK SULPHUR APP C",
@@ -2870,6 +2869,13 @@ const sulphur=[
 ];
 
 function merge(s){
+ if(!s.sulphurHoldScopeMigrated){
+  const matches=c=>c.id==='cargo-2'||c.name==='CRUSHED LUMP SULPHUR';
+  const ids=new Set((s.cargoTypes||[]).filter(matches).map(c=>c.id).filter(Boolean));
+  for(const c of s.cargoTypes||[])if(matches(c)&&c.onlyHold===4)delete c.onlyHold;
+  for(const l of s.lots||[])if((ids.has(l.cargoId)||l.name==='CRUSHED LUMP SULPHUR')&&l.onlyHold===4)delete l.onlyHold;
+  s.sulphurHoldScopeMigrated=true;
+ }
  s.cargoTypes??=[];const imported=new Set(s.importedCargoSeeds||[]);
  for(const entry of entries){
   let c=s.cargoTypes.find(c=>c.id===entry.id)||s.cargoTypes.find(c=>[entry.name,entry.legacyName].includes(c.name));

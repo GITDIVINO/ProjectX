@@ -21,6 +21,14 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   }
   async function tabs(){for(const tab of ['planner','sale','cargo','ports','market','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
   await tabs();
+  // Reproduce the reported legacy 30,000 MT crushed sulphur restriction.
+  const originalState=await page.evaluate(()=>ProjectXApp.getState());
+  await page.evaluate(()=>{const s=ProjectXModel.initial();const sale=ProjectXModel.addSale(s,{cargoId:'cargo-2',quantity:30000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});const l=ProjectXModel.addSaleToPlanner(s,sale.id);l.onlyHold=4;s.cargoTypes.find(c=>c.id==='cargo-2').onlyHold=4;delete s.sulphurHoldScopeMigrated;localStorage.setItem('projectx-current-v2',JSON.stringify(s));});
+  await page.reload();await page.locator('#tab-planner').click();
+  assert.equal(await page.locator('[data-lot][data-hold]:not(:disabled)').count(),5);
+  await page.locator('[data-action="allocate"]').click();await page.reload();
+  const sulphurState=await page.evaluate(()=>ProjectXApp.getState());assert.equal(sulphurState.lots[0].sf,.95);assert.equal(sulphurState.allocations.length,5);assert.ok(Math.abs(sulphurState.allocations.reduce((n,a)=>n+a.quantity,0)-30000)<1e-8);
+  await page.evaluate(s=>localStorage.setItem('projectx-current-v2',JSON.stringify(s)),originalState);await page.reload();
   await page.locator('#tab-market').click();
   const beforeMarket=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
   assert.equal(await page.locator('#market-report option').count(),8);

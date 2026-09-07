@@ -41,7 +41,7 @@ test('Specific manufacturer SDS distinguishes AN from AN-based mixtures',()=>{
 });
 test('Loose density conversion and sulphur scope retain their separate meanings',()=>{
  const c=C.entries.find(c=>c.name==='NPKS 10:26:26:2');assert.equal(c.sf,1.25);assert.equal(c.group,'C');assert.equal(c.bulkDensityRange[0],800);
- const s=M.initial();assert.equal(s.cargoTypes[1].sf,.95);assert.equal(s.cargoTypes[1].onlyHold,4);assert.equal(s.cargoTypes[0].sf,null);assert.equal(s.cargoTypes[0].group,'');assert.deepEqual(s.lots,[]);
+ const s=M.initial();assert.equal(s.cargoTypes[1].sf,.95);assert.equal(s.cargoTypes[1].onlyHold,undefined);assert.equal(s.cargoTypes[0].sf,null);assert.equal(s.cargoTypes[0].group,'');assert.deepEqual(s.lots,[]);
 });
 
 test('KCKK SDS maps SAN and NS30:7 to UN2067 without treating relative density as bulk',()=>{const s=M.initial();for(const id of ['rf-san','rf-sulphonitrate']){const c=s.cargoTypes.find(c=>c.id===id);assert.equal(c.un,'2067');assert.equal(c.group,'B');assert.equal(c.hazardClass,'5.1');}assert.equal(s.cargoTypes.find(c=>c.id==='rf-sulphonitrate').sf,1000/1030);assert.equal(s.cargoTypes.find(c=>c.id==='rf-can').sf,null);assert.equal(s.cargoTypes.find(c=>c.id==='rf-can').group,'');assert.equal(s.cargoTypes.find(c=>c.id==='rf-cns').group,'C');});
