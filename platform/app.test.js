@@ -26,7 +26,7 @@ test('MARKET restores as a read-only archive and does not change the saved voyag
  assert.equal(JSON.stringify(app.getState()),before);
  assert.equal(elements.get('planner-actions').hidden,true);
 });
-function boot(saved,savedTab=null){const elements=new Map(),tabWrites=[];const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',addEventListener(){},setAttribute(name,value){this[name]=value;}});return elements.get(id);},querySelectorAll:()=>[]};const context={window:{ProjectXModel:M,ProjectXMarket:require('./market')},document,localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>savedTab,setItem:(key,value)=>tabWrites.push([key,value])},console,Blob,URL,setTimeout};vm.runInNewContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);return {app:context.window.ProjectXApp,elements,tabWrites};}
+function boot(saved,savedTab=null){const elements=new Map(),tabWrites=[];const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',addEventListener(){},setAttribute(name,value){this[name]=value;}});return elements.get(id);},querySelectorAll:()=>[]};const context={window:{ProjectXModel:M,ProjectXMarket:require('./market'),ProjectXGuide:require('./guide')},document,localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>savedTab,setItem:(key,value)=>tabWrites.push([key,value])},console,Blob,URL,setTimeout};vm.runInNewContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);return {app:context.window.ProjectXApp,elements,tabWrites};}
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{
  const source=fs.readFileSync(__dirname+'/app.js','utf8');
@@ -71,6 +71,21 @@ test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=b
  assert.ok(!html.includes('Grain, m³'),'the one-row-per-hold table is gone');
  assert.match(html,/data-path="holds\.4\.volume"/,'each hold volume stays editable');
  assert.ok(!html.includes('massLimit'),'no mass limit input anywhere in PLANNER');});
+
+test('GUIDE explains the order of work and never touches the voyage',()=>{
+ const saved=M.demo();const {app,elements}=boot(JSON.stringify(saved),'guide');
+ const before=JSON.stringify(app.getState());
+ const html=elements.get('app').innerHTML;
+ assert.match(html,/<h2>GUIDE<\/h2><p class="section-intro">How a voyage is put together, tab by tab\.<\/p>/);
+ assert.ok(html.includes('<svg viewBox="0 0 900 330"'),'the flow diagram is drawn inline');
+ assert.equal((html.match(/class="guide-box[ "]/g)||[]).length,5,'four registers and the planner');
+ for(const tab of ['CARGO','PORT','VESSEL','SALE','PLANNER'])assert.ok(html.includes('>'+tab+'<'),tab+' is missing from the diagram or the steps');
+ assert.equal((html.match(/<ul class="guide-notes">(.*?)<\/ul>/)?.[1].match(/<li>/g)||[]).length,4,'the closing notes');
+ assert.equal((html.match(/guide-step-head/g)||[]).length,10,'five tabs plus five planner sections');
+ assert.ok(html.includes('stored in this browser only'),'the storage limit is stated');
+ elements.get('tab-planner').onclick();elements.get('tab-guide').onclick();
+ assert.equal(JSON.stringify(app.getState()),before,'reading the guide changes nothing');
+ assert.equal(elements.get('planner-actions').hidden,true,'no calculation controls over the guide');});
 
 test('VESSEL heads its register like the other tabs',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();
  assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>VESSEL TYPES<\/h2><p class="section-intro">Standard vessel types for cargo carriage\.<\/p><\/div>/);

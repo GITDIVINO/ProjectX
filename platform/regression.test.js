@@ -50,15 +50,15 @@ test('The shipped HTML preserves script bytes and every embedded script parses',
  cp.execFileSync(process.execPath,[path.join(__dirname,'build.cjs')]);
  const html=fs.readFileSync(path.join(__dirname,'ProjectX.html'),'utf8');
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
- assert.equal(scripts.length,5);
- ['arithmetic.js','cargo-catalog.js','model.js','market.js','app.js'].forEach((name,i)=>{
+ assert.equal(scripts.length,6);
+ ['arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js','app.js'].forEach((name,i)=>{
   assert.equal(scripts[i],fs.readFileSync(path.join(__dirname,name),'utf8').replace(/<\/script/gi,'<\\/script'));
   assert.doesNotThrow(()=>new vm.Script(scripts[i]));
  });
  assert.ok(!html.includes('<script src='));
 });
 test('UI templates and model messages are English without a runtime translator',()=>{
- for(const file of ['app.js','model.js','market.js','arithmetic.js','index.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,file),'utf8'),/[А-Яа-яЁё]/,file);
+ for(const file of ['app.js','model.js','market.js','guide.js','arithmetic.js','index.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,file),'utf8'),/[А-Яа-яЁё]/,file);
  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
  assert.doesNotMatch(app,/translateHtml|translateDom|MutationObserver/);
 });
