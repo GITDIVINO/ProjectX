@@ -43,11 +43,11 @@ test('SALE and PORTS tabs render their business registers',()=>{const {elements}
 test('Preliminary intake appears only after Calculate intake and never outlives its inputs',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  for(const gone of ['Lubricants, t','Slops, t','deductions.lubes','deductions.slops'])assert.ok(!blank.includes(gone),gone+' is still in PLANNER');
- for(const kept of ['Fuel, t','Fresh water, t','Ballast, t','Constant, t'])assert.ok(blank.includes(kept),kept);
+ for(const kept of ['Fuel, t','Fresh water, t','Ballast, t','Constant, t','Loss due to draft, t'])assert.ok(blank.includes(kept),kept);
  assert.match(blank,/data-action="calc-intake" disabled/,'no deductions entered yet, so the button is disabled');
  const s=M.demo();
  assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Preliminary intake: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
- s.intakeShownFor=JSON.stringify([37667,950,200,300,525]);
+ s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(shown.includes('Preliminary intake: <strong>35,692.00 t</strong>'),'the calculated figure is shown');
  assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
@@ -57,7 +57,10 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
  assert.ok(stale.includes('calc-intake'),'and brings the button back');
  assert.ok(!blank.includes('does not verify draft'),'the caveat line is replaced by the calculation');
  assert.ok(!blank.includes('intake-formula'),'no calculation before the figure is asked for');
- assert.ok(shown.includes('DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 = 35,692.00 t'),'the calculation is written out with the entered values');});
+ assert.ok(shown.includes('DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = 35,692.00 t'),'the calculation is written out with the entered values');
+ const restricted=M.demo();restricted.deductions.draftLoss=1200;restricted.intakeShownFor=JSON.stringify([37667,950,200,300,525,1200]);
+ const less=boot(JSON.stringify(restricted)).elements.get('app').innerHTML;
+ assert.ok(less.includes('Preliminary intake: <strong>34,492.00 t</strong>'),'a draft restriction reduces the intake by its tonnage');});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
