@@ -32,8 +32,9 @@ test('English/property migration updates seed names once and retains shipment SF
  const s=M.initial(),c=s.cargoTypes.find(c=>c.id==='rf-urea-granular');c.name=c.legacyName;delete c.propertyRevision;c.sf=.99;c.group='B';c.source='My declaration';s.lots.push({id:'S3',cargoId:c.id,name:c.name,sf:1.01});
  M.ensureCatalogs(s);assert.equal(c.name,'Granular urea · Urea N 46.2');assert.equal(c.sf,.99);assert.equal(c.group,'B');assert.equal(c.source,'My declaration');assert.equal(s.lots.at(-1).sf,1.01);assert.equal(s.lots.at(-1).name,c.name);const before=JSON.stringify(s);M.ensureCatalogs(s);assert.equal(JSON.stringify(s),before);
 });
-test('Reference SF has provenance and is explicitly flagged in stowage',()=>{
- const s=M.initial(),c=s.cargoTypes.find(c=>c.id==='rf-urea-granular');const l=M.addLot(s,{name:c.name,quantity:100,sf:c.sf,port:'Santos'});assert.equal(l.sfBasis,'reference-upper-bound');assert.ok(l.propertySource);assert.ok(M.stowage(s).warnings.some(x=>x.includes(l.id+': SF')));
+test('Reference SF keeps its provenance on the parcel without a stowage notice',()=>{
+ const s=M.initial(),c=s.cargoTypes.find(c=>c.id==='rf-urea-granular');const l=M.addLot(s,{name:c.name,quantity:100,sf:c.sf,port:'Santos'});assert.equal(l.sfBasis,'reference-upper-bound');assert.ok(l.propertySource);
+ assert.ok(!M.stowage(s).warnings.some(x=>x.includes(l.id+': SF')),'the per-parcel SF notice was removed from PLANNER');
 });
 test('Specific manufacturer SDS distinguishes AN from AN-based mixtures',()=>{
  const c=C.entries.find(c=>c.id==='rf-an');assert.equal(c.un,'1942');assert.equal(c.group,'B');assert.equal(c.hazardClass,'5.1');assert.equal(c.sf,1);assert.ok(c.propertyNote.includes('Uralchem Azot'));

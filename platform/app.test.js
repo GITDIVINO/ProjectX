@@ -128,15 +128,16 @@ test('ProjectX footer is shared across tabs; calculation controls remain in PLAN
 test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
  const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
- for(const id of ['stowage','legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
+ for(const id of ['legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
  assert.ok(!html.includes('id="calc-vessel"'),'section 2 has no How calculated block');
- for(const text of ['Distance / (speed × 24)','Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','7200 NM','24000','automatic capacity'])assert.ok(html.includes(text),text);
+ for(const text of ['Distance / (speed × 24)','Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','7200 NM','24000'])assert.ok(html.includes(text),text);
  assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
 });
 test('Calculation evidence escapes labels and updates when selected stage changes',()=>{
  const s=M.demo();s.costs=[{name:'<img src=x onerror=alert(1)>',amount:0,days:0,burn:0,fuel:'main'}];s.stage='Paranaguá';
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
  assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));
- const start=html.indexOf('id="calc-stowage"'),end=html.indexOf('id="technical"');const trace=html.slice(start,end);
- assert.ok(trace.includes('stage mass'));assert.ok(trace.includes('0 t'));assert.ok(trace.includes('unassigned in loading plan'));
+ for(const gone of ['id="calc-stowage"','id="technical"','Click a hold to edit','Cargo plan validation limits','Automatic suggestions above'])assert.ok(!html.includes(gone),gone+' should be gone from section 3');
+ const legs=html.slice(html.indexOf('id="calc-legs"'),html.indexOf('id="calc-ports"'));
+ assert.ok(legs.includes('Formula and values'),'the remaining disclosures still show their substitutions');
 });
