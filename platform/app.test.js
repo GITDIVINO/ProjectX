@@ -72,6 +72,11 @@ test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=b
  assert.match(html,/data-path="holds\.4\.volume"/,'each hold volume stays editable');
  assert.ok(!html.includes('massLimit'),'no mass limit input anywhere in PLANNER');});
 
+test('VESSEL heads its register like the other tabs',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();
+ assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>VESSEL TYPES<\/h2><p class="section-intro">Standard vessel types for cargo carriage\.<\/p><\/div>/);
+ elements.get('tab-sale').onclick();
+ assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>SALE<\/h2><p class="section-intro">/,'the same shape SALE uses');});
+
 test('VESSEL lays hold volumes out as fields, not as a table',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();const html=elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));
  assert.ok(html.includes('class="grid holds-grid"'),'holds use the field grid used by the parameters above');
