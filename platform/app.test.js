@@ -53,7 +53,8 @@ test('ProjectX footer is shared across tabs; calculation controls remain in PLAN
 test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
  const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
- for(const id of ['vessel','stowage','legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
+ for(const id of ['stowage','legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
+ assert.ok(!html.includes('id="calc-vessel"'),'section 2 has no How calculated block');
  for(const text of ['Distance / (speed × 24)','Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','7200 NM','24000','automatic capacity'])assert.ok(html.includes(text),text);
  assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
 });
