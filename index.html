@@ -48,6 +48,10 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 @media print { .calculation-details { break-inside: auto; } .calculation-details table { font-size: 10px; } }
 
 @media print { .calculation-details th, .calculation-details td { min-width: 0; white-space: normal; overflow-wrap: anywhere; } }
+
+/* Scroll containers keep scrolling by wheel, trackpad and keyboard, but show no scrollbar. */
+.table-wrap,.ship-wrap,.errors,.workspace-tabs,.catalog-toolbar{scrollbar-width:none;-ms-overflow-style:none}
+.table-wrap::-webkit-scrollbar,.ship-wrap::-webkit-scrollbar,.errors::-webkit-scrollbar,.workspace-tabs::-webkit-scrollbar,.catalog-toolbar::-webkit-scrollbar{width:0;height:0;display:none}
 </style>
 </head>
 <body>
