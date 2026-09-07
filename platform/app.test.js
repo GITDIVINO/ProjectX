@@ -42,7 +42,7 @@ test('SALE and PORTS tabs render their business registers',()=>{const {elements}
 
 test('PORT marks a limit the applied vessel exceeds',()=>{const s=M.initial();M.applyVessel(s,s.vesselProfiles.find(v=>v.name==='TBN 57K').id);const {elements}=boot(JSON.stringify(s));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('limit-exceeded'),'12.8 m draft exceeds the published Santos and Paranagua limits');assert.ok(ports.includes('Vessel exceeds this limit'));});
 test('VESSEL lays hold volumes out as fields, not as a table',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();const html=elements.get('app').innerHTML;
- assert.ok(html.includes('Holds · 5'));
+ assert.ok(html.includes('<h3>Holds</h3>'));
  assert.ok(html.includes('class="grid holds-grid"'),'holds use the field grid used by the parameters above');
  for(const n of [1,2,3,4,5])assert.ok(html.includes('Hold №'+n+', m³'),'missing hold '+n);
  assert.ok(!html.includes('Grain volume, m³'),'the one-row-per-hold table is gone');
