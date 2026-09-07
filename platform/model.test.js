@@ -107,4 +107,18 @@ test('Removed lubricants and slops fold into the constant so a saved intake does
  assert.equal(M.stowage(unknown).intake,null);
  const fresh=M.initial();assert.deepEqual(Object.keys(fresh.deductions),['fuel','water','ballast','constant']);});
 
+test('Cargo volume is quantity times SF, weighted by tonnage, and never guesses a missing input',()=>{
+ const s=M.demo();let v=M.cargoVolume(s);
+ close(v.volume,24000*0.9+6000*0.9);close(v.quantity,30000);close(v.weightedSf,0.9);
+ close(v.holdTotal,s.holds.reduce((n,h)=>n+h.volume,0));close(v.free,v.holdTotal-v.volume);
+ s.lots[1].sf=1.2;v=M.cargoVolume(s);
+ close(v.volume,24000*0.9+6000*1.2);close(v.weightedSf,(24000*0.9+6000*1.2)/30000,1e-12);
+ assert.notEqual(v.weightedSf,(0.9+1.2)/2,'weighted by tonnage, not a plain average');
+ const noSf=M.demo();noSf.lots[0].sf=null;assert.equal(M.cargoVolume(noSf).volume,null);
+ const noQty=M.demo();noQty.lots[0].quantity=null;assert.equal(M.cargoVolume(noQty).volume,null);
+ const none=M.demo();none.lots.forEach(l=>l.selected=false);assert.equal(M.cargoVolume(none).volume,null);
+ const noHolds=M.demo();noHolds.holds[0].volume=null;const partial=M.cargoVolume(noHolds);
+ assert.ok(partial.volume>0,'cargo volume still stands without hold volumes');
+ assert.equal(partial.holdTotal,null);assert.equal(partial.free,null,'free room is unknown, not zero');});
+
 test('Port profile lookup ignores accents and the Sao spelling',()=>{assert.equal(M.portProfileOf('Paranagua'),M.PORT_PROFILES['Paranaguá']);assert.equal(M.portProfileOf('Sao Francisco do Sul'),M.PORT_PROFILES['San Francisco do Sul']);assert.equal(M.portProfileOf('Unknown Port'),null);});

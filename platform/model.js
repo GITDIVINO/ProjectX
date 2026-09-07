@@ -145,6 +145,16 @@ function allocate(s,trace=[]){
   if(ok(q,true)){out.push({lot:l.id,hold:h.id,quantity:q});left-=q;}if(left<1e-9)break;
  }}return out;
 }
+// Volume the selected cargo occupies: sum of quantity x SF, with the overall SF weighted by tonnage.
+function cargoVolume(s){
+ const lots=active(s);
+ const holdTotal=s.holds.length&&s.holds.every(h=>ok(h.volume,true))?sum(s.holds.map(h=>h.volume)):null;
+ const usable=lots.length>0&&lots.every(l=>ok(l.quantity,true)&&ok(l.sf,true));
+ if(!usable)return {volume:null,weightedSf:null,quantity:null,holdTotal,free:null,terms:[]};
+ const quantity=sum(lots.map(l=>l.quantity)),volume=sum(lots.map(l=>l.quantity*l.sf));
+ return {volume,weightedSf:volume/quantity,quantity,holdTotal,free:holdTotal===null?null:holdTotal-volume,
+  terms:lots.map(l=>({id:l.id,quantity:l.quantity,sf:l.sf}))};
+}
 function stowage(s){const lots=active(s),errors=[],warnings=[];const intake=DEDUCTIONS.every(k=>ok(s.deductions[k]))&&ok(vesselOf(s)?.dwt,true)?(vesselOf(s)?.dwt??NaN)-sum(DEDUCTIONS.map(k=>s.deductions[k])):null;const quantity=lots.every(l=>ok(l.quantity,true))?sum(lots.map(l=>l.quantity)):null;
 if(new Set(s.holds.map(h=>h.id)).size!==s.holds.length)errors.push('Duplicate hold ID');if(intake===null)warnings.push('Preliminary intake is unknown: complete DWT and every deduction');
 for(const l of lots){if(!ok(l.sf,true))errors.push(l.id+': enter a positive shipment SF');if(['reference-upper-bound','SDS-loose-density'].includes(l.sfBasis))warnings.push(l.id+': SF — reference estimate; confirm the shipment value');if(!isBulkCargo(s.cargoTypes?.find(c=>c.id===l.cargoId)))errors.push(l.name+': carriage mode is not supported by a bulk carrier');}
@@ -382,5 +392,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={DEDUCTIONS,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={DEDUCTIONS,cargoVolume,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);
