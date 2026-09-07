@@ -19,28 +19,28 @@ const VESSELS=[
  standardVessel('tbn-3','TBN 57K',{model:'DOLPHIN 57',source:'User-supplied average profile, 7 September 2026',dwt:56565.45,draft:12.8,tpc:58.8,loa:199.99,beam:32.26,grain:71634,gt:33033,nrt:19132,speed:12,burn:30,ballastSpeed:12,ballastBurn:28,working:5.5,idle:3.5,aux:0.1,auxWorking:0.1,auxIdle:0.1,holdData:[13009.86,15333.25,14553.08,15333.27,13404.64].map((volume,i)=>({id:i+1,volume,massLimit:null}))})
 ];
 const CATALOG_ADDITIONS='ports-vessels-2026-09-06';
-const PORT_PROFILE_REVISION='port-limits-2026-09-07';
+const PORT_PROFILE_REVISION='port-countries-2026-09-07';
 // Numeric limits are the most permissive value the source states for the port or terminal.
 // A vessel above one of them fits no berth; a vessel below it still needs the assigned berth confirmed.
 const PORT_LIMIT_FIELDS=['maxDraft','maxLoa','maxBeam','maxAirDraft','maxDwt'];
 const PORT_PROFILES={
- 'Murmansk':{terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Best berth 13: draft 12.5 m, beam 36 m, LOA 240 m. Berths 9/10: draft 10.5 m, beam 36 m, LOA 240 m. Berth 4: draft 11.0 m, beam 32.2 m, LOA 230 m. Berth 7: draft 10.0 m, beam 32 m, LOA 225 m. Berth 6: draft 7.0 m, beam 16 m, LOA 120 m. Air draft 14.5 m at all berths.'},
- 'St. Petersburg':{terminal:'Sea Port of Saint Petersburg, First and Second Cargo Areas',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Operator lists 31 dry cargo berths without published per-berth limits. Confirm the assigned berth and its current permissible draft.'},
- 'Ust-Luga':{terminal:'European Sulphur Terminal / EuroChem Ust-Luga Terminal',maxDraft:13.1,maxLoa:334,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'EuroChem berth 1: LOA 334 m, draft 13.1 m. Berth 2: LOA 295 m, draft 8.5 m. Status of berths 3-4 to be confirmed.'},
- 'Santos':{terminal:'STS20, Outeirinhos, berths 22/23',maxDraft:11.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 11.3 m in the source study, not a permitted draft: check the current operational draft in the port table. The 283 m face is berths 22 and 23 combined, so it is not a single-ship LOA limit.'},
- 'Paranaguá':{terminal:'TEFER, public fertilizer terminal',maxDraft:12.5,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'General published draft 12.5 m. A 2023 announcement gives 12.8 m at fertilizer berths 209/211; the lower figure is kept until confirmed.'},
- 'Itaqui':{terminal:'COPI / public berths 100-103',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'No per-berth limits in the public profile used. Confirm the exact berth and the current draft, LOA and beam with EMAP/COPI.'},
- 'Santarem':{terminal:'Solid Bulk Terminal, Pier 400 berth 401',maxDraft:16,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:60000,notes:'Depth 16 m is the quay depth, not a permitted draft, and the river level governs. Berth about 250 m, up to 60,000 DWT. Confirm fertilizer handling.'},
- 'Vitoria':{terminal:'Vports, Vila Velha terminal',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Berth assignment and current limits are absent from the public profile used. Confirm with Vports.'},
- 'Rio Grande':{terminal:'Yara Brasil Fertilizantes, North/South',maxDraft:12.19,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'South draft 12.19 m, North 10.0 m. The terminal limit prevails over the channel.'},
- 'San Francisco do Sul':{terminal:'Public berth 201 / Bulk Terminal',maxDraft:14,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Draft 14 m, max LOA 250 m. Confirm the current structural and operational limits.'},
- 'Suape':{terminal:'SUA Graneis, quay 5',maxDraft:15,maxLoa:300,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Max operational draft 15 m, max LOA 300 m; quay length 343-344 m. Confirm fertilizer handling.'},
- 'Aratu':{terminal:'TGS, Pier 1 North/South',maxDraft:12,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 12 m. Pier 1 South max LOA 250 m, North 200 m. Another source page reports a lower South draft: confirmation required.'},
- 'Pecem':{terminal:'Pier 3 / TMUT',maxDraft:15.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'TMUT berths 7-9 draft 15.3 m. Pier 1 internal 14 m, external 15 m. Confirm the berth and the fertilizer scheme.'}
+ 'Murmansk':{country:'Russia',terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Best berth 13: draft 12.5 m, beam 36 m, LOA 240 m. Berths 9/10: draft 10.5 m, beam 36 m, LOA 240 m. Berth 4: draft 11.0 m, beam 32.2 m, LOA 230 m. Berth 7: draft 10.0 m, beam 32 m, LOA 225 m. Berth 6: draft 7.0 m, beam 16 m, LOA 120 m. Air draft 14.5 m at all berths.'},
+ 'St. Petersburg':{country:'Russia',terminal:'Sea Port of Saint Petersburg, First and Second Cargo Areas',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Operator lists 31 dry cargo berths without published per-berth limits. Confirm the assigned berth and its current permissible draft.'},
+ 'Ust-Luga':{country:'Russia',terminal:'European Sulphur Terminal / EuroChem Ust-Luga Terminal',maxDraft:13.1,maxLoa:334,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'EuroChem berth 1: LOA 334 m, draft 13.1 m. Berth 2: LOA 295 m, draft 8.5 m. Status of berths 3-4 to be confirmed.'},
+ 'Santos':{country:'Brazil',terminal:'STS20, Outeirinhos, berths 22/23',maxDraft:11.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 11.3 m in the source study, not a permitted draft: check the current operational draft in the port table. The 283 m face is berths 22 and 23 combined, so it is not a single-ship LOA limit.'},
+ 'Paranaguá':{country:'Brazil',terminal:'TEFER, public fertilizer terminal',maxDraft:12.5,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'General published draft 12.5 m. A 2023 announcement gives 12.8 m at fertilizer berths 209/211; the lower figure is kept until confirmed.'},
+ 'Itaqui':{country:'Brazil',terminal:'COPI / public berths 100-103',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'No per-berth limits in the public profile used. Confirm the exact berth and the current draft, LOA and beam with EMAP/COPI.'},
+ 'Santarem':{country:'Brazil',terminal:'Solid Bulk Terminal, Pier 400 berth 401',maxDraft:16,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:60000,notes:'Depth 16 m is the quay depth, not a permitted draft, and the river level governs. Berth about 250 m, up to 60,000 DWT. Confirm fertilizer handling.'},
+ 'Vitoria':{country:'Brazil',terminal:'Vports, Vila Velha terminal',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Berth assignment and current limits are absent from the public profile used. Confirm with Vports.'},
+ 'Rio Grande':{country:'Brazil',terminal:'Yara Brasil Fertilizantes, North/South',maxDraft:12.19,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'South draft 12.19 m, North 10.0 m. The terminal limit prevails over the channel.'},
+ 'San Francisco do Sul':{country:'Brazil',terminal:'Public berth 201 / Bulk Terminal',maxDraft:14,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Draft 14 m, max LOA 250 m. Confirm the current structural and operational limits.'},
+ 'Suape':{country:'Brazil',terminal:'SUA Graneis, quay 5',maxDraft:15,maxLoa:300,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Max operational draft 15 m, max LOA 300 m; quay length 343-344 m. Confirm fertilizer handling.'},
+ 'Aratu':{country:'Brazil',terminal:'TGS, Pier 1 North/South',maxDraft:12,maxLoa:250,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 12 m. Pier 1 South max LOA 250 m, North 200 m. Another source page reports a lower South draft: confirmation required.'},
+ 'Pecem':{country:'Brazil',terminal:'Pier 3 / TMUT',maxDraft:15.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'TMUT berths 7-9 draft 15.3 m. Pier 1 internal 14 m, external 15 m. Confirm the berth and the fertilizer scheme.'}
 };
 const normalizePortName=name=>String(name??'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function portProfileOf(name){const key=normalizePortName(name);const match=Object.keys(PORT_PROFILES).find(n=>normalizePortName(n)===key||(n==='San Francisco do Sul'&&key==='sao francisco do sul'));return match?PORT_PROFILES[match]:null;}
-function portRecord(id,name){const profile=portProfileOf(name);const record={id,name,terminal:profile?.terminal??'',notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=profile?.[k]??null;return record;}
+function portRecord(id,name){const profile=portProfileOf(name);const record={id,name,country:profile?.country??'',terminal:profile?.terminal??'',notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=profile?.[k]??null;return record;}
 // Screening only: a limit the vessel exceeds rules the port out, the reverse never approves a call.
 function portLimitBreaches(record,vessel){
  if(!record||!vessel)return [];
@@ -52,13 +52,14 @@ function mergePortProfiles(s){
  for(const p of s.portRecords||[]){
   // Free-text restrictions predate the numeric columns; keep whatever the user wrote there.
   if('restrictions' in p){if(!String(p.notes??'').trim())p.notes=p.restrictions;delete p.restrictions;}
-  p.notes??='';
+  p.notes??='';p.country??='';
  }
  // Reference content is seeded once, so a field the user clears stays cleared.
  if(s.portProfileRevision===PORT_PROFILE_REVISION)return;
  for(const p of s.portRecords||[]){
   const profile=portProfileOf(p.name);
   if(!profile)continue;
+  if(!String(p.country).trim())p.country=profile.country;
   if(!String(p.terminal??'').trim())p.terminal=profile.terminal;
   if(!String(p.notes).trim())p.notes=profile.notes;
   for(const k of PORT_LIMIT_FIELDS)if(p[k]===undefined)p[k]=profile[k];
