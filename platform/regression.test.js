@@ -33,8 +33,9 @@ test('Requested reference catalogs migrate once without overwriting saved edits 
  assert.ok(!saved.portRecords.some(p=>p.name==='Itaqui'));assert.equal(saved.vesselProfiles.length,3);
 });
 test('New defaults contain requested ports and three complete editable vessel profiles',()=>{
- const s=M.initial();assert.equal(s.portRecords.length,13);assert.equal(s.vesselProfiles.length,3);
- for(const name of ['St. Petersburg','Murmansk','Itaqui','Santarem','Vitoria','Rio Grande','San Francisco do Sul','Suape','Aratu','Pecem'])assert.equal(s.portRecords.filter(p=>p.name===name).length,1);
+ const s=M.initial();assert.equal(s.portRecords.length,17,'13 ports, with Murmansk held as five berth rows');assert.equal(s.vesselProfiles.length,3);
+ for(const name of ['St. Petersburg','Itaqui','Santarem','Vitoria','Rio Grande','San Francisco do Sul','Suape','Aratu','Pecem'])assert.equal(s.portRecords.filter(p=>p.name===name).length,1);
+ assert.deepEqual(s.portRecords.filter(p=>p.name==='Murmansk').map(p=>p.berth),['Berth 4','Berth 6','Berth 7','Berth 9/10','Berth 13']);
  for(const id of ['tbn-2','tbn-3']){
   const v=s.vesselProfiles.find(v=>v.id===id);assert.equal(v.holdData.length,5);assert.equal(v.aux,.1);assert.equal(v.boiler,null);
   assert.doesNotThrow(()=>M.applyVessel(s,id));assert.equal(s.vesselId,id);

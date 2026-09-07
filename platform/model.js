@@ -24,7 +24,13 @@ const PORT_PROFILE_REVISION='port-countries-2026-09-07';
 // A vessel above one of them fits no berth; a vessel below it still needs the assigned berth confirmed.
 const PORT_LIMIT_FIELDS=['maxDraft','maxLoa','maxBeam','maxAirDraft','maxDwt'];
 const PORT_PROFILES={
- 'Murmansk':{country:'Russia',terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Best berth 13: draft 12.5 m, beam 36 m, LOA 240 m. Berths 9/10: draft 10.5 m, beam 36 m, LOA 240 m. Berth 4: draft 11.0 m, beam 32.2 m, LOA 230 m. Berth 7: draft 10.0 m, beam 32 m, LOA 225 m. Berth 6: draft 7.0 m, beam 16 m, LOA 120 m. Air draft 14.5 m at all berths.'},
+ // One row per berth: the user supplied these five individually, so no aggregate row is kept.
+ 'Murmansk':{country:'Russia',terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Air draft 14.5 m at all berths.',berths:[
+  {berth:'Berth 4',maxDraft:11,maxLoa:230,maxBeam:32.2,maxAirDraft:14.5,maxDwt:null},
+  {berth:'Berth 6',maxDraft:7,maxLoa:120,maxBeam:16,maxAirDraft:14.5,maxDwt:null},
+  {berth:'Berth 7',maxDraft:10,maxLoa:225,maxBeam:32,maxAirDraft:14.5,maxDwt:null},
+  {berth:'Berth 9/10',maxDraft:10.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null},
+  {berth:'Berth 13',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null}]},
  'St. Petersburg':{country:'Russia',terminal:'Sea Port of Saint Petersburg, First and Second Cargo Areas',maxDraft:null,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Operator lists 31 dry cargo berths without published per-berth limits. Confirm the assigned berth and its current permissible draft.'},
  'Ust-Luga':{country:'Russia',terminal:'European Sulphur Terminal / EuroChem Ust-Luga Terminal',maxDraft:13.1,maxLoa:334,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'EuroChem berth 1: LOA 334 m, draft 13.1 m. Berth 2: LOA 295 m, draft 8.5 m. Status of berths 3-4 to be confirmed.'},
  'Santos':{country:'Brazil',terminal:'STS20, Outeirinhos, berths 22/23',maxDraft:11.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'Depth 11.3 m in the source study, not a permitted draft: check the current operational draft in the port table. The 283 m face is berths 22 and 23 combined, so it is not a single-ship LOA limit.'},
@@ -40,19 +46,45 @@ const PORT_PROFILES={
 };
 const normalizePortName=name=>String(name??'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function portProfileOf(name){const key=normalizePortName(name);const match=Object.keys(PORT_PROFILES).find(n=>normalizePortName(n)===key||(n==='San Francisco do Sul'&&key==='sao francisco do sul'));return match?PORT_PROFILES[match]:null;}
-function portRecord(id,name){const profile=portProfileOf(name);const record={id,name,country:profile?.country??'',terminal:profile?.terminal??'',notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=profile?.[k]??null;return record;}
+function portRecord(id,name,berth){const profile=portProfileOf(name);const source=berth?profile?.berths?.find(b=>b.berth===berth):profile;const record={id,name,country:profile?.country??'',terminal:profile?.terminal??'',berth:berth??'',notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=source?.[k]??null;return record;}
+// A port with published per-berth limits becomes one row per berth instead of a single aggregate row.
+function portRecordsFor(id,name){const profile=portProfileOf(name);if(!profile?.berths?.length)return [portRecord(id,name)];return profile.berths.map((b,i)=>portRecord(id+'-'+(i+1),name,b.berth));}
 // Screening only: a limit the vessel exceeds rules the port out, the reverse never approves a call.
 function portLimitBreaches(record,vessel){
  if(!record||!vessel)return [];
  const pairs=[['maxDraft','draft'],['maxLoa','loa'],['maxBeam','beam'],['maxDwt','dwt']];
  return pairs.filter(([limit,param])=>ok(record[limit],true)&&ok(vessel[param],true)&&vessel[param]>record[limit]).map(([limit])=>limit);
 }
+const PORT_BERTH_REVISION='port-berth-rows-2026-09-07';
+// Splits a port that used to hold one aggregate row into the berth rows its source publishes.
+function mergePortBerths(s){
+ if(s.portBerthRevision===PORT_BERTH_REVISION)return;
+ for(const [name,profile] of Object.entries(PORT_PROFILES)){
+  if(!profile.berths?.length)continue;
+  const rows=()=>s.portRecords.filter(p=>normalizePortName(p.name)===normalizePortName(name));
+  if(!rows().length)continue; // the user removed this port: do not bring it back
+  // The old aggregate held the most permissive berth, so relabel it instead of duplicating that berth.
+  const best=profile.berths.find(b=>PORT_LIMIT_FIELDS.every(k=>b[k]===profile[k]));
+  const aggregate=rows().find(p=>!String(p.berth??'').trim()&&PORT_LIMIT_FIELDS.every(k=>p[k]===profile[k]));
+  if(best&&aggregate)aggregate.berth=best.berth;
+  for(const b of profile.berths){
+   if(rows().some(p=>String(p.berth??'').trim()===b.berth))continue;
+   let id='berth-'+normalizePortName(name).replace(/[^a-z0-9]+/g,'-')+'-'+normalizePortName(b.berth).replace(/[^a-z0-9]+/g,'-');
+   while(s.portRecords.some(p=>p.id===id))id+='-new';
+   const seeded=portRecord(id,name,b.berth);
+   const reference=rows()[0];
+   if(reference)seeded.da=reference.da??null;
+   s.portRecords.push(seeded);
+  }
+ }
+ s.portBerthRevision=PORT_BERTH_REVISION;
+}
 function mergePortProfiles(s){
  // Shape always converges, so a record from any older save has the current fields.
  for(const p of s.portRecords||[]){
   // Free-text restrictions predate the numeric columns; keep whatever the user wrote there.
   if('restrictions' in p){if(!String(p.notes??'').trim())p.notes=p.restrictions;delete p.restrictions;}
-  p.notes??='';p.country??='';
+  p.notes??='';p.country??='';p.berth??='';
  }
  // Reference content is seeded once, so a field the user clears stays cleared.
  if(s.portProfileRevision===PORT_PROFILE_REVISION)return;
@@ -73,7 +105,7 @@ function mergeRequestedCatalogs(s){
  for(const [i,name] of ports.entries()){
   if(s.portRecords.some(p=>normalized(p.name)===normalized(name)||(name==='San Francisco do Sul'&&normalized(p.name)==='sao francisco do sul')))continue;
   let id='port-seed-'+i;while(s.portRecords.some(p=>p.id===id))id+='-new';
-  s.portRecords.push(portRecord(id,name));
+  s.portRecords.push(...portRecordsFor(id,name));
  }
  for(const v of VESSELS.slice(1)){
   if(s.vesselProfiles.some(p=>normalized(p.name)===normalized(v.name)))continue;
@@ -87,7 +119,7 @@ const LOAD_PORT=['Ust-Luga','Murmansk','St. Petersburg'];
 const loadOf=(s,l)=>l.loadPort??s.ports[0].name;
 const callsOf=s=>s.ports.filter(p=>active(s).some(l=>loadOf(s,l)===p.name||l.port===p.name));
 const CARGO_TYPES=[{name:'BULK SULPHUR APP C',group:''},{name:'Crushed lump sulphur',group:'B',un:'1350'}];
-function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSON.stringify(CARGO_TYPES)),sales:[],portRecords:[portRecord('P4','Murmansk'),portRecord('P5','St. Petersburg'),portRecord('P1','Ust-Luga'),portRecord('P2','Santos'),portRecord('P3','Paranaguá')],demo:false,notes:'',lots:[],holds:JSON.parse(JSON.stringify(VESSELS[0].holdData)),allocations:[],stage:'load',deductions:{fuel:null,water:null,ballast:null,constant:null,lubes:null,slops:null},ports:[port('Ust-Luga'),port('Santos'),port('Paranaguá')],legs:[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')],ballastEnabled:false,ballast:leg('Vessel position','Ust-Luga'),prices:{main:null,eca:null,aux:null},hire:null,commission:0,freight:null,extraIncome:0,costs:[],allocation:'route'};ensureCatalogs(s);ensureBusinessData(s);applyVessel(s,'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return s;}
+function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSON.stringify(CARGO_TYPES)),sales:[],portRecords:[...portRecordsFor('P4','Murmansk'),...portRecordsFor('P5','St. Petersburg'),...portRecordsFor('P1','Ust-Luga'),...portRecordsFor('P2','Santos'),...portRecordsFor('P3','Paranaguá')],demo:false,notes:'',lots:[],holds:JSON.parse(JSON.stringify(VESSELS[0].holdData)),allocations:[],stage:'load',deductions:{fuel:null,water:null,ballast:null,constant:null,lubes:null,slops:null},ports:[port('Ust-Luga'),port('Santos'),port('Paranaguá')],legs:[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')],ballastEnabled:false,ballast:leg('Vessel position','Ust-Luga'),prices:{main:null,eca:null,aux:null},hire:null,commission:0,freight:null,extraIncome:0,costs:[],allocation:'route'};ensureCatalogs(s);ensureBusinessData(s);applyVessel(s,'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return s;}
 function demo(){const s=initial();s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});s.demo=true;s.deductions={fuel:950,water:200,ballast:300,constant:450,lubes:35,slops:40};s.hire=13500;s.freight=50;s.commission=1.25;s.prices={main:540,eca:800,aux:800};s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));s.allocations=allocate(s);return s;}
 function active(s){return s.lots.filter(l=>l.selected);}
 function allocate(s,trace=[]){
@@ -296,27 +328,36 @@ function updateSale(s,id,changes){
  const validated=validateSale(s,candidate,{legacy:!!previous.legacyLotId});
  s.sales[index]=validated;syncSalesToLots(s);return validated;
 }
+const portNameInUse=(s,name)=>s.sales.some(x=>x.loadPort===name||x.dischargePort===name)||s.lots.some(x=>x.loadPort===name||x.port===name);
+const lastRowForPort=(s,index)=>!s.portRecords.some((p,i)=>i!==index&&p.name===s.portRecords[index].name);
 function removePortRecord(s,index){
  const record=s.portRecords[index];if(!record)return;
- if(s.sales.some(x=>x.loadPort===record.name||x.dischargePort===record.name)||s.lots.some(x=>x.loadPort===record.name||x.port===record.name))throw Error('This port is used by a sale. Reassign the sale before removing the port.');
+ // Other berth rows of the same port keep the sale valid, so only the last row is protected.
+ if(lastRowForPort(s,index)&&portNameInUse(s,record.name))throw Error('This port is used by a sale. Reassign the sale before removing the port.');
  s.portRecords.splice(index,1);
 }
 function updatePortRecord(s,index,key,value){
  const record=s.portRecords[index];if(!record)throw Error('Port not found');
+ // A port may hold several berth rows, so identity is the port name plus the berth.
+ const duplicate=(name,berth)=>s.portRecords.some((p,i)=>i!==index&&p.name===name&&String(p.berth??'').trim()===String(berth??'').trim());
  if(key==='name'){
   value=value.trim();
   if(!value)throw Error('Enter a port name');
-  if(s.portRecords.some((p,i)=>i!==index&&p.name===value))throw Error('This port name already exists');
-  if(value!==record.name&&(s.sales.some(x=>x.loadPort===record.name||x.dischargePort===record.name)||s.lots.some(x=>x.loadPort===record.name||x.port===record.name)))throw Error('This port is used by a sale. Reassign the sale before renaming the port.');
+  if(duplicate(value,record.berth))throw Error('This port and berth already exist');
+  if(value!==record.name&&lastRowForPort(s,index)&&portNameInUse(s,record.name))throw Error('This port is used by a sale. Reassign the sale before renaming the port.');
+ }
+ if(key==='berth'){
+  value=value.trim();
+  if(duplicate(record.name,value))throw Error('This port and berth already exist');
  }
  if(key==='da'&&value!==null&&!ok(value))throw Error('DA must be non-negative');
  if(PORT_LIMIT_FIELDS.includes(key)&&value!==null&&!ok(value,true))throw Error('Port limits must be positive or empty');
  record[key]=value;return record;
 }
 function addSaleToPlanner(s,saleId){ensureCatalogs(s);const sale=s.sales.find(x=>x.id===saleId);if(!sale)throw Error('Sale not found');validateSale(s,sale,{legacy:!!sale.legacyLotId});if(s.lots.some(l=>l.saleId===saleId))throw Error('Sale is already added to PLANNER');const cargo=s.cargoTypes.find(c=>c.id===sale.cargoId);if(!cargo||!isBulkCargo(cargo))throw Error('This cargo is unavailable for bulk planning');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;const l={id:'S'+n,saleId:sale.id,name:cargo.name,selected:true,quantity:sale.quantity,cargoId:cargo.id,sf:cargo.sf,sfBasis:cargo.sf===cargo.sfDefault?cargo.sfBasis:'catalog',propertySource:cargo.propertyUrl||'',hazardClass:cargo.hazardClass||'',loadPort:sale.loadPort,port:sale.dischargePort,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:cargo.group||'',un:cargo.un||''};s.lots.push(l);syncRoute(s);return l;}
-function syncRoute(s){const alias={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};for(const l of s.lots)l.loadPort??=alias[s.ports[0]?.name]||s.ports[0]?.name||'Ust-Luga';const selected=active(s),loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))],dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))],needed=new Set([...loadNames,...dischargeNames]),old=s.ports;s.portCache??={};for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));const ordered=[...old.map(p=>alias[p.name]||p.name).filter(n=>needed.has(n)),...loadNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n)),...dischargeNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n))];const unique=[...new Set(ordered)];unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));s.ports=unique.map(name=>{const found=old.find(p=>(alias[p.name]||p.name)===name)||s.portCache[name],record=s.portRecords?.find(p=>p.name===name);return found?{...found,name,da:found.da??record?.da??null}:{...port(name),da:record?.da??null,...(s.vesselSnapshot?{working:s.vesselSnapshot.working,idle:s.vesselSnapshot.idle,aux:s.vesselSnapshot.aux,auxWorking:s.vesselSnapshot.auxWorking,auxIdle:s.vesselSnapshot.auxIdle,boiler:s.vesselSnapshot.boiler,boilerDays:null,boilerFuel:null}:{})};});const calls=callsOf(s);if(calls.length&&s.ballast.to!==calls[0].name)s.ballast={...leg('Vessel position',calls[0].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.ballastSpeed,burn:s.vesselSnapshot.ballastBurn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})};for(let i=1;i<calls.length;i++)if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))s.legs.push({...leg(calls[i-1].name,calls[i].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.speed,burn:s.vesselSnapshot.burn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})});if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage))s.stage='load';}
+function syncRoute(s){const alias={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};for(const l of s.lots)l.loadPort??=alias[s.ports[0]?.name]||s.ports[0]?.name||'Ust-Luga';const selected=active(s),loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))],dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))],needed=new Set([...loadNames,...dischargeNames]),old=s.ports;s.portCache??={};for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));const ordered=[...old.map(p=>alias[p.name]||p.name).filter(n=>needed.has(n)),...loadNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n)),...dischargeNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n))];const unique=[...new Set(ordered)];unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));s.ports=unique.map(name=>{const found=old.find(p=>(alias[p.name]||p.name)===name)||s.portCache[name],record=s.portRecords?.find(p=>p.name===name&&p.da!==null&&p.da!==undefined)||s.portRecords?.find(p=>p.name===name);return found?{...found,name,da:found.da??record?.da??null}:{...port(name),da:record?.da??null,...(s.vesselSnapshot?{working:s.vesselSnapshot.working,idle:s.vesselSnapshot.idle,aux:s.vesselSnapshot.aux,auxWorking:s.vesselSnapshot.auxWorking,auxIdle:s.vesselSnapshot.auxIdle,boiler:s.vesselSnapshot.boiler,boilerDays:null,boilerFuel:null}:{})};});const calls=callsOf(s);if(calls.length&&s.ballast.to!==calls[0].name)s.ballast={...leg('Vessel position',calls[0].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.ballastSpeed,burn:s.vesselSnapshot.ballastBurn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})};for(let i=1;i<calls.length;i++)if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))s.legs.push({...leg(calls[i-1].name,calls[i].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.speed,burn:s.vesselSnapshot.burn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})});if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage))s.stage='load';}
 function moveCall(s,name,direction){if(![-1,1].includes(direction))return false;const loadNames=new Set(active(s).map(l=>l.loadPort)),isLoad=loadNames.has(name),group=callsOf(s).filter(p=>loadNames.has(p.name)===isLoad);const index=group.findIndex(p=>p.name===name),target=index+direction;if(index<0||target<0||target>=group.length)return false;const a=s.ports.indexOf(group[index]),b=s.ports.indexOf(group[target]);[s.ports[a],s.ports[b]]=[s.ports[b],s.ports[a]];syncRoute(s);s.stage='load';return true;}
-function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}ensureBusinessData(s);mergeRequestedCatalogs(s);mergePortProfiles(s);}
+function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}ensureBusinessData(s);mergeRequestedCatalogs(s);mergePortProfiles(s);mergePortBerths(s);}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
 function applyVessel(s,id){ensureCatalogs(s);const v=s.vesselProfiles.find(v=>v.id===id);if(!v||!v.name.trim())throw Error('Enter a vessel name');for(const k of ['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'])if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);for(const k of ['bale','gt','nrt','tanktop','boiler'])if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);for(const k of ['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'])if(!ok(v[k]))throw Error('Check consumption: '+k);if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');if(!v.holdData.length)throw Error('Add holds');v.holds=v.holdData.length;s.vesselId=id;s.vesselSnapshot=JSON.parse(JSON.stringify(v));s.holds=JSON.parse(JSON.stringify(v.holdData));s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});[...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));}
 function migrateBaltic(s){ensureCatalogs(s);if(s.tbnSourceRevision===VESSELS[0].revision)return false;s.previousVesselProfile={profile:s.vesselProfiles.find(v=>v.id==='tbn-1'),snapshot:s.vesselSnapshot,holds:JSON.parse(JSON.stringify(s.holds)),constant:s.deductions.constant};for(const standard of VESSELS){const i=s.vesselProfiles.findIndex(v=>v.id===standard.id);const copy=JSON.parse(JSON.stringify(standard));if(i<0)s.vesselProfiles.push(copy);else s.vesselProfiles[i]=copy;}applyVessel(s,s.vesselProfiles.some(v=>v.id===s.vesselId)?s.vesselId:'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return true;}
