@@ -40,6 +40,22 @@ test('Corrupt or obsolete saved state falls back to blank',()=>{for(const value 
 test('CARGO retains catalog records while rendering the simplified register',()=>{const {app,elements}=boot(null);elements.get('tab-cargo').onclick();const html=elements.get('app').innerHTML;assert.equal((html.match(/data-catalog-name=/g)||[]).length,25);assert.ok(app.getState().cargoTypes.length>=97);assert.ok(html.includes('Planning SF, m³/t'));assert.ok(html.includes('IMSBC Group'));for(const removed of ['Hold restriction','Properties / source','Apply to parcels','UN number','Transport hazard class','SDS / declaration required','Reference estimate','N/A to this carriage mode','cargo-meta'])assert.ok(!html.includes(removed));});
 test('SALE and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('Ust-Luga'));assert.ok(ports.includes('European Sulphur Terminal'));assert.ok(!ports.includes('DA, USD'));assert.ok(!ports.includes('Charterer port and terminal register'));assert.match(ports,/<th scope="col">Country<\/th><th scope="col">Port<\/th><th scope="col">Terminal<\/th><th scope="col">Berth<\/th><th scope="col">Max draft, m<\/th><th scope="col">Max beam, m<\/th><th scope="col">Max LOA, m<\/th><th scope="col">Max air draft, m<\/th><th scope="col">Max DWT<\/th>/,'columns follow the source table: draft, beam, LOA');assert.ok(ports.includes('value="Russia"')&&ports.includes('value="Brazil"'));assert.ok(!ports.includes('>Notes<'),'the Notes column is not rendered');assert.ok(!ports.includes('Compared with'),'no comparison line above the register');assert.ok(ports.includes('Berth 13'),'Murmansk berths are separate rows');assert.ok(!ports.includes('limit-exceeded')&&!ports.includes('limit-flag'),'PORT is a register only: breaches are shown in PLANNER');});
 
+test('Preliminary intake appears only after Calculate intake and never outlives its inputs',()=>{
+ const blank=boot(null).elements.get('app').innerHTML;
+ for(const gone of ['Lubricants, t','Slops, t','deductions.lubes','deductions.slops'])assert.ok(!blank.includes(gone),gone+' is still in PLANNER');
+ for(const kept of ['Fuel, t','Fresh water, t','Ballast, t','Constant, t'])assert.ok(blank.includes(kept),kept);
+ assert.match(blank,/data-action="calc-intake" disabled/,'no deductions entered yet, so the button is disabled');
+ const s=M.demo();
+ assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Preliminary intake: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
+ s.intakeShownFor=JSON.stringify([37667,950,200,300,525]);
+ const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(shown.includes('Preliminary intake: <strong>35,692.00 t</strong>'),'the calculated figure is shown');
+ assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
+ s.deductions.fuel=951;
+ const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(stale.includes('Preliminary intake: <strong>—</strong>'),'an edited deduction withdraws the figure');
+ assert.ok(stale.includes('calc-intake'),'and brings the button back');});
+
 test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));
  assert.ok(html.includes('class="grid holds-grid"'));

@@ -92,4 +92,19 @@ test('Berth rows share a port name but must differ by berth',()=>{const s=M.init
  while(s.portRecords.filter(p=>p.name==='Murmansk').length>1)M.removePortRecord(s,s.portRecords.findIndex(p=>p.name==='Murmansk'));
  assert.throws(()=>M.removePortRecord(s,s.portRecords.findIndex(p=>p.name==='Murmansk')),/used by a sale/,'the last row of a used port is protected');});
 
+test('Removed lubricants and slops fold into the constant so a saved intake does not change',()=>{
+ assert.deepEqual(M.DEDUCTIONS,['fuel','water','ballast','constant']);
+ const s=M.demo();s.deductions={fuel:950,water:200,ballast:300,constant:450,lubes:35,slops:40};
+ // What the superseded six-deduction formula gave for this save.
+ const historic=37667-(950+200+300+450+35+40);
+ M.ensureCatalogs(s);
+ assert.deepEqual(Object.keys(s.deductions),['fuel','water','ballast','constant']);
+ assert.equal(s.deductions.constant,525);
+ assert.equal(M.stowage(s).intake,historic,'the saved intake survives the migration');
+ const unknown=M.demo();unknown.deductions={fuel:950,water:200,ballast:300,constant:null,lubes:35,slops:40};
+ M.ensureCatalogs(unknown);
+ assert.equal(unknown.deductions.constant,null,'an unknown constant stays unknown rather than absorbing only part of the total');
+ assert.equal(M.stowage(unknown).intake,null);
+ const fresh=M.initial();assert.deepEqual(Object.keys(fresh.deductions),['fuel','water','ballast','constant']);});
+
 test('Port profile lookup ignores accents and the Sao spelling',()=>{assert.equal(M.portProfileOf('Paranagua'),M.PORT_PROFILES['Paranaguá']);assert.equal(M.portProfileOf('Sao Francisco do Sul'),M.PORT_PROFILES['San Francisco do Sul']);assert.equal(M.portProfileOf('Unknown Port'),null);});
