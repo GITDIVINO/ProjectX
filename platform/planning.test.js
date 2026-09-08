@@ -92,3 +92,71 @@ test('The berth limit bites on the deepest recorded draft, not the mean',()=>{
  assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('10.5 exceeds 10.3')),'the single draft field still works when no survey is recorded');
 });
 
+function loadedFixture(){
+ const s=base(),v=M.vesselOf(s);Object.assign(v,{dwt:30000,draft:10,tpc:50});s.vesselSnapshot={...v};
+ s.lots[0].quantity=20000;s.lots[1].quantity=4000;s.sales.forEach(x=>x.quantity=24000);
+ s.allocations=M.allocate(s);
+ s.planning.vesselBasis={kind:'reference',vesselKey:JSON.stringify(M.vesselOf(s)),density:1.025,lightship:5000,source:'Particulars',date:'2026-09-08',dwtBasis:'Summer',tpcRangeCm:150,tpcSource:'Hydrostatic range'};
+ Object.assign(s.deductions,{fuel:500,water:100,ballast:0,constant:400});
+ for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);Object.assign(b,{maxDraft:12,waterDensity:1.025});c.planning.berthId=b.id;
+  for(const phase of ['arrival','departure'])Object.assign(c.planning[phase],{fuel:500,water:100,ballast:0,constant:400,source:'Stores',date:'2026-09-08'});}
+ return s;
+}
+const departure=(s,name)=>P.stateDrafts(s).find(r=>r.call===name&&r.phase==='departure');
+test('A state draft follows its own deadweight and the water the ship floats in',()=>{
+ const s=loadedFixture(),row=departure(s,'Ust-Luga');
+ assert.equal(row.cargo,24000,'the stowage plan supplies the cargo on board');
+ nearly(row.deadweight,25000);nearly(row.displacement,30000);
+ // 5000 t short of the reference deadweight lifts her 5000 / 50 = 100 cm off the 10 m load line.
+ nearly(row.mean,9);assert.equal(row.basis,'computed');
+ s.portRecords.find(p=>p.id===s.ports[0].planning.berthId).waterDensity=1;
+ // Fresh water sinks her by the state's own FWA: 30000 / (40 × 50) = 15 cm.
+ nearly(departure(s,'Ust-Luga').mean,9.15);
+ assert.ok(departure(s,'Ust-Luga').densityApplied);
+ delete s.planning.vesselBasis.lightship;
+ const off=departure(s,'Ust-Luga');nearly(off.mean,9);
+ assert.ok(!off.densityApplied&&off.notes.some(x=>x.includes('enter lightship')),'the correction names what it lacks instead of guessing');
+});
+test('Discharging and burning bunkers lift the ship between states',()=>{
+ const s=loadedFixture();
+ const rows=P.stateDrafts(s),at=(name,phase)=>rows.find(r=>r.call===name&&r.phase===phase);
+ assert.ok(at('Ust-Luga','arrival').mean<at('Ust-Luga','departure').mean,'she arrives at the load berth empty and leaves loaded');
+ nearly(at('Santos','arrival').cargo,24000);nearly(at('Santos','departure').cargo,4000);
+ assert.ok(at('Santos','departure').mean<at('Santos','arrival').mean,'discharging 20,000 t lifts her');
+ nearly(at('Santos','departure').mean,at('Santos','arrival').mean-20000/5000);
+});
+test('Bunkers on board are chained from the intake figure through legs and port stays',()=>{
+ const s=base();P.ensure(s);
+ for(const c of s.ports)for(const phase of ['arrival','departure'])for(const k of ['fuel','water','ballast','constant'])delete c.planning[phase][k];
+ const budget=M.compute(s).budget,rob=P.bunkerRob(s,budget);
+ const leg=budget.legs.find(l=>l.from==='Ust-Luga'),port=budget.ports.find(p=>p.name==='Ust-Luga');
+ const key=(name,phase)=>s.ports.find(p=>p.name===name).callId+':'+phase;
+ nearly(rob.get(key('Ust-Luga','departure')),s.deductions.fuel);
+ nearly(rob.get(key('Santos','arrival')),s.deductions.fuel-(leg.massMain+leg.massEca+leg.massAux));
+ nearly(rob.get(key('Ust-Luga','arrival')),s.deductions.fuel+port.massMain+port.massAux+port.massBoiler);
+ const row=P.stateDrafts(s,budget).find(r=>r.call==='Santos'&&r.phase==='arrival');
+ assert.equal(row.storeBasis.fuel,'voyage');assert.equal(row.storeBasis.water,'intake');
+ assert.ok(row.stores.fuel<s.deductions.fuel,'the ocean leg is burned off before Santos');
+ const none=P.stateDrafts(s,null).find(r=>r.call==='Santos'&&r.phase==='arrival');
+ assert.equal(none.storeBasis.fuel,'intake','without a voyage budget the intake figure is held, not invented');
+});
+test('Trim splits about amidships and a measured draft still governs the berth check',()=>{
+ const s=loadedFixture(),call=s.ports.find(p=>p.name==='Ust-Luga');
+ call.planning.departure.trim=0.6;
+ const trimmed=departure(s,'Ust-Luga');
+ nearly(trimmed.computed.aft,9.3);nearly(trimmed.computed.fwd,8.7);nearly(trimmed.deepest,9.3);
+ assert.equal(trimmed.trimBasis,'entered');
+ Object.assign(call.planning.departure,{aft:11.4,mid:11.2,fwd:11});
+ const surveyed=departure(s,'Ust-Luga');
+ assert.equal(surveyed.basis,'surveyed');nearly(surveyed.deepest,11.4);
+ nearly(surveyed.mean,9,'the calculated draft is still shown beside the survey');
+ s.portRecords.find(p=>p.id===call.planning.berthId).maxDraft=11.3;
+ const event=P.events(s).find(e=>e.call.name==='Ust-Luga'&&e.phase==='departure');
+ assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('State draft 11.4 exceeds 11.3')));
+});
+test('A calculated draft over the berth limit is named as calculated',()=>{
+ const s=loadedFixture(),call=s.ports.find(p=>p.name==='Ust-Luga');
+ s.portRecords.find(p=>p.id===call.planning.berthId).maxDraft=8.5;
+ const event=P.events(s).find(e=>e.call.name==='Ust-Luga'&&e.phase==='departure');
+ assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('Computed state draft 9 exceeds 8.5')),'the source of the figure is on the face of the check');
+});

@@ -104,19 +104,17 @@ test('The draft loss calculation is printed and the field is not editable',()=>{
  assert.ok(dense.includes('= <strong>9,401.0 t</strong>'));
 });
 
-test('Stowage records departure drafts where cargo loads and arrival drafts where it discharges',()=>{
+test('Every call gets a departure and an arrival draft calculated from its own loading',()=>{
  const s=M.demo();P.ensure(s);
- Object.assign(s.ports.find(p=>p.name==='Ust-Luga').planning.departure,{aft:10.2,mid:10.05,fwd:9.9});
+ for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);if(b)c.planning.berthId=b.id;}
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  const drafts=html.slice(html.indexOf('<h3>Drafts</h3>'),html.indexOf('id="plan-errors"'));
- for(const head of ['Aft, m','Mid, m','Fwd, m','Deepest, m'])assert.ok(drafts.includes(head),head);
- assert.ok(drafts.includes('Departure · Ust-Luga'),'the load port is asked for its departure draft');
- assert.ok(drafts.includes('Arrival · Santos')&&drafts.includes('Arrival · Paranaguá'),'each discharge port is asked for its arrival draft');
- assert.ok(!drafts.includes('Arrival · Ust-Luga'),'a port that only loads is not asked for an arrival draft');
- assert.match(drafts,/data-path="ports\.\d+\.planning\.departure\.aft"/);
- assert.ok(drafts.includes('>10.20</td>'),'the deepest of the three is shown');
+ for(const head of ['Cargo, t','Deadweight, t','Mean, m','Trim, m','Aft, m','Fwd, m','Deepest, m','Berth limit, m'])assert.ok(drafts.includes(head),head);
+ for(const name of ['Ust-Luga','Santos','Paranaguá'])for(const phase of ['Arrival · ','Departure · '])assert.ok(drafts.includes(phase+name),phase+name);
+ assert.ok(!/data-path="ports\.\d+\.planning\.\w+\.(aft|mid|fwd)"/.test(drafts),'the three drafts are calculated, not typed');
+ assert.match(drafts,/data-path="ports\.\d+\.planning\.departure\.trim"/,'trim is the one figure the platform cannot derive');
  const blank=boot(null).elements.get('app').innerHTML;
- assert.ok(blank.includes('Add sales to record departure and arrival drafts.'),'an empty voyage says what is missing');});
+ assert.ok(blank.includes('Add sales to the voyage to calculate departure and arrival drafts.'),'an empty voyage says what is missing');});
 
 test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));

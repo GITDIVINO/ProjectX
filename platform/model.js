@@ -233,13 +233,13 @@ function computeChecked(s){
   explain(section,label+' · working time','Handled cargo / handling rate',`${text(cargoR)} t / ${text(p.rate)} t/day`,workR,'days');
   explain(section,label+' · idle time','(Turn + waiting) / 24 + calendar − working days',`(${text(p.turn)} + ${text(p.extra)}) h / 24 + ${text(calendarR)} − ${text(workR)} days`,idleR,'days');
   explain(section,label+' · total time','Working + idle time',`${text(workR)} + ${text(idleR)} days`,daysR,'days');
-  let boilerCost=R(0);
+  let boilerCost=R(0),boilerMassR=R(0);
   if(p.boiler!==undefined&&p.boiler!==null){
    need(p.boiler,p.name+': boiler t/day');if(p.boiler!==0)need(p.boilerDays,p.name+': boiler operating time, days');
    if(p.boilerDays!==null&&p.boilerDays!==undefined){need(p.boilerDays,p.name+': boiler operating time, days');if(rInput(p.boilerDays).sub(daysR).n>0n)errors.push(p.name+': boiler operating time exceeds time in port');}
    if(p.boilerDays>0&&p.boiler>0){
     if(!['main','eca','aux'].includes(p.boilerFuel))errors.push(p.name+': boiler fuel');
-    else{const mass=rInput(p.boilerDays).mul(p.boiler);explain(section,label+' · boiler mass','Boiler days × separate boiler burn',`${p.boilerDays} days × ${p.boiler} t/day`,mass,'t');boilerCost=fuelCost(p.boilerFuel,mass);}
+    else{const mass=rInput(p.boilerDays).mul(p.boiler);explain(section,label+' · boiler mass','Boiler days × separate boiler burn',`${p.boilerDays} days × ${p.boiler} t/day`,mass,'t');boilerMassR=mass;boilerCost=fuelCost(p.boilerFuel,mass);}
    }
   }else if(p.boilerDays>0)errors.push(p.name+': boiler consumption is required when operating days are entered');
   const mainR=workR.mul(rInput(p.working)).add(idleR.mul(rInput(p.idle))),auxR=workR.mul(rInput(auxWorking)).add(idleR.mul(rInput(auxIdle)));
@@ -250,7 +250,7 @@ function computeChecked(s){
   add(p.name+' · DA',rInput(p.da),eligible,'ports','Round(entered DA for this call, 2)',text(p.da)+' USD');
   add(p.name+' · fuel',costR,eligible,'fuel','Round(main + Aux + separate boiler fuel values, 2)',text(costR)+' USD');
   add(p.name+' · hire',daysR.mul(s.hire),eligible,'hire','Round(port days × hire, 2)',text(daysR)+' days × '+s.hire+' USD/day');
-  portResults.push({...p,cargo:cargoR.number(),workDays:workR.number(),idleDays:idleR.number(),days:daysR.number(),cost:costR.number()});
+  portResults.push({...p,cargo:cargoR.number(),workDays:workR.number(),idleDays:idleR.number(),days:daysR.number(),massMain:mainR.number(),massAux:auxR.number(),massBoiler:boilerMassR.number(),cost:costR.number()});
  }
  section='extras';
  for(const c of s.costs){
