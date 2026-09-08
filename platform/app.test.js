@@ -170,3 +170,19 @@ test('Calculation evidence escapes labels and updates when selected stage change
  const legs=html.slice(html.indexOf('id="calc-legs"'),html.indexOf('id="calc-ports"'));
  assert.ok(legs.includes('Formula and values'),'the remaining disclosures still show their substitutions');
 });
+
+test('Deductions and holds fold into one Intake Calculator that keeps its result on the summary',()=>{
+ const blank=boot(null).elements.get('app').innerHTML;
+ const block=blank.slice(blank.indexOf('<details id="intake-calculator"'),blank.indexOf('rotation-grid'));
+ for(const inside of ['<h3>Deductions</h3>','<h3>Holds</h3>','holds-grid','data-path="deductions.fuel"','data-path="holds.0.volume"','draft-formula','intake-line','grain-capacity','cargo-volume'])
+  assert.ok(block.includes(inside),inside+' left the calculator');
+ assert.ok(blank.indexOf('vessel-choice')<blank.indexOf('id="intake-calculator"'),'the vessel line stays above it');
+ assert.ok(blank.indexOf('id="intake-calculator"')<blank.indexOf('rotation-grid'),'the rotation stays below it');
+ assert.ok(block.includes('<summary><strong>Intake Calculator</strong>'),'the block names itself on the summary');
+ assert.match(block,/<details id="intake-calculator" class="intake-calculator" open>/,'it stays open while the intake is not calculated');
+ assert.ok(block.includes('Intake not calculated'),'the summary says so rather than showing a stale figure');
+ const s=M.demo();s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
+ const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.match(shown,/<details id="intake-calculator" class="intake-calculator" >/,'a settled intake may be folded away');
+ assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span><strong>35,692\.00 t<\/strong> intake · 5 holds · 46,730\.00 m³ grain capacity<\/span>/,'the result stays readable while collapsed');
+});
