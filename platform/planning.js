@@ -68,7 +68,7 @@ function autoDraftLoss(s){
  let loss=Math.max(0,product(product(v.draft-berth.maxDraft,100),v.tpc));
  let densityApplied=false;
  const density=berth.waterDensity,b=s.planning.vesselBasis||{},referenceDensity=vesselBasisStatus(s)!=='outdated'&&valid(b.density,true)?b.density:1.025,lightship=valid(b.lightship,true)&&vesselBasisStatus(s)!=='outdated'?b.lightship:null;
- if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));densityApplied=true;}else warnings.push(c.name+': density correction unavailable without lightship; reference-density estimate');}
+ if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));densityApplied=true;}else warnings.push(c.name+': '+(vesselBasisStatus(s)==='outdated'?'vessel source was recorded for another vessel; reconfirm it in Vessel source':'density correction needs lightship in Vessel source')+'; reference-density estimate');}
  else if(!valid(density,true))warnings.push(c.name+': density unknown; reference-density estimate');
  rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,deltaCm:product(berth.maxDraft,100)-product(v.draft,100),densityApplied,tpc:v.tpc,draft:v.draft,loss});
  }
@@ -76,7 +76,11 @@ function autoDraftLoss(s){
  const limiting=rows.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a);
  const reason=limiting.loss>0?'TPC estimate · '+limiting.call+' · '+limiting.maxDraft+' m'
   :'No draft restriction · shallowest limit '+limiting.call+' '+limiting.maxDraft+' m vs '+v.draft+' m draft';
- return {loss:limiting.loss,limiting,rows,warnings,reason};
+ const densityNote=rows.some(x=>valid(x.density,true)&&!x.densityApplied)
+  ?(vesselBasisStatus(s)==='outdated'?'Density correction off · Vessel source was recorded for another vessel'
+   :'Density correction off · enter lightship in Vessel source')
+  :null;
+ return {loss:limiting.loss,limiting,rows,warnings,reason,densityNote};
 }
 function syncAutoDraftLoss(s){const r=autoDraftLoss(s);if(!s.planning.autoDraftLoss)s.planning.previousDraftLoss=s.deductions.draftLoss;s.deductions.draftLoss=r.loss;s.planning.autoDraftLoss=r;return r;}
 // Local linear hydrostatic estimate. Reference draft, DWT and TPC share one density/basis.
