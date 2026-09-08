@@ -110,10 +110,11 @@ test('Every call gets a departure and an arrival draft calculated from its own l
  for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);if(b)c.planning.berthId=b.id;}
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  const drafts=html.slice(html.indexOf('<details id="drafts"'),html.indexOf('id="plan-errors"'));
- for(const head of ['Cargo, t','Deadweight, t','Mean, m','Trim, m','Aft, m','Fwd, m','Deepest, m','Berth limit, m'])assert.ok(drafts.includes(head),head);
+ for(const head of ['Cargo, t','Deadweight, t','Mean, m','Aft, m','Fwd, m','Deepest, m'])assert.ok(drafts.includes(head),head);
+ for(const removed of ['Trim, m','Berth limit, m','Margin, m','Basis / note','planning.departure.trim'])assert.ok(!drafts.includes(removed),removed+' is no longer a Drafts column');
  for(const name of ['Ust-Luga','Santos','Paranaguá'])for(const phase of ['Arrival · ','Departure · '])assert.ok(drafts.includes(phase+name),phase+name);
  assert.ok(!/data-path="ports\.\d+\.planning\.\w+\.(aft|mid|fwd)"/.test(drafts),'the three drafts are calculated, not typed');
- assert.match(drafts,/data-path="ports\.\d+\.planning\.departure\.trim"/,'trim is the one figure the platform cannot derive');
+ assert.ok(!drafts.includes('.planning.departure.trim'),'trim is retained in state but no longer shown as a Drafts column');
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(blank.includes('Add sales to the voyage to calculate departure and arrival drafts.'),'an empty voyage says what is missing');});
 

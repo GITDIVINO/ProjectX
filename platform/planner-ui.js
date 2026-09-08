@@ -29,14 +29,11 @@ function create(env){
  // Every arrival and departure draft follows from that state's own displacement.
  const stateLabel=r=>(r.phase==='arrival'?'Arrival · ':'Departure · ')+r.call;
  function draftTable(s,rows){
-  const cell=(r,k)=>r.computed?fmt(r.computed[k],2):'—';
-  const body=rows.map(r=>{
-   const i=s.ports.findIndex(p=>(p.callId||p.name)===(r.callId||r.call));
-   const note=[...r.missing,...r.notes].join('; ');
-   const over=r.margin!==null&&r.margin<0;
+ const cell=(r,k)=>r.computed?fmt(r.computed[k],2):'—';
+ const body=rows.map(r=>{
    const label=stateLabel(r);
-   return `<tr><td class="name">${esc(label)}</td><td>${fmt(r.cargo,0)}</td><td>${fmt(r.deadweight,0)}</td><td>${cell(r,'mid')}</td><td><input type="number" step="any" data-path="ports.${i}.planning.${r.phase}.trim" aria-label="${esc(label)} trim" value="${r.trim??''}" placeholder="0"></td><td>${cell(r,'aft')}</td><td>${cell(r,'fwd')}</td><td>${r.deepest===null?'—':fmt(r.deepest,2)}${r.basis==='computed'?'':' <small>'+esc(r.basis)+'</small>'}</td><td>${fmt(r.maxDraft,2)}</td><td class="${over?'over-limit':''}">${fmt(r.margin,2)}</td><td class="state-check-text">${esc(note)}</td></tr>`;});
-  return table(['State','Cargo, t','Deadweight, t','Mean, m','Trim, m','Aft, m','Fwd, m','Deepest, m','Berth limit, m','Margin, m','Basis / note'],body)
+   return `<tr><td class="name">${esc(label)}</td><td>${fmt(r.cargo,0)}</td><td>${fmt(r.deadweight,0)}</td><td>${cell(r,'mid')}</td><td>${cell(r,'aft')}</td><td>${cell(r,'fwd')}</td><td>${r.deepest===null?'—':fmt(r.deepest,2)}${r.basis==='computed'?'':' <small>'+esc(r.basis)+'</small>'}</td></tr>`;});
+  return table(['State','Cargo, t','Deadweight, t','Mean, m','Aft, m','Fwd, m','Deepest, m'],body)
    +'<p class="form-note">Mean draft is the load-line reference draft corrected by (reference DWT − state deadweight) / TPC and by the berth water density. Cargo comes from the stowage plan, bunkers from the voyage consumption chained to the intake figure; a value entered for the state overrides both. Aft and forward split the entered trim about amidships: the platform holds no MCTC or LCF, so they are not a trim calculation. A surveyed or entered state draft in Berth / states governs the berth check instead.</p>';
  }
  // Hidden by default; the summary keeps the binding state, and any breach, in view.
