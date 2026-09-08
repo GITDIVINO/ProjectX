@@ -3,7 +3,8 @@
 test('PLANNER displays SF as text and preserves stored cargo properties',()=>{
  const s=M.demo();s.lots[0].sf=0.98765;
  const {app,elements}=boot(JSON.stringify(s));const html=elements.get('app').innerHTML;
- assert.ok(html.includes('<td>0.98765</td>'));
+ assert.match(html,/<td>0\.99<\/td>/,'the register column is uniform to two decimals');
+ assert.ok(html.includes('24,000 × 0.98765'),'the calculation line keeps the exact stored value');
  assert.ok(!html.includes('data-path="lots.0.sf"'));assert.ok(html.includes('data-path="lots.0.selected"'));
  assert.equal(app.getState().lots[0].sf,0.98765);
  elements.get('tab-cargo').onclick();assert.match(elements.get('app').innerHTML,/data-path="cargoTypes\.\d+\.sf"/);
