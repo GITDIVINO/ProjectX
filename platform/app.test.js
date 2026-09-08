@@ -61,7 +61,7 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
  assert.ok(shown.includes('DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = 35,692.00 t'),'the calculation is written out with the entered values');
  const restricted=M.demo();restricted.deductions.draftLoss=1200;restricted.intakeShownFor=JSON.stringify([37667,950,200,300,525,1200]);
  const less=boot(JSON.stringify(restricted)).elements.get('app').innerHTML;
- assert.ok(less.includes('Preliminary intake: <strong>34,492.00 t</strong>'),'a draft restriction reduces the intake by its tonnage');});
+ assert.ok(less.includes('Preliminary intake: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);

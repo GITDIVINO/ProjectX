@@ -52,6 +52,29 @@ const vesselBasisStatus=s=>!s.planning?.vesselBasis?'reference':s.planning.vesse
 function reportStatus(s){const latest=s.planning?.reports?.at(-1);return !latest?'not-reviewed':latest.inputKey!==inputKey(s)?'outdated':events(s).some(e=>!latest.covered.includes(e.key))?'partial':latest.result;}
 function addReport(s,data){ensure(s);if(!data.reference?.trim()||!data.reviewer?.trim()||!data.date)throw Error('Enter report reference, reviewer and date');if(!['accepted','conditional','rejected'].includes(data.result))throw Error('Select report result');const expected=events(s).map(e=>e.key);if(!expected.length)throw Error('Add voyage calls first');if(!data.covered?.length||data.covered.some(k=>!expected.includes(k)))throw Error('Select covered arrival/departure states');s.planning.reports.push({...data,id:id('review'),inputKey:inputKey(s),createdAt:new Date().toISOString()});}
 function freeze(s){ensure(s);const item={id:id('snapshot'),createdAt:new Date().toISOString(),input:snapshotInput(s),check:check(s)};s.planning.snapshots.push(item);return item;}
+// Automatic preliminary TPC estimate from existing voyage and registry data.
+function autoDraftLoss(s){
+ ensure(s);const v=M.vesselOf(s),lots=active(s),calls=M.callsOf(s),warnings=[],rows=[];
+ if(!lots.length)return {loss:null,reason:'Add cargo to the voyage',rows,warnings};
+ if(!valid(v?.draft,true)||!valid(v?.tpc,true))return {loss:null,reason:'Enter vessel draft and TPC in VESSEL',rows,warnings};
+ const loadCalls=calls.filter(c=>lots.some(l=>l.loadPort===c.name)),firstDischarge=calls.find(c=>lots.some(l=>l.port===c.name));
+ const relevant=[...loadCalls,...(firstDischarge&&!loadCalls.includes(firstDischarge)?[firstDischarge]:[])];
+ for(const c of relevant){const candidates=s.portRecords.filter(p=>p.name===c.name),selected=candidates.find(p=>p.id===c.planning?.berthId);
+ // Without a nominated berth use the conservative registered draft, not an assumed best berth.
+ const berth=selected||candidates.filter(p=>valid(p.maxDraft,true)).sort((a,b)=>a.maxDraft-b.maxDraft)[0];
+ if(!berth||(!selected&&candidates.some(p=>!valid(p.maxDraft,true))))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
+ if(!valid(berth.maxDraft,true))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
+ if(!selected&&candidates.length>1)warnings.push(c.name+': lowest registered berth limit');
+ let loss=Math.max(0,product(product(v.draft-berth.maxDraft,100),v.tpc));
+ const density=berth.waterDensity,b=s.planning.vesselBasis||{},referenceDensity=vesselBasisStatus(s)!=='outdated'&&valid(b.density,true)?b.density:1.025,lightship=valid(b.lightship,true)&&vesselBasisStatus(s)!=='outdated'?b.lightship:null;
+ if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));}else warnings.push(c.name+': density correction unavailable without lightship; reference-density estimate');}
+ else if(!valid(density,true))warnings.push(c.name+': density unknown; reference-density estimate');
+ rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,loss});
+ }
+ if(!rows.length)return {loss:null,reason:'Add voyage ports',rows,warnings};
+ const limiting=rows.reduce((a,b)=>b.loss>a.loss?b:a);return {loss:limiting.loss,limiting,rows,warnings,reason:'TPC estimate · '+limiting.call+' · '+limiting.maxDraft+' m'};
+}
+function syncAutoDraftLoss(s){const r=autoDraftLoss(s);if(!s.planning.autoDraftLoss)s.planning.previousDraftLoss=s.deductions.draftLoss;s.deductions.draftLoss=r.loss;s.planning.autoDraftLoss=r;return r;}
 // Local linear hydrostatic estimate. Reference draft, DWT and TPC share one density/basis.
 function draftEstimate(s){
  ensure(s);const v=M.vesselOf(s),b=s.planning.vesselBasis||{},keys=['fuel','water','ballast','constant'],total=active(s).every(l=>valid(l.quantity,true))?exactSum(active(s).map(l=>l.quantity)):null;
@@ -109,7 +132,7 @@ function pairIssues(s,summary){
 }
 function check(s){
  const errors=[],warnings=[],lots=active(s),base=M.stowage(s),summary=stageSummary(s,'load');errors.push(...base.errors);
- if(s.planning?.draftEstimate?.inputKey&&s.planning.draftEstimate.inputKey!==inputKey(s))warnings.push('Applied draft loss estimate is outdated; reopen Estimate draft loss');
+ if(!s.planning?.autoDraftLoss&&s.planning?.draftEstimate?.inputKey&&s.planning.draftEstimate.inputKey!==inputKey(s))warnings.push('Applied draft loss estimate is outdated; reopen Estimate draft loss');
  if(!lots.length)warnings.push('Select a sale');
  const names=M.callsOf(s).map(c=>c.name);for(const l of lots){if(!names.includes(l.loadPort)||!names.includes(l.port)||names.indexOf(l.loadPort)>=names.indexOf(l.port))errors.push(l.id+': loading must precede discharge');if(!l.passport?.source||l.passport.basis!=='declared')warnings.push(l.id+': shipment properties are not declared');}
  if(lots.some(l=>lots.some(other=>other.port===l.loadPort)))errors.push('Mixed loading/discharge calls require a separate operation sequence');
@@ -160,6 +183,6 @@ function solve(s,maxNodes=100000){
 function applyPlan(s,result){if(result.status!=='feasible')throw Error('No complete plan to apply');ensure(s);s.planning.undo={allocations:copy(s.allocations),basis:planBasis(s)};s.allocations=copy(result.allocations);s.stage='load';}
 const planBasis=s=>JSON.stringify({lots:active(s).map(l=>({id:l.id,q:l.quantity,sf:l.sf})),holds:s.holds});
 function undo(s){if(!s.planning?.undo)throw Error('No previous plan');if(s.planning.undo.basis!==planBasis(s))throw Error('Cargo or holds changed; the previous plan cannot be restored automatically');s.allocations=copy(s.planning.undo.allocations);delete s.planning.undo;s.stage='load';}
-const api={draftEstimate,applyDraftEstimate,ensure,events,resolveStage,onBoard,stageSummary,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
+const api={autoDraftLoss,syncAutoDraftLoss,draftEstimate,applyDraftEstimate,ensure,events,resolveStage,onBoard,stageSummary,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlanning=api;
 })(globalThis);
