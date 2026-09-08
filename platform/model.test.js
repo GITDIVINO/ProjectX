@@ -49,9 +49,9 @@ test('SALE accepts only catalog cargo and PORTS entries and becomes the only sou
 test('Changes to a sale flow into its planner lot without overwriting voyage SF',()=>{const s=M.demo(),lot=s.lots[0],sale=s.sales.find(x=>x.id===lot.saleId);lot.sf=.91;sale.quantity=7777;sale.loadPort='Murmansk';sale.dischargePort='Paranaguá';M.syncSalesToLots(s);assert.equal(lot.quantity,7777);assert.equal(lot.loadPort,'Murmansk');assert.equal(lot.port,'Paranaguá');assert.equal(lot.sf,.91);});
 test('PORTS records seed new calls with reference DA',()=>{const s=M.initial();s.lots=[];s.sales=[];s.ports=[];s.portRecords.push({id:'P9',name:'Custom Port',terminal:'Terminal 1',restrictions:'Draft 10 m',da:12345});const cargo=s.cargoTypes.find(c=>M.isBulkCargo(c));const sale=M.addSale(s,{cargoId:cargo.id,quantity:1000,fob:1,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Custom Port',dischargePort:'Santos'});M.addSaleToPlanner(s,sale.id);assert.equal(s.ports.find(p=>p.name==='Custom Port').da,12345);});
 
-test('Default port rows carry a sourced country, terminal, notes and numeric limits where published',()=>{const s=M.initial();assert.equal(s.portRecords.length,17,'12 single-row ports plus five Murmansk berths');assert.equal(new Set(s.portRecords.map(p=>p.name)).size,13);for(const p of s.portRecords){assert.ok(p.terminal.trim(),'terminal missing for '+p.name);assert.ok(p.notes.trim(),'notes missing for '+p.name);assert.ok(p.country.trim(),'country missing for '+p.name);for(const k of M.PORT_LIMIT_FIELDS)assert.ok(p[k]===null||M.ok(p[k],true),k+' must be a positive number or null for '+p.name);}const murmansk=s.portRecords.filter(p=>p.name==='Murmansk');assert.deepEqual(murmansk.map(p=>[p.berth,p.maxDraft,p.maxLoa,p.maxBeam,p.maxAirDraft]),[['Berth 4',11,230,32.2,14.5],['Berth 6',7,120,16,14.5],['Berth 7',10,225,32,14.5],['Berth 9/10',10.5,240,36,14.5],['Berth 13',12.5,240,36,14.5]]);assert.ok(murmansk.every(p=>p.terminal==='Murmansk Sea Commercial Port'),'every berth row keeps the terminal');const spb=s.portRecords.find(p=>p.name==='St. Petersburg');assert.equal(spb.maxDraft,null,'an unpublished limit stays empty rather than zero');assert.equal(s.portRecords.find(p=>p.name==='Santarem').maxDwt,60000);assert.ok(murmansk.every(p=>p.country==='Russia'));assert.equal(s.portRecords.find(p=>p.name==='Suape').country,'Brazil');});
+test('Default port rows carry a sourced country, terminal, notes and numeric limits where published',()=>{const s=M.initial();assert.equal(s.portRecords.length,17,'12 single-row ports plus five Murmansk berths');assert.equal(new Set(s.portRecords.map(p=>p.name)).size,13);for(const p of s.portRecords){assert.ok(p.terminal.trim(),'terminal missing for '+p.name);assert.ok(p.notes.trim(),'notes missing for '+p.name);assert.ok(p.country.trim(),'country missing for '+p.name);for(const k of M.PORT_LIMIT_FIELDS)assert.ok(p[k]===null||M.ok(p[k],true),k+' must be a positive number or null for '+p.name);}const murmansk=s.portRecords.filter(p=>p.name==='Murmansk');assert.deepEqual(murmansk.map(p=>[p.berth,p.maxDraft,p.maxLoa,p.maxBeam,p.maxAirDraft]),[['Berth 4',11,230,32.2,14.5],['Berth 6',7,120,16,14.5],['Berth 7',10,225,32,14.5],['Berth 9/10',10.5,240,36,14.5],['Berth 13',12.5,240,36,14.5]]);assert.ok(murmansk.every(p=>p.terminal==='Murmansk Sea Commercial Port'),'every berth row keeps the terminal');const spb=s.portRecords.find(p=>p.name==='St. Petersburg');assert.equal(spb.maxDraft,11,'user-supplied fresh water draft');assert.equal(spb.maxLoa,null,'an unpublished limit stays empty rather than zero');assert.equal(s.portRecords.find(p=>p.name==='Santarem').maxDwt,60000);assert.ok(murmansk.every(p=>p.country==='Russia'));assert.equal(s.portRecords.find(p=>p.name==='Suape').country,'Brazil');});
 
-test('Port limit breaches flag only a limit the vessel actually exceeds',()=>{const s=M.initial();const santos=s.portRecords.find(p=>p.name==='Santos');const spb=s.portRecords.find(p=>p.name==='St. Petersburg');assert.deepEqual(M.portLimitBreaches(santos,{draft:9.85,loa:180,beam:30,dwt:33465}),[]);assert.deepEqual(M.portLimitBreaches(santos,{draft:12.8,loa:180,beam:30,dwt:33465}),['maxDraft']);assert.deepEqual(M.portLimitBreaches(spb,{draft:20,loa:400,beam:60,dwt:99999}),[],'an empty limit never flags');assert.deepEqual(M.portLimitBreaches(santos,null),[]);});
+test('Port limit breaches flag only a limit the vessel actually exceeds',()=>{const s=M.initial();const santos=s.portRecords.find(p=>p.name==='Santos');const spb={name:'Unlimited',maxDraft:null,maxBeam:null,maxLoa:null,maxAirDraft:null,maxDwt:null};assert.deepEqual(M.portLimitBreaches(santos,{draft:9.85,loa:180,beam:30,dwt:33465}),[]);assert.deepEqual(M.portLimitBreaches(santos,{draft:12.8,loa:180,beam:30,dwt:33465}),['maxDraft']);assert.deepEqual(M.portLimitBreaches(spb,{draft:20,loa:400,beam:60,dwt:99999}),[],'an empty limit never flags');assert.deepEqual(M.portLimitBreaches(santos,null),[]);});
 
 test('Air draft is optional on a vessel and only screens ports once it is entered',()=>{const s=M.initial();const vessel=M.vesselOf(s);assert.equal(vessel.airDraft,null,'no air draft is invented for the reference profiles');
  const berth4=s.portRecords.find(p=>p.berth==='Berth 4');assert.equal(berth4.maxAirDraft,14.5);
@@ -131,10 +131,20 @@ test('Every default berth carries one assumed water density inside the selectabl
  }
  const d=name=>s.portRecords.find(p=>p.name===name).waterDensity;
  assert.equal(d('Santarem'),1,'an Amazon river berth is fresh water');
- assert.equal(d('St. Petersburg'),1.002,'Neva Bay is all but fresh');
+ assert.equal(d('St. Petersburg'),1,'the user quotes the Neva Bay draft in fresh water');
  assert.equal(d('Murmansk'),1.025,'Kola Bay is open sea water');
  assert.ok(d('St. Petersburg')<d('Ust-Luga')&&d('Ust-Luga')<d('Santos')&&d('Santos')<d('Pecem'),'densities rise from river to open ocean');
  assert.ok(s.portRecords.filter(p=>p.name==='Murmansk').every(p=>p.waterDensity===1.025),'every berth of one port shares its water');
+});
+
+test('A max draft that was never published is seeded into an older save',()=>{
+ const s=M.initial();const spb=s.portRecords.find(p=>p.name==='St. Petersburg');
+ spb.maxDraft=null;delete s.portProfileRevision;M.ensureCatalogs(s);
+ assert.equal(s.portRecords.find(p=>p.name==='St. Petersburg').maxDraft,11,'a null limit is filled once the figure exists');
+ for(const [name,draft] of [['Itaqui',12],['Vitoria',12]])assert.equal(M.initial().portRecords.find(p=>p.name===name).maxDraft,draft,name);
+ const kept=M.initial();const santos=kept.portRecords.find(p=>p.name==='Santos');santos.maxDraft=10.8;
+ delete kept.portProfileRevision;M.ensureCatalogs(kept);
+ assert.equal(kept.portRecords.find(p=>p.name==='Santos').maxDraft,10.8,'a figure the user entered is never replaced');
 });
 
 test('A density the user picked survives the seeding migration',()=>{
@@ -143,7 +153,7 @@ test('A density the user picked survives the seeding migration',()=>{
  assert.equal(s.portRecords.find(p=>p.name==='Santos').waterDensity,1.019,'a chosen density is never overwritten');
  const blank=M.initial();const spb=blank.portRecords.find(p=>p.name==='St. Petersburg');delete spb.waterDensity;
  delete blank.portProfileRevision;M.ensureCatalogs(blank);
- assert.equal(blank.portRecords.find(p=>p.name==='St. Petersburg').waterDensity,1.002,'a record from before the field is seeded');
+ assert.equal(blank.portRecords.find(p=>p.name==='St. Petersburg').waterDensity,1,'a record from before the field is seeded');
 });
 
 test('Port profile lookup ignores accents and the Sao spelling',()=>{assert.equal(M.portProfileOf('Paranagua'),M.PORT_PROFILES['Paranaguá']);assert.equal(M.portProfileOf('Sao Francisco do Sul'),M.PORT_PROFILES['San Francisco do Sul']);assert.equal(M.portProfileOf('Unknown Port'),null);});
