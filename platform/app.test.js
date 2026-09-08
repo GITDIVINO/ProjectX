@@ -108,7 +108,7 @@ test('Every call gets a departure and an arrival draft calculated from its own l
  const s=M.demo();P.ensure(s);
  for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);if(b)c.planning.berthId=b.id;}
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- const drafts=html.slice(html.indexOf('<h3>Drafts</h3>'),html.indexOf('id="plan-errors"'));
+ const drafts=html.slice(html.indexOf('<details id="drafts"'),html.indexOf('id="plan-errors"'));
  for(const head of ['Cargo, t','Deadweight, t','Mean, m','Trim, m','Aft, m','Fwd, m','Deepest, m','Berth limit, m'])assert.ok(drafts.includes(head),head);
  for(const name of ['Ust-Luga','Santos','Paranaguá'])for(const phase of ['Arrival · ','Departure · '])assert.ok(drafts.includes(phase+name),phase+name);
  assert.ok(!/data-path="ports\.\d+\.planning\.\w+\.(aft|mid|fwd)"/.test(drafts),'the three drafts are calculated, not typed');
@@ -179,10 +179,32 @@ test('Deductions and holds fold into one Intake Calculator that keeps its result
  assert.ok(blank.indexOf('vessel-choice')<blank.indexOf('id="intake-calculator"'),'the vessel line stays above it');
  assert.ok(blank.indexOf('id="intake-calculator"')<blank.indexOf('rotation-grid'),'the rotation stays below it');
  assert.ok(block.includes('<summary><strong>Intake Calculator</strong>'),'the block names itself on the summary');
- assert.match(block,/<details id="intake-calculator" class="intake-calculator" open>/,'it stays open while the intake is not calculated');
+ assert.match(block,/<details id="intake-calculator" class="fold" open>/,'it stays open while the intake is not calculated');
  assert.ok(block.includes('Intake not calculated'),'the summary says so rather than showing a stale figure');
  const s=M.demo();s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.match(shown,/<details id="intake-calculator" class="intake-calculator" >/,'a settled intake may be folded away');
+ assert.match(shown,/<details id="intake-calculator" class="fold" >/,'a settled intake may be folded away');
  assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span><strong>35,692\.00 t<\/strong> intake · 5 holds · 46,730\.00 m³ grain capacity<\/span>/,'the result stays readable while collapsed');
+});
+
+test('Drafts fold away once every state fits its berth, and the summary names the binding one',()=>{
+ const s=M.demo();P.ensure(s);
+ for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);if(b)c.planning.berthId=b.id;}
+ const tag=html=>html.slice(html.indexOf('<details id="drafts"'),html.indexOf('</summary>',html.indexOf('<details id="drafts"')));
+ const settled=tag(boot(JSON.stringify(s)).elements.get('app').innerHTML);
+ assert.match(settled,/^<details id="drafts" class="fold" >/,'nothing to answer, so it may be folded');
+ assert.ok(settled.includes('<summary><strong>Drafts</strong>'),'the block names itself');
+ assert.match(settled,/deepest <strong>8\.73 m<\/strong> at Departure · Ust-Luga/,'the deepest state stays readable while collapsed');
+ assert.match(settled,/tightest margin 2\.65 m at Arrival · Santos/,'so does the state with the least room');
+ const tight=JSON.parse(JSON.stringify(s));
+ tight.portRecords.find(p=>p.id===tight.ports[0].planning.berthId).maxDraft=8.5;
+ const exceeded=tag(boot(JSON.stringify(tight)).elements.get('app').innerHTML);
+ assert.match(exceeded,/^<details id="drafts" class="fold" open>/,'a state over the limit keeps the block open');
+ assert.ok(exceeded.includes('<strong class="over-limit">1 over the berth limit</strong>'),'the alarm leads the summary');
+ assert.ok(!exceeded.includes('tightest margin'),'a breach replaces the margin note rather than sitting beside it');
+ const noBerth=JSON.parse(JSON.stringify(s));
+ noBerth.ports.forEach(c=>c.planning.berthId='');
+ const partial=tag(boot(JSON.stringify(noBerth)).elements.get('app').innerHTML);
+ assert.match(partial,/^<details id="drafts" class="fold" open>/,'so does a draft with no berth limit beside it');
+ assert.ok(partial.includes('6 not checked against a berth limit'),'an unverified draft must not read as an all-clear');
 });

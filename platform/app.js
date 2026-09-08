@@ -74,7 +74,7 @@ function intakeCalculator(ship){
   +grainCapacityLine()+plannerUI.grainNote(state)+cargoVolumeLine();
  const intake=intakeShown()?`<strong>${fmt(ship.intake,2)} t</strong> intake`:'Intake not calculated';
  const grain=holdTotal===null?'grain capacity —':`${fmt(holdTotal,2)} m³ grain capacity`;
- return `<details id="intake-calculator" class="intake-calculator" ${intakeShown()?'':'open'}><summary><strong>Intake Calculator</strong><span>${intake} · ${state.holds.length} holds · ${grain}</span></summary><div class="intake-calculator-body">${body}</div></details>`;
+ return `<details id="intake-calculator" class="fold" ${intakeShown()?'':'open'}><summary><strong>Intake Calculator</strong><span>${intake} · ${state.holds.length} holds · ${grain}</span></summary><div class="fold-body">${body}</div></details>`;
 }
 const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 const num=x=>Number.isFinite(x)?x.toLocaleString('en-GB',{maximumFractionDigits:20}):'—';

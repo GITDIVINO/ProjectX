@@ -215,7 +215,8 @@ function stateCheck(s,event,drafts){
  if(draft&&draft.basis==='unavailable')missing.push(...draft.missing);
  if(!berth)missing.push('Select a berth');else{
   const pairs=[['maxLoa',v?.loa,'LOA'],['maxBeam',v?.beam,'Beam'],['maxDwt',v?.dwt,'Vessel DWT'],['maxDraft',governingDraft,draft?.basis==='computed'?'Computed state draft':'State draft'],['maxAirDraft',data.airDraft,'State air draft']];
-  for(const [k,n,label] of pairs){if(!valid(berth[k],true)||!valid(n))missing.push(label+' comparison unavailable');else if(n>berth[k])issues.push(label+' '+n+' exceeds '+berth[k]);}
+  // The comparison stays exact; a calculated draft is quoted to the millimetre rather than to fifteen decimals.
+  for(const [k,n,label] of pairs){if(!valid(berth[k],true)||!valid(n))missing.push(label+' comparison unavailable');else if(n>berth[k])issues.push(label+' '+Number(n.toFixed(3))+' exceeds '+berth[k]);}
  }
  for(const rule of limitsAt(s,event.key)){const ids=rule.holds||[],h=stage.holds.filter(h=>ids.includes(h.id));if(h.length!==ids.length||h.some(h=>h.mass===null))missing.push('Invalid hold mass limit');else if(exactSum(h.map(h=>h.mass))>rule.max+1e-7)issues.push('Hold '+ids.join(' + ')+' mass exceeds '+rule.max+' t');}
  return {key:event.key,label:event.label,quantity:stage.quantity,nonCargo,limit,margin:limit!==null&&stage.quantity!==null?limit-stage.quantity:null,draft,issues,missing:[...new Set(missing)],status:issues.length?'exceeded':missing.length?'incomplete':'within-entered-limits'};

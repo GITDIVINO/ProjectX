@@ -160,3 +160,12 @@ test('A calculated draft over the berth limit is named as calculated',()=>{
  const event=P.events(s).find(e=>e.call.name==='Ust-Luga'&&e.phase==='departure');
  assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('Computed state draft 9 exceeds 8.5')),'the source of the figure is on the face of the check');
 });
+test('A calculated draft is quoted to the millimetre, not to fifteen decimals',()=>{
+ const s=loadedFixture(),call=s.ports.find(p=>p.name==='Ust-Luga');
+ call.planning.departure.trim=0.123456789;
+ s.portRecords.find(p=>p.id===call.planning.berthId).maxDraft=9;
+ const event=P.events(s).find(e=>e.call.name==='Ust-Luga'&&e.phase==='departure');
+ const issue=P.stateCheck(s,event).issues.find(x=>x.includes('exceeds'));
+ assert.equal(issue,'Computed state draft 9.062 exceeds 9','the reader gets millimetres, not floating-point noise');
+ assert.ok(P.stateDrafts(s).find(r=>r.call==='Ust-Luga'&&r.phase==='departure').deepest>9,'the comparison itself stays exact');
+});

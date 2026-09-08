@@ -57,16 +57,18 @@ html,body,*{scrollbar-width:none;-ms-overflow-style:none}
 
 @media print{.text-action{display:inline!important;color:#111!important;padding:0;border:0;background:none}input,select,textarea,.vessel-summary,.cargo-volume,.grain-capacity,.muted,small{color:#333!important;-webkit-text-fill-color:#333}body{--text:#111;--muted:#444}}
 
-/* Intake Calculator: deductions and holds fold away, the result stays on the summary line. */
-.intake-calculator{margin:16px 0;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
-.intake-calculator>summary{display:flex;align-items:center;gap:16px;padding:13px 16px;list-style:none}
-.intake-calculator>summary::-webkit-details-marker{display:none}
-.intake-calculator>summary:before{content:'›';color:var(--muted);font-size:20px;line-height:1;transition:transform 120ms}
-.intake-calculator[open]>summary:before{transform:rotate(90deg)}
-.intake-calculator>summary strong{color:var(--text);font-size:14px;font-weight:550}
-.intake-calculator>summary span{margin-left:auto;text-align:right;font-size:12px;color:var(--muted)}
-.intake-calculator>summary span strong{font-size:12px;font-weight:550}
-.intake-calculator-body{padding:2px 16px 18px}
-.intake-calculator-body>.compact-heading{margin-top:0}
-@media(max-width:700px){.intake-calculator>summary{flex-wrap:wrap;gap:6px}.intake-calculator>summary span{margin-left:0;text-align:left;flex-basis:100%}}
-@media print{.intake-calculator{border:0;background:none;margin:0}.intake-calculator>summary{padding:0;color:#111}.intake-calculator>summary:before{display:none}.intake-calculator>summary span{display:none}.intake-calculator-body{padding:0}}
+/* Folding blocks: the working detail folds away, the result stays on the summary line. */
+.fold{margin:16px 0;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.fold>summary{display:flex;align-items:center;gap:16px;padding:13px 16px;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary:before{content:'›';color:var(--muted);font-size:20px;line-height:1;transition:transform 120ms}
+.fold[open]>summary:before{transform:rotate(90deg)}
+.fold>summary strong{color:var(--text);font-size:14px;font-weight:550}
+.fold>summary span{margin-left:auto;text-align:right;font-size:12px;color:var(--muted)}
+.fold>summary span strong{font-size:12px;font-weight:550}
+.fold-body{padding:2px 16px 18px}
+.fold-body>.compact-heading{margin-top:0}
+@media(max-width:700px){.fold>summary{flex-wrap:wrap;gap:6px}.fold>summary span{margin-left:0;text-align:left;flex-basis:100%}}
+@media print{.fold{border:0;background:none;margin:0}.fold>summary{padding:0;color:#111}.fold>summary:before{display:none}.fold>summary span{display:none}.fold-body{padding:0}}
+.over-limit{color:#ef9a8d}
+@media print{.over-limit{color:#a03a2a!important}}
