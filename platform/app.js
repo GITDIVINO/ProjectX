@@ -43,7 +43,7 @@ const chosen=()=>state.lots.filter(l=>l.selected);
 function grainCapacityLine(){
  const total=M.cargoVolume(state).holdTotal;
  if(total===null)return '<small class="grain-capacity muted">Grain capacity: — · enter every hold volume.</small>';
- return `<small class="grain-capacity">Grain capacity: ${state.holds.map(h=>num(h.volume)).join(' + ')} = <strong>${fmt(total,2)} m³</strong></small>`;
+ return `<small class="grain-capacity">Grain capacity: ${state.holds.map(h=>num(h.volume)).join(' + ')} = ${fmt(total,2)} m³</small>`;
 }
 function draftLossLine(){
  const r=state.planning?.autoDraftLoss;
@@ -54,31 +54,30 @@ function draftLossLine(){
   :b.densityApplied
    ?`FWA ${num(round(b.fwaCm,1))} cm → DWA ${num(round(b.dwaCm,1))} cm at ρ ${num(b.density)} · permissible ${num(round(b.permissible,3))} m − ${num(b.maxDraft)} m = ${num(round(b.shortfallCm,1))} cm × TPC ${num(round(b.tpcPort,2))}`
    :`(${num(b.draft)} − ${num(b.maxDraft)}) m × 100 × TPC ${num(b.tpc)}`;
- const others=r.rows.filter(x=>x.call!==b.call).map(x=>`${esc(x.call)} ${num(x.maxDraft)} m → ${fmt(x.loss,1)} t`).join(' · ');
- return `<small class="draft-formula">Draft loss: ${head} · ${body} = <strong>${fmt(r.loss,1)} t</strong>${others?' · other calls: '+others:''}</small>`;
+ // Only the binding call is printed: the voyage loses intake at that berth, and the rest do not bind.
+ return `<small class="draft-formula">Draft loss: ${head} · ${body} = ${fmt(r.loss,1)} t</small>`;
 }
 function cargoVolumeLine(){
  const v=M.cargoVolume(state);
  if(v.volume===null)return '<small class="cargo-volume muted">Cargo volume: — · needs a selected sale with a quantity and an SF.</small>';
  const terms=v.terms.map(t=>`${num(t.quantity)} × ${num(t.sf)}`).join(' + ');
- return `<small class="cargo-volume">Cargo volume: ${terms} = <strong>${fmt(v.volume,2)} m³</strong></small>`;
+ return `<small class="cargo-volume">Cargo volume: ${terms} = ${fmt(v.volume,2)} m³</small>`;
 }
 // Deductions and holds fold away once the intake is settled; the summary keeps the result in view.
 function intakeCalculator(ship){
  const labels={fuel:'Fuel, t',water:'Fresh water, t',ballast:'Ballast, t',constant:'Constant, t',draftLoss:'Loss due to draft, t'};
- const auto=state.planning.autoDraftLoss,holdTotal=M.cargoVolume(state).holdTotal,limits=M.intakeLimits(state);
+ const limits=M.intakeLimits(state);
  const deductions=Object.entries(labels).map(([k,l])=>k==='draftLoss'
-  ?`<label class="field">${l}<input aria-label="${l}" readonly value="${fmt(state.deductions.draftLoss,1)}"><small title="${esc((auto?.warnings||[]).join('; '))}">${esc(auto?.reason||'Automatic TPC estimate')}${auto?.densityNote?' · '+esc(auto.densityNote):''}${auto?.warnings.some(x=>x.includes('lowest'))?' · Lowest listed berth limit':''}</small></label>`
+  ?`<label class="field">${l}<input aria-label="${l}" readonly value="${fmt(state.deductions.draftLoss,1)}"></label>`
   :field('deductions.'+k,l)).join('');
  const body=`<div class="heading compact-heading"><h3>Deductions</h3></div><div class="grid">${deductions}</div>${draftLossLine()}`
-  +`<p class="intake-line">Preliminary intake: ${intakeShown()?`<strong>${fmt(ship.intake,2)} t</strong>`:`<strong>—</strong><button data-action="calc-intake" ${ship.intake===null?'disabled':''}>Calculate intake</button>`}</p>`
-  +(intakeShown()?`<small class="intake-formula">DWT ${num(M.vesselOf(state)?.dwt)} − fuel ${num(state.deductions.fuel)} − fresh water ${num(state.deductions.water)} − ballast ${num(state.deductions.ballast)} − constant ${num(state.deductions.constant)} − draft loss ${num(state.deductions.draftLoss)} = ${fmt(ship.intake,2)} t</small>`:'')
-  +(intakeShown()&&limits.cubic!==null?`<p class="restricted-intake">Restricted intake: <strong>${fmt(limits.restricted,2)} t</strong> <small>min(DWT ${fmt(limits.dwt,2)} t, cubics ${fmt(limits.holdTotal,2)} m³ ÷ mix SF ${fmt(limits.weightedSf,5)} m³/t = ${fmt(limits.cubic,2)} t)</small></p><p class="form-note">Cubic limit holds the selected cargo mix proportional; the hold plan remains the controlling volume check.</p>`:'')
+  +`<p class="intake-line">Restricted intake DWT: ${intakeShown()?`DWT ${num(M.vesselOf(state)?.dwt)} − fuel ${num(state.deductions.fuel)} − fresh water ${num(state.deductions.water)} − ballast ${num(state.deductions.ballast)} − constant ${num(state.deductions.constant)} − draft loss ${num(state.deductions.draftLoss)} = <strong>${fmt(ship.intake,2)} t</strong>`:`<strong>—</strong><button data-action="calc-intake" ${ship.intake===null?'disabled':''}>Calculate intake</button>`}</p>`
   +`<h3>Holds</h3><div class="grid holds-grid">${state.holds.map((h,i)=>field('holds.'+i+'.volume','Hold №'+h.id+', m³')).join('')}</div>`
-  +grainCapacityLine()+plannerUI.grainNote(state)+cargoVolumeLine();
- const intake=intakeShown()?`<strong>${fmt(limits.restricted??ship.intake,2)} t</strong> restricted intake`:'Intake not calculated';
- const grain=holdTotal===null?'grain capacity —':`${fmt(holdTotal,2)} m³ grain capacity`;
- return `<details id="intake-calculator" class="fold"><summary><strong>Intake Calculator</strong><span>${intake} · ${state.holds.length} holds · ${grain}</span></summary><div class="fold-body">${body}</div></details>`;
+  +grainCapacityLine()
+  +(intakeShown()&&limits.cubic!==null?`<p class="restricted-intake">Restricted intake DWT/cubics: ${fmt(limits.holdTotal,2)} m³ ÷ mix SF ${fmt(limits.weightedSf,5)} m³/t = <strong>${fmt(limits.cubic,2)} t</strong></p>`:'')
+  +cargoVolumeLine();
+ const intake=intakeShown()?`${fmt(limits.restricted??ship.intake,2)} t restricted intake`:'Intake not calculated';
+ return `<details id="intake-calculator" class="fold"><summary><strong>Intake Calculator</strong><span>${intake}</span></summary><div class="fold-body">${body}</div></details>`;
 }
 const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 const num=x=>Number.isFinite(x)?numberFormat(0,20).format(x):'—';

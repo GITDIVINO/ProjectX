@@ -41,28 +41,28 @@ test('Corrupt or obsolete saved state falls back to blank',()=>{for(const value 
 test('CARGO retains catalog records while rendering the simplified register',()=>{const {app,elements}=boot(null);elements.get('tab-cargo').onclick();const html=elements.get('app').innerHTML;assert.equal((html.match(/data-catalog-name=/g)||[]).length,25);assert.ok(app.getState().cargoTypes.length>=97);assert.ok(html.includes('Planning SF, m³/t'));assert.ok(html.includes('IMSBC Group'));for(const removed of ['Hold restriction','Properties / source','Apply to parcels','UN number','Transport hazard class','SDS / declaration required','Reference estimate','N/A to this carriage mode','cargo-meta'])assert.ok(!html.includes(removed));});
 test('SALE and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('Ust-Luga'));assert.ok(ports.includes('European Sulphur Terminal'));assert.ok(!ports.includes('DA, USD'));assert.match(ports,/<div class="heading"><div><h2>PORT<\/h2><p class="section-intro">Port and berth register with published size limits\.<\/p><\/div>/,'PORT is headed like the other registers');assert.ok(!ports.includes('Charterer port and terminal register'),'not the intro line the user removed earlier');assert.match(ports,/<th scope="col">Country<\/th><th scope="col">Port<\/th><th scope="col">Terminal<\/th><th scope="col">Berth<\/th><th scope="col">Water density, t\/m³<\/th><th scope="col">Max draft, m<\/th><th scope="col">Max beam, m<\/th><th scope="col">Max LOA, m<\/th><th scope="col">Max air draft, m<\/th><th scope="col">Max DWT<\/th>/,'columns follow the source table: draft, beam, LOA');assert.ok(ports.includes('value="Russia"')&&ports.includes('value="Brazil"'));assert.ok(!ports.includes('>Notes<'),'the Notes column is not rendered');assert.ok(!ports.includes('Compared with'),'no comparison line above the register');assert.ok(ports.includes('Berth 13'),'Murmansk berths are separate rows');assert.ok(!ports.includes('limit-exceeded')&&!ports.includes('limit-flag'),'PORT is a register only: breaches are shown in PLANNER');});
 
-test('Preliminary intake appears only after Calculate intake and never outlives its inputs',()=>{
+test('Restricted intake DWT appears only after Calculate intake and never outlives its inputs',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  for(const gone of ['Lubricants, t','Slops, t','deductions.lubes','deductions.slops'])assert.ok(!blank.includes(gone),gone+' is still in PLANNER');
  for(const kept of ['Fuel, t','Fresh water, t','Ballast, t','Constant, t','Loss due to draft, t'])assert.ok(blank.includes(kept),kept);
  assert.match(blank,/data-action="calc-intake" disabled/,'no deductions entered yet, so the button is disabled');
  const s=M.demo();
- assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Preliminary intake: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
+ assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Restricted intake DWT: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
  s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(shown.includes('Preliminary intake: <strong>35,692.00 t</strong>'),'the calculated figure is shown');
- assert.ok(shown.includes('Restricted intake: <strong>35,692.00 t</strong> <small>min(DWT 35,692.00 t, cubics 46,730.00 m³ ÷ mix SF 0.90000 m³/t = 51,922.22 t)</small>'),'the lower DWT/cubic limit is explicit');
+ assert.ok(shown.includes('− draft loss 0 = <strong>35,692.00 t</strong>'),'the calculated figure is shown');
+ assert.ok(shown.includes('Restricted intake DWT/cubics: 46,730.00 m³ ÷ mix SF 0.90000 m³/t = <strong>51,922.22 t</strong>'),'the cubic limit is written out on its own line');
  assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
  s.deductions.fuel=951;
  const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(stale.includes('Preliminary intake: <strong>—</strong>'),'an edited deduction withdraws the figure');
+ assert.ok(stale.includes('Restricted intake DWT: <strong>—</strong>'),'an edited deduction withdraws the figure');
  assert.ok(stale.includes('calc-intake'),'and brings the button back');
  assert.ok(!blank.includes('does not verify draft'),'the caveat line is replaced by the calculation');
- assert.ok(!blank.includes('intake-formula'),'no calculation before the figure is asked for');
- assert.ok(shown.includes('DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = 35,692.00 t'),'the calculation is written out with the entered values');
+ assert.ok(!blank.includes('− draft loss'),'no calculation before the figure is asked for');
+ assert.ok(shown.includes('Restricted intake DWT: DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = <strong>35,692.00 t</strong>'),'the result carries its own substitution on one line');
  const restricted=M.demo();restricted.deductions.draftLoss=1200;restricted.intakeShownFor=JSON.stringify([37667,950,200,300,525,1200]);
  const less=boot(JSON.stringify(restricted)).elements.get('app').innerHTML;
- assert.ok(less.includes('Preliminary intake: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
+ assert.ok(less.includes('Restricted intake DWT: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
@@ -73,36 +73,37 @@ test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const 
 test('Cargo volume sits under Holds and is the tonnage times SF of the selected sales',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(blank.includes('Cargo volume: — · needs a selected sale with a quantity and an SF.'),'an empty voyage says why it cannot be computed');
- assert.ok(blank.includes('Grain capacity: 7,781.4 + 9,489.1 + 9,484.5 + 9,487.6 + 9,274.2 = <strong>45,516.80 m³</strong>'),'the hold volumes are summed even before any sale exists');
+ assert.ok(blank.includes('Grain capacity: 7,781.4 + 9,489.1 + 9,484.5 + 9,487.6 + 9,274.2 = 45,516.80 m³'),'the hold volumes are summed even before any sale exists');
  assert.ok(blank.indexOf('grain-capacity')<blank.indexOf('cargo-volume'),'grain capacity comes first');
  const missing=M.demo();missing.holds[2].volume=null;
  assert.ok(boot(JSON.stringify(missing)).elements.get('app').innerHTML.includes('Grain capacity: — · enter every hold volume.'),'one empty hold makes the total unknown, not partial');
  const s=M.demo();
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = <strong>27,000.00 m³</strong></small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
+ assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = 27,000.00 m³</small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
  for(const gone of ['weighted SF','free of','hold volumes incomplete'])assert.ok(!html.includes(gone),gone+' should not be in the line');
  assert.ok(html.indexOf('intake-line')<html.indexOf('holds-grid'),'intake sits with the deductions it comes from');
  assert.ok(html.indexOf('holds-grid')<html.indexOf('cargo-volume'),'cargo volume follows the hold volumes it is compared against');
  const mixed=M.demo();mixed.lots[1].sf=1.2;
  const weighted=boot(JSON.stringify(mixed)).elements.get('app').innerHTML;
- assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = <strong>28,800.00 m³</strong>'),'each parcel keeps its own SF in the sum');
+ assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = 28,800.00 m³'),'each parcel keeps its own SF in the sum');
  const unselected=M.demo();unselected.lots.forEach(l=>l.selected=false);
  assert.ok(boot(JSON.stringify(unselected)).elements.get('app').innerHTML.includes('Cargo volume: —'),'nothing selected, nothing claimed');});
 
 test('The draft loss calculation is printed and the field is not editable',()=>{
  const plain=M.demo();M.applyVessel(plain,'tbn-3');
  const html=boot(JSON.stringify(plain)).elements.get('app').innerHTML;
- assert.ok(html.includes('Draft loss: Santos 11.3 m · (12.8 − 11.3) m × 100 × TPC 58.8 = <strong>8,820.0 t</strong>'),'the arithmetic is shown, not only the result');
- assert.ok(html.includes('other calls: Ust-Luga 13.1 m → 0.0 t'),'the calls that do not bind are listed');
+ assert.ok(html.includes('Draft loss: Santos 11.3 m · (12.8 − 11.3) m × 100 × TPC 58.8 = 8,820.0 t'),'the arithmetic is shown, not only the result');
+ const formula=html.slice(html.indexOf('<small class="draft-formula"'),html.indexOf('</small>',html.indexOf('<small class="draft-formula"')));
+ assert.ok(!formula.includes('Ust-Luga'),'only the binding call is printed; the calls that do not bind are left out');
  assert.match(html,/aria-label="Loss due to draft, t" readonly/,'the platform owns this figure');
  assert.ok(!html.includes('data-path="deductions.draftLoss"'),'no input path, so it cannot be typed into');
  const clear=M.demo();M.applyVessel(clear,'tbn-1');
- assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('permissible draft 9.85 m is inside the 11.3 m limit = <strong>0.0 t</strong>'),'a voyage with room states it');
+ assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('permissible draft 9.85 m is inside the 11.3 m limit = 0.0 t'),'a voyage with room states it');
  const corrected=M.demo();M.applyVessel(corrected,'tbn-3');P.ensure(corrected);
  corrected.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(corrected)),kind:'reference',source:'P',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10800,tpcRangeCm:200,tpcSource:'Hydro'};
  const dense=boot(JSON.stringify(corrected)).elements.get('app').innerHTML;
  assert.ok(dense.includes('FWA 28.6 cm → DWA 11.5 cm at ρ 1.015 · permissible 12.915 m − 11.3 m = 161.5 cm × TPC 58.23'),'the load-line terms are named: '+dense.slice(dense.indexOf('Draft loss'),dense.indexOf('Draft loss')+220));
- assert.ok(dense.includes('= <strong>9,401.0 t</strong>'));
+ assert.ok(dense.includes('× TPC 58.23 = 9,401.0 t'));
 });
 
 test('Every call gets a departure and an arrival draft calculated from its own loading',()=>{
@@ -186,7 +187,7 @@ test('Deductions and holds fold into one Intake Calculator that keeps its result
  const s=M.demo();s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.match(shown,/<details id="intake-calculator" class="fold">/,'a settled intake remains folded by default');
- assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span><strong>35,692\.00 t<\/strong> restricted intake · 5 holds · 46,730\.00 m³ grain capacity<\/span>/,'the result stays readable while collapsed');
+ assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span>35,692\.00 t restricted intake<\/span>/,'the result stays readable while collapsed');
 });
 
 test('Drafts stay hidden by default and the summary still names the binding state',()=>{
