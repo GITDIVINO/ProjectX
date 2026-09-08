@@ -134,6 +134,7 @@ test('Every default berth carries one assumed water density inside the selectabl
  assert.equal(d('St. Petersburg'),1,'the user quotes the Neva Bay draft in fresh water');
  assert.equal(d('Murmansk'),1.025,'Kola Bay is open sea water');
  assert.ok(d('St. Petersburg')<d('Ust-Luga')&&d('Ust-Luga')<d('Santos')&&d('Santos')<d('Pecem'),'densities rise from river to open ocean');
+ for(const brackish of ['Santos','Paranaguá','Itaqui','Vitoria'])assert.equal(d(brackish),1.015,'every brackish Brazilian estuary shares one figure: '+brackish);
  assert.ok(s.portRecords.filter(p=>p.name==='Murmansk').every(p=>p.waterDensity===1.025),'every berth of one port shares its water');
 });
 
