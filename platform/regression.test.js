@@ -50,8 +50,8 @@ test('The shipped HTML preserves script bytes and every embedded script parses',
  cp.execFileSync(process.execPath,[path.join(__dirname,'build.cjs')]);
  const html=fs.readFileSync(path.join(__dirname,'ProjectX.html'),'utf8');
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
- assert.equal(scripts.length,6);
- ['arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js','app.js'].forEach((name,i)=>{
+ assert.equal(scripts.length,8);
+ ['arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js','planning.js','planner-ui.js','app.js'].forEach((name,i)=>{
   assert.equal(scripts[i],fs.readFileSync(path.join(__dirname,name),'utf8').replace(/<\/script/gi,'<\\/script'));
   assert.doesNotThrow(()=>new vm.Script(scripts[i]));
  });

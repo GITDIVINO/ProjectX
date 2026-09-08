@@ -17,9 +17,9 @@ const STEPS=[
 ];
 
 const PLANNER_STEPS=[
- ['1','Sales in voyage','Add sales as parcels and tick the ones this voyage carries.'],
- ['2','Vessel and rotation','Apply a vessel, enter deductions, calculate intake, order loading and discharge calls.'],
- ['3','Stowage by hold','Distribute cargo by volume or by hand. Volume only: this is not a stability or strength check.'],
+ ['1','Sales in voyage','Add sales as parcels, select them and review shipment sources. Edit shipment properties in SALE.'],
+ ['2','Vessel and rotation','Apply a vessel, record sources and deductions, order calls and check arrival / departure limits.'],
+ ['3','Stowage by hold','Preview a volume allocation, apply or undo it, or edit by hand. Review each state and sourced limits in Checks.'],
  ['4','Voyage calculation','Distances, speeds, port time, fuel prices, hire, DA, freight and commission.'],
  ['5','Cost by sale','The voyage cost split across the parcels, to the cent, on the chosen basis.']
 ];
