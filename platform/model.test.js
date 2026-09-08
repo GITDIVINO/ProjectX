@@ -80,7 +80,7 @@ test('A saved aggregate Murmansk row becomes its berth and the other berths are 
 
 test('An edited Murmansk row is not relabelled and a removed port is not restored',()=>{const s=M.initial();const edited=s.portRecords.filter(p=>p.name!=='Murmansk');s.portRecords=[{id:'OLD',name:'Murmansk',country:'Russia',terminal:'Mine',notes:'',da:null,maxDraft:9.9,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null},...edited];delete s.portBerthRevision;M.ensureCatalogs(s);
  const rows=s.portRecords.filter(p=>p.name==='Murmansk');
- assert.equal(rows.find(p=>p.id==='OLD').berth,'','an edited row keeps its own numbers and no berth label');
+ assert.equal(rows.find(p=>p.id==='OLD').berth,'Berth 1','an edited row without a berth receives the default label');
  assert.equal(rows.length,6,'the five berth rows are added alongside it');
  const gone=M.initial();gone.portRecords=gone.portRecords.filter(p=>p.name!=='Murmansk');delete gone.portBerthRevision;M.ensureCatalogs(gone);
  assert.equal(gone.portRecords.filter(p=>p.name==='Murmansk').length,0,'a port the user removed stays removed');});
