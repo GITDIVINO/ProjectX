@@ -134,8 +134,10 @@ function stateCheck(s,event){
  if(data.plannedAt&&!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/.test(data.plannedAt))issues.push('Event time needs an explicit UTC offset');
  if(limit!==null&&stage.quantity!==null&&stage.quantity>limit+1e-7)issues.push('Cargo exceeds state limit by '+(stage.quantity-limit).toFixed(3)+' t');
  const berth=s.portRecords.find(p=>p.id===event.call.planning?.berthId),v=M.vesselOf(s);
+ const surveyed=['aft','mid','fwd'].map(k=>data[k]).filter(x=>valid(x,true));
+ const governingDraft=surveyed.length?Math.max(...surveyed):data.draft;
  if(!berth)missing.push('Select a berth');else{
-  const pairs=[['maxLoa',v?.loa,'LOA'],['maxBeam',v?.beam,'Beam'],['maxDwt',v?.dwt,'Vessel DWT'],['maxDraft',data.draft,'State draft'],['maxAirDraft',data.airDraft,'State air draft']];
+  const pairs=[['maxLoa',v?.loa,'LOA'],['maxBeam',v?.beam,'Beam'],['maxDwt',v?.dwt,'Vessel DWT'],['maxDraft',governingDraft,'State draft'],['maxAirDraft',data.airDraft,'State air draft']];
   for(const [k,n,label] of pairs){if(!valid(berth[k],true)||!valid(n))missing.push(label+' comparison unavailable');else if(n>berth[k])issues.push(label+' '+n+' exceeds '+berth[k]);}
  }
  for(const rule of limitsAt(s,event.key)){const ids=rule.holds||[],h=stage.holds.filter(h=>ids.includes(h.id));if(h.length!==ids.length||h.some(h=>h.mass===null))missing.push('Invalid hold mass limit');else if(exactSum(h.map(h=>h.mass))>rule.max+1e-7)issues.push('Hold '+ids.join(' + ')+' mass exceeds '+rule.max+' t');}

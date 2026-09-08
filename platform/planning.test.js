@@ -78,3 +78,17 @@ test('Draft loss follows the load-line arithmetic and reproduces the reference c
  assert.ok(Math.abs(row.tpcPort-v.tpc/1.025)<1e-9,'TPC is scaled into the water the ship floats in');
 });
 
+test('The berth limit bites on the deepest recorded draft, not the mean',()=>{
+ const s=M.demo();P.ensure(s);
+ const call=s.ports.find(p=>p.name==='Santos'),berth=s.portRecords.find(p=>p.name==='Santos');
+ berth.maxDraft=10.3;call.planning.berthId=berth.id;
+ Object.assign(call.planning.arrival,{aft:10.4,mid:10.2,fwd:10.0,source:'Survey',date:'2026-09-08',allowableDwt:35000,fuel:400,water:150,ballast:0,constant:450});
+ const event=P.events(s).find(e=>e.call.name==='Santos'&&e.phase==='arrival');
+ assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('State draft 10.4 exceeds 10.3')),'a trimmed-by-the-stern arrival is caught');
+ Object.assign(call.planning.arrival,{aft:10.2,mid:10.1,fwd:10.0});
+ assert.ok(!P.stateCheck(s,event).issues.some(x=>x.includes('State draft')),'all three inside the limit passes');
+ delete call.planning.arrival.aft;delete call.planning.arrival.mid;delete call.planning.arrival.fwd;
+ call.planning.arrival.draft=10.5;
+ assert.ok(P.stateCheck(s,event).issues.some(x=>x.includes('10.5 exceeds 10.3')),'the single draft field still works when no survey is recorded');
+});
+
