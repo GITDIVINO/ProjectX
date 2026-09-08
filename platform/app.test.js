@@ -51,6 +51,7 @@ test('Preliminary intake appears only after Calculate intake and never outlives 
  s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(shown.includes('Preliminary intake: <strong>35,692.00 t</strong>'),'the calculated figure is shown');
+ assert.ok(shown.includes('Restricted intake: <strong>35,692.00 t</strong> <small>min(DWT 35,692.00 t, cubics 46,730.00 m³ ÷ mix SF 0.90000 m³/t = 51,922.22 t)</small>'),'the lower DWT/cubic limit is explicit');
  assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
  s.deductions.fuel=951;
  const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
@@ -179,32 +180,42 @@ test('Deductions and holds fold into one Intake Calculator that keeps its result
  assert.ok(blank.indexOf('vessel-choice')<blank.indexOf('id="intake-calculator"'),'the vessel line stays above it');
  assert.ok(blank.indexOf('id="intake-calculator"')<blank.indexOf('rotation-grid'),'the rotation stays below it');
  assert.ok(block.includes('<summary><strong>Intake Calculator</strong>'),'the block names itself on the summary');
- assert.match(block,/<details id="intake-calculator" class="fold" open>/,'it stays open while the intake is not calculated');
+ assert.match(block,/<details id="intake-calculator" class="fold">/,'the calculator is folded on open even before intake is calculated');
  assert.ok(block.includes('Intake not calculated'),'the summary says so rather than showing a stale figure');
  const s=M.demo();s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.match(shown,/<details id="intake-calculator" class="fold" >/,'a settled intake may be folded away');
- assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span><strong>35,692\.00 t<\/strong> intake · 5 holds · 46,730\.00 m³ grain capacity<\/span>/,'the result stays readable while collapsed');
+ assert.match(shown,/<details id="intake-calculator" class="fold">/,'a settled intake remains folded by default');
+ assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span><strong>35,692\.00 t<\/strong> restricted intake · 5 holds · 46,730\.00 m³ grain capacity<\/span>/,'the result stays readable while collapsed');
 });
 
-test('Drafts fold away once every state fits its berth, and the summary names the binding one',()=>{
+test('Drafts stay hidden by default and the summary still names the binding state',()=>{
  const s=M.demo();P.ensure(s);
  for(const c of s.ports){const b=s.portRecords.find(p=>p.name===c.name);if(b)c.planning.berthId=b.id;}
  const tag=html=>html.slice(html.indexOf('<details id="drafts"'),html.indexOf('</summary>',html.indexOf('<details id="drafts"')));
  const settled=tag(boot(JSON.stringify(s)).elements.get('app').innerHTML);
- assert.match(settled,/^<details id="drafts" class="fold" >/,'nothing to answer, so it may be folded');
+ assert.match(settled,/^<details id="drafts" class="fold">/,'the table is folded away on open');
  assert.ok(settled.includes('<summary><strong>Drafts</strong>'),'the block names itself');
  assert.match(settled,/deepest <strong>8\.73 m<\/strong> at Departure · Ust-Luga/,'the deepest state stays readable while collapsed');
  assert.match(settled,/tightest margin 2\.65 m at Arrival · Santos/,'so does the state with the least room');
  const tight=JSON.parse(JSON.stringify(s));
  tight.portRecords.find(p=>p.id===tight.ports[0].planning.berthId).maxDraft=8.5;
- const exceeded=tag(boot(JSON.stringify(tight)).elements.get('app').innerHTML);
- assert.match(exceeded,/^<details id="drafts" class="fold" open>/,'a state over the limit keeps the block open');
- assert.ok(exceeded.includes('<strong class="over-limit">1 over the berth limit</strong>'),'the alarm leads the summary');
+ const html=boot(JSON.stringify(tight)).elements.get('app').innerHTML;
+ const exceeded=tag(html);
+ assert.match(exceeded,/^<details id="drafts" class="fold">/,'a breach does not force the table open');
+ assert.ok(exceeded.includes('<strong class="over-limit">1 over the berth limit</strong>'),'it reaches the reader on the summary instead');
  assert.ok(!exceeded.includes('tightest margin'),'a breach replaces the margin note rather than sitting beside it');
+ assert.ok(html.slice(html.indexOf('id="plan-errors"')).includes('exceeds 8.5'),'and the claim is repeated under the table, outside the fold');
  const noBerth=JSON.parse(JSON.stringify(s));
  noBerth.ports.forEach(c=>c.planning.berthId='');
  const partial=tag(boot(JSON.stringify(noBerth)).elements.get('app').innerHTML);
- assert.match(partial,/^<details id="drafts" class="fold" open>/,'so does a draft with no berth limit beside it');
  assert.ok(partial.includes('6 not checked against a berth limit'),'an unverified draft must not read as an all-clear');
+});
+
+test('A hold on the stowage diagram is a picture, not a button',()=>{
+ const html=boot(JSON.stringify(M.demo())).elements.get('app').innerHTML;
+ const ship=html.slice(html.indexOf('<svg class="ship"'),html.indexOf('</svg>'));
+ assert.ok(ship.includes('class="hold '),'the holds are still drawn');
+ for(const gone of ['data-hold-target','role="button"','tabindex="0"'])assert.ok(!ship.includes(gone),gone+' still makes a hold clickable');
+ assert.ok(ship.includes('aria-label="Hold 1:'),'each hold is still described for a screen reader');
+ assert.ok(!html.includes('Add maximum mass'),'the hold limit dialog is gone from PLANNER');
 });

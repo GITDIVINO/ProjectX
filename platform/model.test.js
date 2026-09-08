@@ -137,6 +137,14 @@ test('Every default berth carries one assumed water density inside the selectabl
  for(const brackish of ['Santos','Paranaguá','Itaqui','Vitoria'])assert.equal(d(brackish),1.015,'every brackish Brazilian estuary shares one figure: '+brackish);
  assert.ok(s.portRecords.filter(p=>p.name==='Murmansk').every(p=>p.waterDensity===1.025),'every berth of one port shares its water');
 });
+test('Restricted intake is the lower of DWT and cubic limits for the selected cargo mix',()=>{
+ const s=M.demo();s.vesselSnapshot={...M.vesselOf(s),dwt:57329,grain:71634};s.vesselId=s.vesselSnapshot.id;
+ s.holds=[{id:1,volume:71634,massLimit:null}];s.lots=[{...s.lots[0],selected:true,quantity:10000,sf:1.36}];
+ Object.assign(s.deductions,{fuel:1000,water:400,ballast:0,constant:200,draftLoss:0});
+ const r=M.intakeLimits(s);
+ assert.equal(r.dwt,55729);close(r.cubic,71634/1.36);assert.equal(r.restricted,r.cubic);
+ s.holds[0].volume=100000;assert.equal(M.intakeLimits(s).restricted,55729,'DWT remains the ceiling when cubics allow more');
+});
 
 test('A max draft that was never published is seeded into an older save',()=>{
  const s=M.initial();const spb=s.portRecords.find(p=>p.name==='St. Petersburg');
