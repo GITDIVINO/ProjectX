@@ -368,6 +368,7 @@ function updatePortRecord(s,index,key,value){
   value=value.trim();
   if(duplicate(record.name,value))throw Error('This port and berth already exist');
  }
+ if(key==='waterDensity'){value=value===''||value===null?null:Number(value);if(value!==null&&(!ok(value,true)||value<1||value>1.03))throw Error('Select water density between 1.000 and 1.030 t/m³');}
  if(key==='da'&&value!==null&&!ok(value))throw Error('DA must be non-negative');
  if(PORT_LIMIT_FIELDS.includes(key)&&value!==null&&!ok(value,true))throw Error('Port limits must be positive or empty');
  record[key]=value;return record;
