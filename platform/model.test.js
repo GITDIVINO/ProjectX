@@ -121,4 +121,29 @@ test('Cargo volume is quantity times SF, weighted by tonnage, and never guesses 
  assert.ok(partial.volume>0,'cargo volume still stands without hold volumes');
  assert.equal(partial.holdTotal,null);assert.equal(partial.free,null,'free room is unknown, not zero');});
 
+test('Every default berth carries one assumed water density inside the selectable range',()=>{
+ const s=M.initial();
+ const options=Array.from({length:31},(_,j)=>Number((1+j/1000).toFixed(3)));
+ for(const p of s.portRecords){
+  assert.ok(M.ok(p.waterDensity,true),'no density for '+p.name);
+  assert.ok(p.waterDensity>=1&&p.waterDensity<=1.03,'density outside the PORT select range for '+p.name);
+  assert.ok(options.includes(p.waterDensity),'density is not one of the PORT select options for '+p.name);
+ }
+ const d=name=>s.portRecords.find(p=>p.name===name).waterDensity;
+ assert.equal(d('Santarem'),1,'an Amazon river berth is fresh water');
+ assert.equal(d('St. Petersburg'),1.002,'Neva Bay is all but fresh');
+ assert.equal(d('Murmansk'),1.025,'Kola Bay is open sea water');
+ assert.ok(d('St. Petersburg')<d('Ust-Luga')&&d('Ust-Luga')<d('Santos')&&d('Santos')<d('Pecem'),'densities rise from river to open ocean');
+ assert.ok(s.portRecords.filter(p=>p.name==='Murmansk').every(p=>p.waterDensity===1.025),'every berth of one port shares its water');
+});
+
+test('A density the user picked survives the seeding migration',()=>{
+ const s=M.initial();const berth=s.portRecords.find(p=>p.name==='Santos');berth.waterDensity=1.019;
+ delete s.portProfileRevision;M.ensureCatalogs(s);
+ assert.equal(s.portRecords.find(p=>p.name==='Santos').waterDensity,1.019,'a chosen density is never overwritten');
+ const blank=M.initial();const spb=blank.portRecords.find(p=>p.name==='St. Petersburg');delete spb.waterDensity;
+ delete blank.portProfileRevision;M.ensureCatalogs(blank);
+ assert.equal(blank.portRecords.find(p=>p.name==='St. Petersburg').waterDensity,1.002,'a record from before the field is seeded');
+});
+
 test('Port profile lookup ignores accents and the Sao spelling',()=>{assert.equal(M.portProfileOf('Paranagua'),M.PORT_PROFILES['Paranaguá']);assert.equal(M.portProfileOf('Sao Francisco do Sul'),M.PORT_PROFILES['San Francisco do Sul']);assert.equal(M.portProfileOf('Unknown Port'),null);});
