@@ -60,3 +60,21 @@ test('The density note names the actual obstacle, not a generic one',()=>{
  assert.ok(r.rows.every(x=>x.densityApplied),'and every call is density corrected');
 });
 
+test('Draft loss follows the load-line arithmetic and reproduces the reference calculator',()=>{
+ // Reference intake calculator: 57,329 DWT, 12.80 m SSW, TPC 58.94, stores 1,600 t, lightship 10,426 t.
+ const s=M.demo();const v=M.vesselOf(s);v.dwt=57329;v.draft=12.80;v.tpc=58.94;s.vesselSnapshot={...v};
+ s.deductions={fuel:1000,water:400,ballast:0,constant:200,draftLoss:0};
+ P.ensure(s);
+ s.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(s)),kind:'reference',source:'ref',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10426,tpcRangeCm:400,tpcSource:'Hydrostatics'};
+ const load=s.portRecords.find(p=>p.name==='Ust-Luga'),discharge=s.portRecords.find(p=>p.name==='Santos');
+ discharge.maxDraft=99;discharge.waterDensity=1.025;
+ const intakeAt=(density,limit)=>{load.waterDensity=density;load.maxDraft=limit;return 57329-1600-P.autoDraftLoss(s).loss;};
+ assert.equal(Math.round(intakeAt(1,11.00)),43726,'Saint Petersburg 11 m fresh matches the reference to the tonne');
+ assert.ok(Math.abs(Math.round(intakeAt(1.0124,11.30))-46161)<=8,'Santos 11.3 m brackish is within the reference density preset');
+ assert.equal(Math.round(intakeAt(1,13.10)),55729,'a berth deeper than the permissible draft takes nothing');
+ const row=P.autoDraftLoss(s).rows.find(x=>x.call==='Ust-Luga');
+ assert.ok(Math.abs(row.fwaCm-28.74)<0.02,'FWA = displacement / (40 × TPC)');
+ assert.ok(Math.abs(row.dwaCm-row.fwaCm)<1e-9,'fresh water takes the whole allowance');
+ assert.ok(Math.abs(row.tpcPort-v.tpc/1.025)<1e-9,'TPC is scaled into the water the ship floats in');
+});
+

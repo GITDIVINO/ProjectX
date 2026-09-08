@@ -96,12 +96,12 @@ test('The draft loss calculation is printed and the field is not editable',()=>{
  assert.match(html,/aria-label="Loss due to draft, t" readonly/,'the platform owns this figure');
  assert.ok(!html.includes('data-path="deductions.draftLoss"'),'no input path, so it cannot be typed into');
  const clear=M.demo();M.applyVessel(clear,'tbn-1');
- assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('draft 9.85 m sits 145 cm inside the limit = <strong>0.0 t</strong>'),'a voyage with room states it');
+ assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('permissible draft 9.85 m is inside the 11.3 m limit = <strong>0.0 t</strong>'),'a voyage with room states it');
  const corrected=M.demo();M.applyVessel(corrected,'tbn-3');P.ensure(corrected);
  corrected.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(corrected)),kind:'reference',source:'P',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10800,tpcRangeCm:200,tpcSource:'Hydro'};
  const dense=boot(JSON.stringify(corrected)).elements.get('app').innerHTML;
- assert.ok(dense.includes('− 150 cm × TPC 58.8) × ρ 1.015 / 1.025'),'the density correction prints its own terms with a readable sign');
- assert.ok(dense.includes('= <strong>9,391.2 t</strong>'));
+ assert.ok(dense.includes('FWA 28.6 cm → DWA 11.5 cm at ρ 1.015 · permissible 12.915 m − 11.3 m = 161.5 cm × TPC 58.23'),'the load-line terms are named: '+dense.slice(dense.indexOf('Draft loss'),dense.indexOf('Draft loss')+220));
+ assert.ok(dense.includes('= <strong>9,401.0 t</strong>'));
 });
 
 test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=boot(null).elements.get('app').innerHTML;

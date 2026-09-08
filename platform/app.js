@@ -45,15 +45,14 @@ function grainCapacityLine(){
 function draftLossLine(){
  const r=state.planning?.autoDraftLoss;
  if(!r||r.loss===null)return `<small class="draft-formula muted">Draft loss: — · ${esc(r?.reason||'Automatic TPC estimate')}</small>`;
- const b=r.limiting,short=Math.round(-b.deltaCm);
- const basis=state.planning.vesselBasis||{},dwt=M.vesselOf(state)?.dwt;
- const head=b.densityApplied
-  ?`${esc(b.call)} ${num(b.maxDraft)} m · (lightship ${num(basis.lightship)} + DWT ${num(dwt)} ${b.deltaCm<0?'−':'+'} ${num(Math.abs(Math.round(b.deltaCm)))} cm × TPC ${num(b.tpc)}) × ρ ${num(b.density)} / ${num(basis.density)} − lightship = allowed DWT ${fmt(dwt-r.loss,1)} · ${num(dwt)} − ${fmt(dwt-r.loss,1)}`
-  :short>0
-   ?`${esc(b.call)} ${num(b.maxDraft)} m · (${num(b.draft)} − ${num(b.maxDraft)}) m × 100 × TPC ${num(b.tpc)}`
-   :`${esc(b.call)} ${num(b.maxDraft)} m · draft ${num(b.draft)} m sits ${num(Math.round(b.deltaCm))} cm inside the limit`;
+ const b=r.limiting,head=`${esc(b.call)} ${num(b.maxDraft)} m`;
+ const body=b.shortfallCm<=0
+  ?`permissible draft ${num(round(b.permissible,3))} m is inside the ${num(b.maxDraft)} m limit`
+  :b.densityApplied
+   ?`FWA ${num(round(b.fwaCm,1))} cm → DWA ${num(round(b.dwaCm,1))} cm at ρ ${num(b.density)} · permissible ${num(round(b.permissible,3))} m − ${num(b.maxDraft)} m = ${num(round(b.shortfallCm,1))} cm × TPC ${num(round(b.tpcPort,2))}`
+   :`(${num(b.draft)} − ${num(b.maxDraft)}) m × 100 × TPC ${num(b.tpc)}`;
  const others=r.rows.filter(x=>x.call!==b.call).map(x=>`${esc(x.call)} ${num(x.maxDraft)} m → ${fmt(x.loss,1)} t`).join(' · ');
- return `<small class="draft-formula">Draft loss: ${head} = <strong>${fmt(r.loss,1)} t</strong>${others?' · other calls: '+others:''}</small>`;
+ return `<small class="draft-formula">Draft loss: ${head} · ${body} = <strong>${fmt(r.loss,1)} t</strong>${others?' · other calls: '+others:''}</small>`;
 }
 function cargoVolumeLine(){
  const v=M.cargoVolume(state);
@@ -61,6 +60,7 @@ function cargoVolumeLine(){
  const terms=v.terms.map(t=>`${num(t.quantity)} × ${num(t.sf)}`).join(' + ');
  return `<small class="cargo-volume">Cargo volume: ${terms} = <strong>${fmt(v.volume,2)} m³</strong></small>`;
 }
+const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 const num=x=>Number.isFinite(x)?x.toLocaleString('en-GB',{maximumFractionDigits:20}):'—';
 const intakeKey=()=>JSON.stringify([M.vesselOf(state)?.dwt,...M.DEDUCTIONS.map(k=>state.deductions[k])]);
 const intakeShown=()=>state.intakeShownFor===intakeKey();

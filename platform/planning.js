@@ -6,6 +6,7 @@ const copy=x=>JSON.parse(JSON.stringify(x)), valid=M.ok, active=s=>s.lots.filter
 const exactSum=xs=>xs.reduce((a,x)=>a.add(x),Rational.from(0)).number();
 const product=(a,b)=>Rational.from(a).mul(b).number();
 const id=prefix=>prefix+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+const SEA_DENSITY=1.025,FRESH_DENSITY=1;
 function ensure(s){
  s.planning??={};const p=s.planning;p.revision=1;p.compatibility??=[];p.limits??=[];p.reports??=[];p.snapshots??=[];
  p.intakeBasis??={state:'After final loading',source:'',date:'',draftLossSource:'',draftLossCall:'',constantIncludes:'',legacyDraftLoss:s.deductions?.draftLoss===0};
@@ -65,12 +66,24 @@ function autoDraftLoss(s){
  if(!berth||(!selected&&candidates.some(p=>!valid(p.maxDraft,true))))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
  if(!valid(berth.maxDraft,true))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
  if(!selected&&candidates.length>1)warnings.push(c.name+': lowest registered berth limit');
- let loss=Math.max(0,product(product(v.draft-berth.maxDraft,100),v.tpc));
- let densityApplied=false;
- const density=berth.waterDensity,b=s.planning.vesselBasis||{},referenceDensity=vesselBasisStatus(s)!=='outdated'&&valid(b.density,true)?b.density:1.025,lightship=valid(b.lightship,true)&&vesselBasisStatus(s)!=='outdated'?b.lightship:null;
- if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));densityApplied=true;}else warnings.push(c.name+': '+(vesselBasisStatus(s)==='outdated'?'vessel source was recorded for another vessel; reconfirm it in Vessel source':'density correction needs lightship in Vessel source')+'; reference-density estimate');}
+ // Textbook load-line arithmetic. FWA is the immersion a summer-marked hull gains in fresh
+ // water; DWA scales it to the berth density; TPC scales with the water the ship floats in.
+ const density=berth.waterDensity,b=s.planning.vesselBasis||{},current=vesselBasisStatus(s)!=='outdated';
+ const referenceDensity=current&&valid(b.density,true)?b.density:SEA_DENSITY;
+ const lightship=current&&valid(b.lightship,true)?b.lightship:null;
+ const usesDensity=valid(density,true)&&density!==referenceDensity;
+ let fwaCm=null,dwaCm=0,permissible=v.draft,tpcPort=v.tpc,densityApplied=false;
+ if(usesDensity&&lightship!==null&&valid(v.dwt,true)){
+  fwaCm=(lightship+v.dwt)/(40*v.tpc);
+  dwaCm=fwaCm*(referenceDensity-density)/(referenceDensity-FRESH_DENSITY);
+  permissible=v.draft+dwaCm/100;
+  tpcPort=v.tpc*density/referenceDensity;
+  densityApplied=true;
+ }else if(usesDensity)warnings.push(c.name+': '+(current?'density correction needs lightship in Vessel source':'vessel source was recorded for another vessel; reconfirm it in Vessel source')+'; reference-density estimate');
  else if(!valid(density,true))warnings.push(c.name+': density unknown; reference-density estimate');
- rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,deltaCm:product(berth.maxDraft,100)-product(v.draft,100),densityApplied,tpc:v.tpc,draft:v.draft,loss});
+ const shortfallCm=Math.max(0,product(permissible,100)-product(berth.maxDraft,100));
+ const loss=product(shortfallCm,tpcPort);
+ rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,fwaCm,dwaCm,permissible,tpcPort,shortfallCm,densityApplied,tpc:v.tpc,draft:v.draft,loss});
  }
  if(!rows.length)return {loss:null,reason:'Add voyage ports',rows,warnings};
  const limiting=rows.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a);
