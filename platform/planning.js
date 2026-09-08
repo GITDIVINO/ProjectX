@@ -72,7 +72,10 @@ function autoDraftLoss(s){
  rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,loss});
  }
  if(!rows.length)return {loss:null,reason:'Add voyage ports',rows,warnings};
- const limiting=rows.reduce((a,b)=>b.loss>a.loss?b:a);return {loss:limiting.loss,limiting,rows,warnings,reason:'TPC estimate · '+limiting.call+' · '+limiting.maxDraft+' m'};
+ const limiting=rows.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a);
+ const reason=limiting.loss>0?'TPC estimate · '+limiting.call+' · '+limiting.maxDraft+' m'
+  :'No draft restriction · shallowest limit '+limiting.call+' '+limiting.maxDraft+' m vs '+v.draft+' m draft';
+ return {loss:limiting.loss,limiting,rows,warnings,reason};
 }
 function syncAutoDraftLoss(s){const r=autoDraftLoss(s);if(!s.planning.autoDraftLoss)s.planning.previousDraftLoss=s.deductions.draftLoss;s.deductions.draftLoss=r.loss;s.planning.autoDraftLoss=r;return r;}
 // Local linear hydrostatic estimate. Reference draft, DWT and TPC share one density/basis.

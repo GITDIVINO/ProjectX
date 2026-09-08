@@ -31,3 +31,17 @@ test('Applying a draft estimate preserves evidence and never deducts old draft l
 
 test('Automatic draft loss requires no source forms and follows vessel and route limits',()=>{const s=base();for(const b of s.portRecords){b.maxDraft=20;b.waterDensity=1.025;}const first=s.portRecords.find(p=>p.name===s.ports[0].name);first.maxDraft=M.vesselOf(s).draft-.3;nearly(P.syncAutoDraftLoss(s).loss,M.vesselOf(s).tpc*30);assert.equal(s.planning.vesselBasis,undefined);first.maxDraft=20;nearly(P.syncAutoDraftLoss(s).loss,0);first.maxDraft=null;assert.equal(P.syncAutoDraftLoss(s).loss,null);});
 test('Automatic density correction never invents lightship or changes the selected berth',()=>{const s=base();for(const b of s.portRecords){b.maxDraft=M.vesselOf(s).draft;b.waterDensity=1;}let r=P.autoDraftLoss(s);assert.ok(r.warnings.some(x=>x.includes('without lightship')));assert.equal(r.loss,0);const v=M.vesselOf(s);s.planning.vesselBasis={lightship:5000,density:1.025,vesselKey:JSON.stringify(v)};r=P.autoDraftLoss(s);assert.ok(r.loss>0);assert.ok(s.ports.every(c=>!c.planning.berthId));});
+
+test('A voyage with no draft restriction says so and names the shallowest limit',()=>{
+ const s=M.demo();M.applyVessel(s,'tbn-1');P.ensure(s);
+ const r=P.autoDraftLoss(s);
+ assert.equal(r.loss,0,'a 9.85 m draft clears every limit on this rotation');
+ assert.match(r.reason,/^No draft restriction/,'zero reads as an answer, not a failure');
+ assert.equal(r.limiting.call,'Santos','the tightest call is named, not the first');
+ assert.ok(r.rows.every(x=>x.maxDraft>=r.limiting.maxDraft),'no call has a shallower limit');
+ const deep=M.demo();M.applyVessel(deep,'tbn-3');P.ensure(deep);
+ const restricted=P.autoDraftLoss(deep);
+ assert.ok(restricted.loss>0);
+ assert.match(restricted.reason,/^TPC estimate · Santos/,'a real restriction still names its call');
+});
+
