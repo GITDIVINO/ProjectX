@@ -66,10 +66,11 @@ function autoDraftLoss(s){
  if(!valid(berth.maxDraft,true))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
  if(!selected&&candidates.length>1)warnings.push(c.name+': lowest registered berth limit');
  let loss=Math.max(0,product(product(v.draft-berth.maxDraft,100),v.tpc));
+ let densityApplied=false;
  const density=berth.waterDensity,b=s.planning.vesselBasis||{},referenceDensity=vesselBasisStatus(s)!=='outdated'&&valid(b.density,true)?b.density:1.025,lightship=valid(b.lightship,true)&&vesselBasisStatus(s)!=='outdated'?b.lightship:null;
- if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));}else warnings.push(c.name+': density correction unavailable without lightship; reference-density estimate');}
+ if(valid(density,true)&&density!==referenceDensity){if(lightship!==null&&valid(v.dwt,true)){const displacement=(lightship+v.dwt+100*(berth.maxDraft-v.draft)*v.tpc)*density/referenceDensity;loss=Math.max(0,v.dwt-(displacement-lightship));densityApplied=true;}else warnings.push(c.name+': density correction unavailable without lightship; reference-density estimate');}
  else if(!valid(density,true))warnings.push(c.name+': density unknown; reference-density estimate');
- rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,loss});
+ rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,deltaCm:product(berth.maxDraft,100)-product(v.draft,100),densityApplied,tpc:v.tpc,draft:v.draft,loss});
  }
  if(!rows.length)return {loss:null,reason:'Add voyage ports',rows,warnings};
  const limiting=rows.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a);

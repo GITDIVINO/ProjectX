@@ -1,4 +1,4 @@
-'use strict';const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),M=require('./model');
+'use strict';const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),M=require('./model'),P=require('./planning');
 // Boot smoke test with a minimal document sink, not a browser or visual test.
 test('PLANNER displays SF as text and preserves stored cargo properties',()=>{
  const s=M.demo();s.lots[0].sf=0.98765;
@@ -87,6 +87,22 @@ test('Cargo volume sits under Holds and is the tonnage times SF of the selected 
  assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = <strong>28,800.00 m³</strong>'),'each parcel keeps its own SF in the sum');
  const unselected=M.demo();unselected.lots.forEach(l=>l.selected=false);
  assert.ok(boot(JSON.stringify(unselected)).elements.get('app').innerHTML.includes('Cargo volume: —'),'nothing selected, nothing claimed');});
+
+test('The draft loss calculation is printed and the field is not editable',()=>{
+ const plain=M.demo();M.applyVessel(plain,'tbn-3');
+ const html=boot(JSON.stringify(plain)).elements.get('app').innerHTML;
+ assert.ok(html.includes('Draft loss: Santos 11.3 m · (12.8 − 11.3) m × 100 × TPC 58.8 = <strong>8,820.0 t</strong>'),'the arithmetic is shown, not only the result');
+ assert.ok(html.includes('other calls: Ust-Luga 13.1 m → 0.0 t'),'the calls that do not bind are listed');
+ assert.match(html,/aria-label="Loss due to draft, t" readonly/,'the platform owns this figure');
+ assert.ok(!html.includes('data-path="deductions.draftLoss"'),'no input path, so it cannot be typed into');
+ const clear=M.demo();M.applyVessel(clear,'tbn-1');
+ assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('draft 9.85 m sits 145 cm inside the limit = <strong>0.0 t</strong>'),'a voyage with room states it');
+ const corrected=M.demo();M.applyVessel(corrected,'tbn-3');P.ensure(corrected);
+ corrected.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(corrected)),kind:'reference',source:'P',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10800,tpcRangeCm:200,tpcSource:'Hydro'};
+ const dense=boot(JSON.stringify(corrected)).elements.get('app').innerHTML;
+ assert.ok(dense.includes('− 150 cm × TPC 58.8) × ρ 1.015 / 1.025'),'the density correction prints its own terms with a readable sign');
+ assert.ok(dense.includes('= <strong>9,391.2 t</strong>'));
+});
 
 test('PLANNER lays hold volumes out as fields, not as a table',()=>{const html=boot(null).elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));
