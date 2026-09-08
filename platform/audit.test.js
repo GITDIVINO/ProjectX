@@ -22,3 +22,18 @@ test('Every cost line has a trace matching the rounded amount and allocation evi
 test('Unknown financial inputs publish neither a budget nor fabricated numeric evidence',()=>{const s=M.demo();s.prices.main=null;const r=M.compute(s);assert.equal(r.budget,null);assert.equal(r.trace,undefined);});
 test('Freight and other income cancellation remain exact near the monetary range',()=>{const s=M.demo();s.lots[0].quantity=1;s.lots[1].selected=false;s.freight=90071992547409.9;s.commission=50;s.extraIncome=45035996273704.94;const b=M.compute(s).budget;assert.ok(b);assert.equal(b.net,90071992547409.89);});
 test('Allocation follows reordered discharge and ballast remains shared',()=>{const s=M.demo();M.moveCall(s,'Paranaguá',-1);s.legs.forEach(l=>Object.assign(l,{distance:240,eca:0,speed:10,margin:0,burn:1,ecaBurn:0,aux:0}));Object.assign(s.ballast,{distance:240,eca:0,speed:10,margin:0,burn:1,ecaBurn:0,aux:0});s.ballastEnabled=true;const b=M.compute(s).budget;assert.ok(b);const onward=b.rows.find(x=>x.name==='Paranaguá → Santos · hire');assert.equal(onward.shares.S2,0);assert.equal(onward.shares.S1,onward.cents);const ballast=b.rows.find(x=>x.name.startsWith('Vessel position')&&x.kind==='hire');assert.ok(ballast.shares.S1>0&&ballast.shares.S2>0);});
+test('The integer fast path in Rational.from is the same number as the decimal parse',()=>{
+ // Values that must reduce to the identical numerator/denominator, fast path or not.
+ const decimal=v=>{const [mantissa,exp='0']=String(v).toLowerCase().split('e');const negative=mantissa.startsWith('-');
+  const parts=mantissa.replace('-','').split('.');const power=Number(exp)-(parts[1]?.length||0);
+  let n=BigInt(parts.join(''));if(negative)n=-n;
+  return power>=0?R.from(n*10n**BigInt(power)):new (Object.getPrototypeOf(R.from(1)).constructor)(n,10n**BigInt(-power));};
+ const values=[0,-0,1,-1,7,-7,1000,33465,-56565,9007199254740991,-9007199254740991,1e21,-1e21,2**53,0.1,-0.1,1.005,10.075,0.970873786407767,-0.000123,12345678901234.5];
+ for(const v of values){const a=R.from(v),b=decimal(v);
+  assert.equal(a.n,b.n,'numerator for '+v);assert.equal(a.d,b.d,'denominator for '+v);}
+ // and the arithmetic identities still hold
+ assert.equal(R.from(.1).add(.2).sub(.3).n,0n);
+ assert.equal(R.from(30000).sub(24000).number(),6000);
+ assert.equal(R.from(9007199254740991).add(1).number(),9007199254740992);
+ assert.throws(()=>R.from(Infinity));assert.throws(()=>R.from(NaN));
+});
