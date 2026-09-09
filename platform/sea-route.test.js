@@ -11,6 +11,19 @@ test('Ocean legs match published distances within a few per cent',()=>{
   assert.ok(r.path.length>2,'the drawn track passes through the network, not straight over land');
  }
 });
+test('Delivery positions agree with the printed pairs the publication has for them',()=>{
+ // The check on a position entered by hand: where Pub. 151 prints the pair, the routed figure must land on it.
+ // Only legs long enough for the lane network are asserted; a printed short pair is taken from the publication
+ // anyway, and the network is known to cut corners on those (Rotterdam - Antwerp routes 93 nm against 121 printed).
+ for(const [from,to,tolerance] of [['Amsterdam','Hamburg',.02],['Rotterdam','Hamburg',.02],['Port Said','Singapore',.03],['Gibraltar','Port Said',.05]]){
+  const printed=S.published(M.PORT_PROFILES[from].pub151,M.PORT_PROFILES[to].pub151);
+  assert.ok(printed,from+' → '+to+' is no longer printed; the check needs another pair');
+  const r=S.route(at(from),at(to));
+  assert.ok(r.reliable,from+' → '+to+' should not be flagged');
+  assert.ok(Math.abs(r.distance-printed.distance)/printed.distance<=tolerance,
+   `${from} → ${to}: routed ${r.distance.toFixed(0)} nm against ${printed.distance} nm printed`);
+ }
+});
 test('A coastal leg the network cannot see is flagged, not quietly answered',()=>{
  // The lane network has no node near these ports: the approach legs are the whole route.
  for(const [from,to] of [['Santos','Paranaguá'],['Paranaguá','San Francisco do Sul'],['Suape','Pecem']]){

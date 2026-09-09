@@ -23,10 +23,29 @@ const VESSELS=[
 ];
 const DEDUCTIONS=['fuel','water','ballast','constant','draftLoss'];
 const CATALOG_ADDITIONS='ports-vessels-2026-09-06';
+const DELIVERY_PORT_ADDITIONS='delivery-ports-2026-09-09';
 const PORT_PROFILE_REVISION='port-brackish-2026-09-08';
 // Numeric limits are the most permissive value the source states for the port or terminal.
 // A vessel above one of them fits no berth; a vessel below it still needs the assigned berth confirmed.
 const PORT_LIMIT_FIELDS=['maxDraft','maxLoa','maxBeam','maxAirDraft','maxDwt'];
+// Delivery and redelivery points: entered for routing the ballast approach, not vetted as call ports.
+// Position is the harbour to a hundredth of a degree; every size limit stays empty until a source is recorded.
+const DELIVERY_NOTE='Position for routing the ballast approach. Size limits and water density are not published here: confirm the berth before treating this as a call port.';
+const DELIVERY_PORTS={
+ 'Rotterdam':{pub151:'Rotterdam, Netherlands',lat:51.95,lon:4.13,country:'Netherlands'},
+ 'Amsterdam':{pub151:'Amsterdam, Netherlands',lat:52.40,lon:4.85,country:'Netherlands'},
+ 'Antwerp':{pub151:'Antwerp, Belgium',lat:51.28,lon:4.32,country:'Belgium'},
+ 'Hamburg':{pub151:'Hamburg, Germany',lat:53.54,lon:9.94,country:'Germany'},
+ 'Gdansk':{pub151:'Gdansk, Poland',lat:54.40,lon:18.68,country:'Poland'},
+ 'Klaipeda':{pub151:'Klaipeda, Lithuania',lat:55.70,lon:21.12,country:'Lithuania'},
+ 'Riga':{pub151:null,lat:57.03,lon:24.05,country:'Latvia'},
+ 'Tallinn':{pub151:'Tallinn, Estonia',lat:59.45,lon:24.77,country:'Estonia'},
+ 'Skagen':{pub151:'Skagens Odde, Denmark',lat:57.72,lon:10.58,country:'Denmark'},
+ // The lane network has no connected node inside the Bay of Gibraltar, so the position is the eastern approach.
+ 'Gibraltar':{pub151:'Gibraltar',lat:36.05,lon:-5.30,country:'Gibraltar'},
+ 'Port Said':{pub151:'Port Said, Egypt',lat:31.26,lon:32.31,country:'Egypt'},
+ 'Singapore':{pub151:'Singapore',lat:1.26,lon:103.83,country:'Singapore'}
+};
 const PORT_PROFILES={
  // One row per berth: the user supplied these five individually, so no aggregate row is kept.
  'Murmansk':{pub151:'Murmansk, Russia',lat:68.97,lon:33.05,waterDensity:1.025,country:'Russia',terminal:'Murmansk Sea Commercial Port',maxDraft:12.5,maxLoa:240,maxBeam:36,maxAirDraft:14.5,maxDwt:null,notes:'Air draft 14.5 m at all berths.',berths:[
@@ -49,6 +68,7 @@ const PORT_PROFILES={
  'Pecem':{lat:-3.55,lon:-38.81,waterDensity:1.025,country:'Brazil',terminal:'Pier 3 / TMUT',maxDraft:15.3,maxLoa:null,maxBeam:null,maxAirDraft:null,maxDwt:null,notes:'TMUT berths 7-9 draft 15.3 m. Pier 1 internal 14 m, external 15 m. Confirm the berth and the fertilizer scheme.'}
 };
 const normalizePortName=name=>String(name??'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+for(const [name,p] of Object.entries(DELIVERY_PORTS))PORT_PROFILES[name]={...p,waterDensity:null,terminal:'',notes:DELIVERY_NOTE,delivery:true,...Object.fromEntries(PORT_LIMIT_FIELDS.map(k=>[k,null]))};
 function portProfileOf(name){const key=normalizePortName(name);const match=Object.keys(PORT_PROFILES).find(n=>normalizePortName(n)===key||(n==='San Francisco do Sul'&&key==='sao francisco do sul'));return match?PORT_PROFILES[match]:null;}
 function portRecord(id,name,berth){const profile=portProfileOf(name);const source=berth?profile?.berths?.find(b=>b.berth===berth):profile;const record={id,name,country:profile?.country??'',terminal:profile?.terminal??'',berth:berth??'Berth 1',waterDensity:profile?.waterDensity??null,lat:profile?.lat??null,lon:profile?.lon??null,notes:profile?.notes??'',da:null};for(const k of PORT_LIMIT_FIELDS)record[k]=source?.[k]??null;return record;}
 // A port with published per-berth limits becomes one row per berth instead of a single aggregate row.
@@ -118,6 +138,16 @@ function mergeRequestedCatalogs(s){
   s.vesselProfiles.push(copy);
  }
  s.catalogAdditions=[...(s.catalogAdditions||[]),CATALOG_ADDITIONS];
+}
+// Added later than the requested catalogs, so they carry their own token and seed independently.
+function mergeDeliveryPorts(s){
+ if(s.catalogAdditions?.includes(DELIVERY_PORT_ADDITIONS))return;
+ for(const [i,name] of Object.keys(DELIVERY_PORTS).entries()){
+  if(s.portRecords.some(p=>normalizePortName(p.name)===normalizePortName(name)))continue;
+  let id='delivery-seed-'+i;while(s.portRecords.some(p=>p.id===id))id+='-new';
+  s.portRecords.push(...portRecordsFor(id,name));
+ }
+ s.catalogAdditions=[...(s.catalogAdditions||[]),DELIVERY_PORT_ADDITIONS];
 }
 const vesselOf=s=>(s.vesselSnapshot?.id===s.vesselId?s.vesselSnapshot:null)||VESSELS.find(v=>v.id===(s.vesselId||'tbn-1'));
 const LOAD_PORT=['Ust-Luga','Murmansk','St. Petersburg'];
@@ -397,8 +427,8 @@ function syncRoute(s){const alias={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex 
 function berthsAt(s,call){const out=[];for(const l of active(s)){const sale=s.sales?.find(x=>x.id===l.saleId);if(!sale)continue;if(l.loadPort===call.name&&sale.loadPortId)out.push(sale.loadPortId);if(l.port===call.name&&sale.dischargePortId)out.push(sale.dischargePortId);}return [...new Set(out)];}
 function syncBerths(s){for(const call of s.ports){const ids=berthsAt(s,call);if(!ids.length)continue;call.planning??={berthId:'',arrival:{},departure:{}};call.planning.berthId=ids[0];}}
 function moveCall(s,name,direction){if(![-1,1].includes(direction))return false;const loadNames=new Set(active(s).map(l=>l.loadPort)),isLoad=loadNames.has(name),group=callsOf(s).filter(p=>loadNames.has(p.name)===isLoad);const index=group.findIndex(p=>p.name===name),target=index+direction;if(index<0||target<0||target>=group.length)return false;const a=s.ports.indexOf(group[index]),b=s.ports.indexOf(group[target]);[s.ports[a],s.ports[b]]=[s.ports[b],s.ports[a]];syncRoute(s);s.stage='load';return true;}
-function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}s.vesselProfiles.forEach(v=>{v.airDraft??=null;});if(s.vesselSnapshot)s.vesselSnapshot.airDraft??=null;ensureBusinessData(s);mergeRequestedCatalogs(s);// A distance already in the file predates the route estimate and counts as the user's own.
- for(const l of s.legs||[])if(l.distanceSource==null&&ok(l.distance,true))l.distanceSource='entered';
+function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}s.vesselProfiles.forEach(v=>{v.airDraft??=null;});if(s.vesselSnapshot)s.vesselSnapshot.airDraft??=null;ensureBusinessData(s);mergeRequestedCatalogs(s);mergeDeliveryPorts(s);// A distance already in the file predates the route estimate and counts as the user's own.
+ for(const l of [...(s.legs||[]),...(s.ballast?[s.ballast]:[])])if(l.distanceSource==null&&ok(l.distance,true))l.distanceSource='entered';
  mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id&&!l.passport)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
 function applyVessel(s,id){ensureCatalogs(s);const v=s.vesselProfiles.find(v=>v.id===id);if(!v||!v.name.trim())throw Error('Enter a vessel name');for(const k of ['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'])if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);for(const k of ['bale','gt','nrt','tanktop','airDraft','boiler'])if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);for(const k of ['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'])if(!ok(v[k]))throw Error('Check consumption: '+k);if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');if(!v.holdData.length)throw Error('Add holds');v.holds=v.holdData.length;s.vesselId=id;s.vesselSnapshot=JSON.parse(JSON.stringify(v));s.holds=JSON.parse(JSON.stringify(v.holdData));s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});[...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));}
@@ -417,5 +447,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={DEDUCTIONS,DELIVERY_PLACEHOLDER,deliveryName,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);

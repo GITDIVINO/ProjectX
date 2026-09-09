@@ -58,7 +58,7 @@ test('Requested reference catalogs migrate once without overwriting saved edits 
  s.vesselProfiles=[{...s.vesselProfiles[0],name:'Custom 33K'}, {...s.vesselProfiles[1],id:'USER',dwt:39000}];
  const snapshot=JSON.stringify(s.vesselSnapshot),lots=JSON.stringify(s.lots);
  M.ensureCatalogs(s);
- assert.equal(s.portRecords.length,10);assert.equal(s.portRecords[0].da,123);
+ assert.equal(s.portRecords.length,22,'ten requested call ports and twelve delivery positions');assert.equal(s.portRecords[0].da,123);
  assert.equal(s.portRecords[0].terminal,'Keep');assert.equal(s.portRecords[0].notes,'User data');assert.equal(s.portRecords[0].maxDraft,12.5);
  assert.equal(s.vesselProfiles.length,3);assert.equal(s.vesselProfiles[1].dwt,39000);
  assert.equal(JSON.stringify(s.vesselSnapshot),snapshot);assert.equal(JSON.stringify(s.lots),lots);
@@ -67,7 +67,7 @@ test('Requested reference catalogs migrate once without overwriting saved edits 
  assert.ok(!saved.portRecords.some(p=>p.name==='Itaqui'));assert.equal(saved.vesselProfiles.length,3);
 });
 test('New defaults contain requested ports and three complete editable vessel profiles',()=>{
- const s=M.initial();assert.equal(s.portRecords.length,17,'13 ports, with Murmansk held as five berth rows');assert.equal(s.vesselProfiles.length,3);
+ const s=M.initial();assert.equal(s.portRecords.length,29,'13 call ports with Murmansk as five berth rows, plus twelve delivery positions');assert.equal(s.vesselProfiles.length,3);
  for(const name of ['St. Petersburg','Itaqui','Santarem','Vitoria','Rio Grande','San Francisco do Sul','Suape','Aratu','Pecem'])assert.equal(s.portRecords.filter(p=>p.name===name).length,1);
  assert.deepEqual(s.portRecords.filter(p=>p.name==='Murmansk').map(p=>p.berth),['Berth 4','Berth 6','Berth 7','Berth 9/10','Berth 13']);
  for(const id of ['tbn-2','tbn-3']){

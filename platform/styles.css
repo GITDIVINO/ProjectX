@@ -53,6 +53,8 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 .sea-track{stroke:var(--accent);stroke-width:1}
 .sea-glow{stroke:var(--accent);stroke-width:3.5;opacity:.12}
 .sea-track.sea-track-doubtful{stroke:var(--muted);stroke-dasharray:5 4}
+.sea-track.sea-track-ballast{stroke-dasharray:2 5;opacity:.75}
+.sea-glow.sea-track-ballast{opacity:.06}
 .sea-glow.sea-track-doubtful{stroke:var(--muted);opacity:.1}
 .sea-port circle{vector-effect:non-scaling-stroke}
 .sea-port-ring{fill:none;stroke:var(--accent);stroke-width:.9}

@@ -38,7 +38,7 @@ const fmt=(x,d=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':numberForm
 function get(path){return path.split('.').reduce((a,k)=>a[k],state);}function set(path,value){const bits=path.split('.'),last=bits.pop();bits.reduce((a,k)=>a[k],state)[last]=value;}
 function input(path,label,options={}){
  if(options.tonnage)return `<input aria-label="${esc(label)}" data-path="${path}" type="text" inputmode="decimal" data-format="tonnage" value="${esc(fmt(get(path),1))}" placeholder="—" ${options.disabled?'disabled':''}>`;
- return `<input aria-label="${esc(label)}" data-path="${path}" type="${options.type||'number'}" ${options.type?'':'min="0" step="any"'} value="${esc(get(path))}" placeholder="${esc(options.placeholder||'—')}" ${options.disabled?'disabled':''}>`;}
+ return `<input aria-label="${esc(label)}" data-path="${path}" type="${options.type||'number'}" ${options.type?'':'min="0" step="any"'} value="${esc(get(path))}" placeholder="${esc(options.placeholder||'—')}" ${options.list?`list="${esc(options.list)}"`:''} ${options.disabled?'disabled':''}>`;}
 function select(path,label,values){return `<select aria-label="${esc(label)}" data-path="${path}">${values.map(v=>{const [id,name]=Array.isArray(v)?v:[v,v];return `<option value="${esc(id)}" ${String(get(path)??'')===String(id)?'selected':''}>${esc(name)}</option>`;}).join('')}</select>`;}
 function field(path,label,options){return `<label class="field">${label}${input(path,label,options)}</label>`;}
 const chosen=()=>state.lots.filter(l=>l.selected);
@@ -82,14 +82,18 @@ function intakeCalculator(ship){
 // a leg that loops out to sea and back is visible long before the number looks wrong.
 const Sea=typeof window!=='undefined'?window.ProjectXSeaRoute:null;
 const portAnchor=name=>{const p=state.portRecords.find(p=>p.name===name&&Number.isFinite(p.lat)&&Number.isFinite(p.lon));return p?[p.lon,p.lat]:null;};
+const legRoute=(fromName,toName,leg,ballast)=>{
+ const a=portAnchor(fromName),b=portAnchor(toName);
+ return {from:fromName,to:toName,a,b,leg,ballast,
+  route:Sea&&a&&b?Sea.route(a,b):null,
+  published:Sea?Sea.published(M.portProfileOf(fromName)?.pub151,M.portProfileOf(toName)?.pub151):null};
+};
 function voyageLegs(){
  const calls=M.callsOf(state),out=[];
+ // The approach is measured from the delivery port, so it is routed and drawn like the loaded legs.
+ if(state.ballastEnabled&&calls.length)out.push(legRoute(state.ballast.from,calls[0].name,state.ballast,true));
  for(let i=0;i<calls.length-1;i++){
-  const from=portAnchor(calls[i].name),to=portAnchor(calls[i+1].name);
-  const leg=state.legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null;
-  out.push({from:calls[i].name,to:calls[i+1].name,a:from,b:to,leg,
-   route:Sea&&from&&to?Sea.route(from,to):null,
-   published:Sea?Sea.published(M.portProfileOf(calls[i].name)?.pub151,M.portProfileOf(calls[i+1].name)?.pub151):null});
+  out.push(legRoute(calls[i].name,calls[i+1].name,state.legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null,false));
  }
  return out;
 }
@@ -105,6 +109,7 @@ function syncRouteDistances(){
 }
 // Typing into a leg distance makes it the user's figure; clearing it hands the leg back to the estimate.
 function noteManualEntry(path,value){
+ if(path==='ballast.distance'){state.ballast.distanceSource=value===null?null:'entered';return;}
  const m=/^legs\.(\d+)\.distance$/.exec(path||'');
  if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
 }
@@ -226,7 +231,8 @@ const mapUnit=box=>box[2]/(document.querySelector?.('.voyage-map svg')?.getBound
 function voyageMap(){
  if(!Sea)return '';
  const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
- const anchors=[...new Set(M.callsOf(state).map(c=>c.name))].map(name=>[name,portAnchor(name)]).filter(([,p])=>p);
+ const names=[...new Set([...legs.filter(l=>l.ballast).map(l=>l.from),...M.callsOf(state).map(c=>c.name)])];
+ const anchors=names.map(name=>[name,portAnchor(name)]).filter(([,p])=>p);
  if(!anchors.length)return '<div class="voyage-map-empty"><p class="muted">The route is drawn once the voyage calls have coordinates. Enter them in PORT.</p></div>';
  const all=[...anchors.map(([,p])=>p),...drawn.flatMap(l=>l.route.path)];
  let minLon=Math.min(...all.map(p=>p[0])),maxLon=Math.max(...all.map(p=>p[0]));
@@ -241,7 +247,7 @@ function voyageMap(){
  const coast=coastMarkup();
  const tracks=drawn.map(l=>{
   const points=l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ');
-  const kind=l.route.reliable?'':' sea-track-doubtful';
+  const kind=(l.route.reliable?'':' sea-track-doubtful')+(l.ballast?' sea-track-ballast':'');
   return `<polyline class="sea-glow${kind}" points="${points}"/><polyline class="sea-track${kind}" points="${points}"/>`;
  }).join('');
  const marks=markMarkup(anchors,box,mapUnit(box));
@@ -256,6 +262,8 @@ function voyageDistanceLine(){
    :l.leg.distanceSource==='published'?'NGA Pub. 151, published'
    :l.leg.distanceSource==='estimated'?'Estimated over the lane network'
    :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports and no printed pair; enter it from a distance table'
+   :l.ballast&&!String(state.deliveryPort||'').trim()?'Ballast approach · enter the delivery port to measure it'
+   :l.ballast&&!l.a?'Delivery port is not a registered port with a position; add it in PORT or enter the distance'
    :'No route · check the port positions in PORT';
   return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.published?fmt(l.published.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
  return table(['Leg','In the calculation, nm','Pub. 151, nm','Estimate, nm','Source'],rows,'sea-distances');
@@ -305,7 +313,7 @@ const report=P.check(state,b);
 html+=plannerUI.section3(state,b,report)+plannerUI.printEvidence(state,b,report);
 html+=`<section><div class="heading"><h2>4. Voyage calculation</h2></div>${voyageChain(b,ship)}`;
 html+=`<details id="voyage-map" class="fold"><summary><strong>Voyage map</strong></summary><div class="fold-body">${voyageMap()}</div></details>`+voyageDistanceLine();
-html+=`<h3>Legs</h3><div class="ballast-line"><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>${state.ballastEnabled?`<label class="field delivery-port">Delivery port${input('deliveryPort','Delivery port',{type:'text',placeholder:M.DELIVERY_PLACEHOLDER})}</label>`:''}</div>`;
+html+=`<h3>Legs</h3><div class="ballast-line"><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>${state.ballastEnabled?`<label class="field delivery-port">Delivery port${input('deliveryPort','Delivery port',{type:'text',placeholder:M.DELIVERY_PLACEHOLDER,list:'delivery-ports'})}</label><datalist id="delivery-ports">${portNames().map(([name])=>`<option value="${esc(name)}"></option>`).join('')}</datalist>`:''}</div>`;
 const activePorts=M.callsOf(state);const displayedLegs=[];if(state.ballastEnabled)displayedLegs.push({l:state.ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state.legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state.legs[j],path:'legs.'+j});}
 html+=table(['Leg','Total <small>NM</small>','Of which ECA <small>NM</small>','Speed <small>kn</small>','Weather <small>% time</small>','Outside ECA <small>t/day</small>','In ECA <small>t/day</small>','Aux <small>t/day</small>','Days'],displayedLegs.map(({l,path})=>`<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td>${['distance','eca','speed','margin','burn','ecaBurn','aux'].map(k=>`<td>${input(path+'.'+k,l.from+' '+k)}</td>`).join('')}<td>${fmt(b?.legs.find(x=>x.from===l.from&&x.to===l.to)?.days,3)}</td></tr>`));html+=`<p class="form-note">The ballast leg starts at the entered delivery port; left empty, it is named a vessel position and its distance is still entered by hand. Speeds and consumption come from the selected vessel type. Working values are in the legs table. Consumption under the fuel regime for ECA requires confirmation. The margin increases time and consumption; ECA is included in the total distance.</p>${calculationDetails('legs',b?.trace.legs,'Days = distance / (speed × 24) × (1 + weather / 100). ECA is part of total distance. Main mass = non-ECA days × burn; ECA mass = ECA days × burn; Aux mass = all sea days × additional burn. Fuel value = mass × price; hire = days × daily hire. Complete voyage inputs for values.')}`;
 html+=`<h3>Ports</h3>`+table(['Port','Cargo <small>MT</small>','Handling rate <small>t/day</small>','Handling terms','Calendar <small>days</small>','Turn time <small>h</small>','Waiting <small>h</small>','DA <small>USD</small>','Days'],activePorts.map(p=>{const i=state.ports.indexOf(p),path='ports.'+i;return `<tr><td>${esc(p.name)}</td><td>${fmt(lots.filter(l=>l.loadPort===p.name||l.port===p.name).reduce((n,l)=>n+(l.quantity||0),0),0)}</td><td>${input(path+'.rate',p.name+' handling rate')}</td><td>${select(path+'.terms',p.name+' terms',[['SHINC','24/7 · SHINC'],['manual','Manual calendar']])}</td><td>${input(path+'.calendar',p.name+' calendar days',{disabled:p.terms==='SHINC'})}</td><td>${input(path+'.turn',p.name+' turn time')}</td><td>${input(path+'.extra',p.name+' waiting')}</td><td>${input(path+'.da',p.name+' DA')}</td><td>${fmt(b?.ports.find(x=>x.name===p.name)?.days,3)}</td></tr>`;}));

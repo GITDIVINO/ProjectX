@@ -126,6 +126,37 @@ test('The ballast approach carries an editable delivery port',()=>{
  assert.ok(named.elements.get('app').innerHTML.includes('>Rotterdam \u2192 Ust-Luga<'),'and the legs table prints it');
  assert.equal(app.getState().deliveryPort,'','an unentered port is stored as empty text, not as the placeholder');
 });
+test('A delivery port in PORT routes, draws and measures the ballast approach',()=>{
+ const s=M.demo();P.ensure(s);s.ballastEnabled=true;s.deliveryPort='Murmansk';
+ Object.assign(s.ballast,{eca:0,aux:0});// the approach still needs its own ECA and Aux before a budget exists
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ const ballast=app.getState().ballast;
+ assert.equal(ballast.distanceSource,'estimated','the approach takes the routed figure');
+ assert.ok(Math.abs(ballast.distance-2340)<60,'around the North Cape and into the Baltic: '+ballast.distance);
+ assert.equal((html.match(/class="sea-track/g)||[]).length,3,'the approach is drawn with the two loaded legs');
+ assert.equal((html.match(/sea-track-ballast/g)||[]).length,2,'in its own style, glow and track');
+ assert.ok(html.includes('>Murmansk<'),'and the delivery port is marked on the map');
+ const table=html.slice(html.indexOf('class="sea-distances"'));
+ assert.ok(table.indexOf('Murmansk \u2192 Ust-Luga')<table.indexOf('Ust-Luga \u2192 Santos'),'the approach heads the distance table');
+ assert.equal(app.getResult().budget.legs[0].distance,ballast.distance,'and the same figure reaches the budget');
+});
+test('An unregistered delivery port is answered with a reason, never with a distance',()=>{
+ const s=M.demo();P.ensure(s);s.ballastEnabled=true;s.deliveryPort='Off Ushant';
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.equal(app.getState().ballast.distance,null,'no figure is invented for a place with no position');
+ assert.ok(html.includes('Delivery port is not a registered port with a position'),'the table says what is missing');
+ assert.equal((html.match(/class="sea-track/g)||[]).length,2,'and nothing is drawn for it');
+ const empty=M.demo();P.ensure(empty);empty.ballastEnabled=true;
+ assert.ok(boot(JSON.stringify(empty)).elements.get('app').innerHTML.includes('enter the delivery port to measure it'),'an empty field asks for the port');
+});
+test('A ballast distance already in the file outranks the estimate',()=>{
+ const s=M.demo();P.ensure(s);s.ballastEnabled=true;s.deliveryPort='Murmansk';
+ Object.assign(s.ballast,{distance:2400,distanceSource:null});
+ const {app,elements}=boot(JSON.stringify(s));
+ assert.equal(app.getState().ballast.distance,2400,'the saved figure is kept');
+ assert.equal(app.getState().ballast.distanceSource,'entered','and counts as the user own');
+ assert.ok(elements.get('app').innerHTML.includes('>Entered<'));
+});
 test('Section 4 opens with a chain whose parts add up to the result it states',()=>{
  const s=M.demo();P.ensure(s);
  const {app,elements}=boot(JSON.stringify(s));
