@@ -6688,9 +6688,9 @@ const depthMarkup=()=>depthCache??=Sea.depths().map(d=>`<g class="sea-depth" dat
 function graticule(box){
  const span=Math.max(box[2],box[3]);
  const step=span>120?30:span>60?15:span>24?10:span>10?5:span>4?2:1;
- const [x,y,w,h]=box,lines=[];
- for(let lon=Math.ceil((x-w)/step)*step;lon<=x+2*w;lon+=step)lines.push(`<line x1="${lon}" y1="${(y-h).toFixed(2)}" x2="${lon}" y2="${(y+2*h).toFixed(2)}"/>`);
- for(let lat=Math.ceil((y-h)/step)*step;lat<=y+2*h;lat+=step)lines.push(`<line x1="${(x-w).toFixed(2)}" y1="${lat}" x2="${(x+2*w).toFixed(2)}" y2="${lat}"/>`);
+ const lines=[];
+ for(let lon=-180;lon<=180;lon+=step)lines.push(`<line x1="${lon}" y1="-90" x2="${lon}" y2="90"/>`);
+ for(let lat=-90;lat<=90;lat+=step)lines.push(`<line x1="-180" y1="${lat}" x2="180" y2="${lat}"/>`);
  return `<g class="sea-graticule">${lines.join('')}</g>`;
 }
 // Pan and zoom live outside the voyage: they belong to this browsing session, not to the saved calculation.
@@ -6700,16 +6700,32 @@ function mapView(fitted){
  if(!mapZoom||mapZoom.key!==mapKey(fitted))mapZoom={key:mapKey(fitted),fitted:fitted.slice(),box:fitted.slice()};
  return mapZoom.box;
 }
-// The view may travel one full frame beyond the voyage in each direction and no further.
+// Zooming out stops where the world itself fills the frame. Past that the drawing would
+// shrink into the middle of an empty box, which is not a smaller map but a lost one.
 function clampView(fitted,box){
- const min=Math.min(fitted[2],fitted[3])/60,max=Math.max(fitted[2]*3,fitted[3]*3);
- const ratio=fitted[2]/fitted[3];
  let [x,y,w,h]=box;
- w=Math.min(Math.max(w,min*ratio),Math.min(max*ratio,360));
- h=w/ratio;
- x=Math.min(Math.max(x,fitted[0]-fitted[2]),fitted[0]+2*fitted[2]-w);
- y=Math.min(Math.max(y,fitted[1]-fitted[3]),fitted[1]+2*fitted[3]-h);
+ const ratio=w/h,min=Math.min(fitted[2],fitted[3])/60;
+ const maxW=Math.min(360,180*ratio);
+ w=Math.min(Math.max(w,min*ratio),maxW);h=w/ratio;
+ // Inside the world the view is free; once it spans the world it is centred on it.
+ x=w>=360?-w/2:Math.min(Math.max(x,-180),180-w);
+ y=h>=180?-h/2:Math.min(Math.max(y,-90),90-h);
  return [x,y,w,h];
+}
+// preserveAspectRatio letterboxes whatever the box and the frame disagree about, and the
+// frame's shape is only known once the page has laid out. The box is widened or heightened
+// to match it, which reveals more ocean and never hides the voyage.
+function fitMapFrame(){
+ const svg=document.querySelector?.('.voyage-map svg');
+ if(!svg?.getBoundingClientRect||!mapZoom)return;
+ const rect=svg.getBoundingClientRect();
+ if(!rect.width||!rect.height)return;
+ const frame=rect.width/rect.height,[x,y,w,h]=mapZoom.box;
+ if(Math.abs(frame-w/h)>.01){
+  const nw=frame>w/h?h*frame:w,nh=frame>w/h?h:w/frame;
+  mapZoom.box=clampView(mapZoom.fitted,[x-(nw-w)/2,y-(nh-h)/2,nw,nh]);
+ }
+ paintMapView();
 }
 function zoomMap(factor,at){
  if(!mapZoom)return;
@@ -6724,7 +6740,7 @@ function panMap(dx,dy){
  mapZoom.box=clampView(mapZoom.fitted,[x-dx,y-dy,w,h]);
  paintMapView();
 }
-function resetMap(){if(mapZoom){mapZoom.box=mapZoom.fitted.slice();paintMapView();}}
+function resetMap(){if(mapZoom){mapZoom.box=mapZoom.fitted.slice();fitMapFrame();}}
 // Screen pixels mean nothing to a viewBox in degrees; the element's own matrix does the conversion.
 function mapPoint(svg,event){
  const ctm=svg.getScreenCTM();
@@ -6733,7 +6749,7 @@ function mapPoint(svg,event){
  return p.matrixTransform(ctm.inverse());
 }
 function paintMapView(){
- const svg=document.querySelector('.voyage-map svg');
+ const svg=document.querySelector?.('.voyage-map svg');
  if(svg&&mapZoom)svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
 }
 function voyageMap(){
@@ -6811,7 +6827,7 @@ html+=`<h3>Hire, bunkers and freight</h3><div class="grid">${field('hire','Effec
 html+=calculationDetails('totals',b?.trace.totals,'Model cost = sum of rounded cost lines; unit cost = model cost / selected tonnes. Gross freight = tonnes × rate; commission = gross freight × commission %; net income = gross − commission + other net income. TCE = (net income − costs excluding hire) / voyage days; P&L = net income − total model cost. Covering freight adjusts for commission and other income. Complete voyage inputs for values.');
 if(b){const amount=kind=>b.rows.filter(r=>r.kind===kind).reduce((n,r)=>n+r.cents,0)/100;html+=`<div class="split"><div><h3>Costs</h3><table class="totals"><tbody>${[['Hire',b.hire],['Bunkers',amount('fuel')],['Ports',amount('ports')],['Other',amount('other')],['Total',b.total]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)} USD</td></tr>`).join('')}</tbody></table></div><div><h3>Freight estimate</h3><table class="totals"><tbody>${[['Gross freight',b.gross],['Commission',b.commission],['Net income',b.net],['TCE before hire, USD/day',b.tce],['P&L after hire, USD',b.pnl],['Freight required to cover model cost, USD/t',b.requiredFreightQuote]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)}</td></tr>`).join('')}</tbody></table></div></div><details id="audit"><summary>Review calculation lines and fuel consumption</summary><p class="muted">At sea ${fmt(b.sea,3)} day · Working ${fmt(b.work,3)} day · Waiting / stops ${fmt(b.idle,3)} day</p><p class="muted">Fuel: outside ECA ${fmt(b.usage.main,3)} t · ECA ${fmt(b.usage.eca,3)} t · Aux ${fmt(b.usage.aux,3)} t</p>${table(['Item','USD',...lots.map(l=>l.id+' · USD')],b.rows.map(row=>`<tr><td>${esc(row.name)}</td><td>${fmt(row.cents/100,2)}</td>${lots.map(l=>`<td>${fmt(row.shares[l.id]/100,2)}</td>`).join('')}</tr>`))}</details>`;}
 html+=`${ship.errors.length||ship.remaining.some(x=>x.quantity===null||Math.abs(x.quantity)>.01)?'<p class="notice">The cargo plan is incomplete or exceeds limits. The financial result does not confirm voyage feasibility.</p>':''}<p class="form-note">This is a vessel cost model. Under voyage chartering, the exporter budget consists of contractual freight and applicable surcharges: do not add hire and bunkers from this model again.</p></section><section><div class="heading"><h2>5. Cost by sale</h2>${select('allocation','Allocation method',[['route','By legs and ports'],['tonnage','Entire budget by tonnage']])}</div>${b?table(['Sale','Port','Tonnage','Allocated, USD','USD/t'],b.allocation.map(a=>{const l=state.lots.find(l=>l.id===a.id);return `<tr><td class="name"><span class="tag" style="background:${l.color}"></span>${esc(l.name)}</td><td>${esc(l.port)}</td><td>${fmt(a.quantity,1)}</td><td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td></tr>`;})):'<p class="empty">Allocation appears after the voyage calculation is complete.</p>'}<p class="form-note">Proposed method: leg costs — to cargo on board; port call costs — to handled sales; ballast and additional items — to all cargo. This is allocated cost, not the incremental cost of adding a sale.</p>${allocationCalculation(b)}<details id="notes"><summary>Calculation sources and notes</summary><textarea data-path="notes" aria-label="Calculation sources" placeholder="Enter sources and dates for distances, PDA, rates, SF and vessel data">${esc(state.notes)}</textarea></details></section>`;
-$('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});}
+$('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
 function changed(){ensureLegs();$('status').textContent='';saveCalculation(false);render();}
 function editableLotField(path){return !path?.startsWith('lots.')||/^lots\.\d+\.selected$/.test(path);}
