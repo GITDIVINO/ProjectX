@@ -7,8 +7,8 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
  await seed();
  assert.equal(await page.locator('.ship-end').allTextContents().then(x=>x.join(',')),'AFT,FWD');assert.equal(await page.locator('.ship > rect').count(),0);
  assert.ok((await page.locator('.hold-names').allTextContents()).some(x=>x.includes('Crushed lump sulphur')));
- // Preview cannot mutate a plan; applying it creates a restorable copy.
- const original=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState().allocations));await page.locator('[data-action="allocate"]').click();assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState().allocations)),original);await page.locator('dialog button[type="submit"]').click();
+ // Allocating applies at once without a dialog, and leaves a restorable copy.
+ const original=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState().allocations));await page.locator('[data-action="allocate"]').click();assert.equal(await page.locator('dialog').count(),0,'no preview dialog opens');assert.notEqual(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState().allocations)),original,'the plan is applied by the button itself');
  const animations=await page.locator('.cargo-fill').evaluateAll(els=>els.flatMap(e=>e.getAnimations()).length);assert.ok(animations>0,'fill transitions are active after applying');
  await page.locator('.cargo-fill').evaluateAll(els=>els.forEach(e=>e.getAnimations().forEach(a=>a.finish())));
  const result=await page.evaluate(()=>ProjectXApp.getPlanningResult());assert.equal(result.unassigned,false);assert.deepEqual(result.errors,[]);

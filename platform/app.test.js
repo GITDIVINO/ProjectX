@@ -28,6 +28,16 @@ test('MARKET restores as a read-only archive and does not change the saved voyag
  assert.equal(elements.get('planner-actions').hidden,true);
 });
 function boot(saved,savedTab=null){const elements=new Map(),tabWrites=[];const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',addEventListener(){},setAttribute(name,value){this[name]=value;}});return elements.get(id);},querySelectorAll:()=>[]};const context={window:{ProjectXModel:M,ProjectXPlanning:require('./planning'),ProjectXPlannerUI:require('./planner-ui'),ProjectXMarket:require('./market'),ProjectXGuide:require('./guide')},document,localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>savedTab,setItem:(key,value)=>tabWrites.push([key,value])},console,Blob,URL,setTimeout};vm.runInNewContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);return {app:context.window.ProjectXApp,elements,tabWrites};}
+test('Allocate by volume applies the plan itself, with no preview dialog',()=>{
+ const s=M.demo();P.ensure(s);let renders=0;
+ const ui=require('./planner-ui').create({M,P,getState:()=>s,changed:()=>renders++});
+ const before=JSON.stringify(s.allocations);
+ assert.equal(ui.action('allocate'),true,'the action is handled');
+ assert.notEqual(JSON.stringify(s.allocations),before,'the button applies the solved plan on its own');
+ assert.ok(s.planning.undo,'and leaves a restorable copy for Undo');
+ assert.equal(renders,1,'the section is redrawn once');
+ assert.ok(!fs.readFileSync(__dirname+'/planner-ui.js','utf8').includes('Preview complete allocation'),'no preview dialog is built');
+});
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{
  const source=fs.readFileSync(__dirname+'/app.js','utf8');
