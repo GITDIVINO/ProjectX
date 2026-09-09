@@ -95,7 +95,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.equal(await page.evaluate(()=>ProjectXApp.getState().sales[0].loadPort),'Ust-Luga');
   assert.equal(await page.evaluate(()=>ProjectXApp.getState().portRecords.some(p=>p.name==='Unlisted')),false);
   await page.locator('[data-path="sales.0.loadPort"]').selectOption('Murmansk');
-  await page.locator('#tab-planner').click();await page.locator('[data-action="add-lot"]').click();await scan();await page.locator('dialog button[type="submit"]').click();
+  await page.locator('#tab-planner').click();await page.locator('[data-action="add-lot"]').click();await scan();await page.locator('dialog input[name="saleId"]').first().check();await page.locator('dialog button[type="submit"]').click();
   assert.equal(await page.evaluate(()=>ProjectXApp.getState().lots.length),1);
   await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().lots.length),1);
   await tabs();
