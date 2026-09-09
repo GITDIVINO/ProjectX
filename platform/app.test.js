@@ -67,7 +67,7 @@ test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  assert.ok(html.indexOf('class="voyage-map"')<html.indexOf('<h3>Legs</h3>'),'the map sits above the legs it measures');
  assert.ok(html.includes('sea-distances'),'the distances are listed with their source');
  assert.ok(html.includes('>Entered<'),'a distance already in the file keeps governing');
- assert.ok(html.includes('Neither is a passage plan'),'neither figure claims to be a passage plan');
+ assert.ok(!html.includes('A leg takes the distance')&&!html.includes('Neither is a passage plan'),'the explanatory paragraph below the distance table is removed');
  assert.ok(html.includes('data-action="map-zoom"')&&html.includes('data-action="map-reset"'),'the map can be scaled without a wheel');
  assert.match(html,/<svg viewBox="[-\d. ]+" role="img" aria-label="Voyage route map"/,'the view is a plain viewBox, so zoom is just a box change');
  assert.equal((html.match(/<g class="sea-land">/g)||[]).length,1,'the coastline is one layer');
@@ -109,6 +109,22 @@ test('A pair in neither source is left empty rather than guessed',()=>{
   assert.equal(coastal.distance,null,'no figure is invented');
   assert.ok(elements.get('app').innerHTML.includes('Coastal leg'),'and the table says why');
  }
+});
+test('The ballast approach carries an editable delivery port',()=>{
+ const off=M.demo();P.ensure(off);
+ const closed=boot(JSON.stringify(off)).elements.get('app').innerHTML;
+ assert.ok(!closed.includes('data-path="deliveryPort"'),'no field while the approach is not included');
+ const s=M.demo();P.ensure(s);s.ballastEnabled=true;
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.ok(html.includes('class="ballast-line"'),'the field stands beside the checkbox that opens the leg');
+ assert.match(html,/Delivery port<input aria-label="Delivery port" data-path="deliveryPort" type="text"\s+value="" placeholder="Vessel position"/,'an empty, labelled text field, not a number box');
+ assert.ok(html.indexOf('data-path="deliveryPort"')<html.indexOf('data-path="ballast.distance"'),'and above the leg it starts');
+ assert.ok(html.includes('>Vessel position \u2192 Ust-Luga<'),'an empty field leaves the leg named a position');
+ const entered=M.demo();P.ensure(entered);entered.ballastEnabled=true;entered.deliveryPort='Rotterdam';
+ const named=boot(JSON.stringify(entered));
+ assert.equal(named.app.getState().ballast.from,'Rotterdam','the saved port names the leg on load');
+ assert.ok(named.elements.get('app').innerHTML.includes('>Rotterdam \u2192 Ust-Luga<'),'and the legs table prints it');
+ assert.equal(app.getState().deliveryPort,'','an unentered port is stored as empty text, not as the placeholder');
 });
 test('Section 4 opens with a chain whose parts add up to the result it states',()=>{
  const s=M.demo();P.ensure(s);

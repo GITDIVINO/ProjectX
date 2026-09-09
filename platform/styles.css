@@ -109,3 +109,9 @@ html,body,*{scrollbar-width:none;-ms-overflow-style:none}
 @media print{.fold{border:0;background:none;margin:0}.fold>summary{padding:0;color:#111}.fold>summary:before{display:none}.fold>summary span{display:none}.fold-body{padding:0}}
 .over-limit{color:#ef9a8d}
 @media print{.over-limit{color:#a03a2a!important}}
+
+/* The ballast approach and the delivery port it starts from stand on one line above the legs. */
+.ballast-line{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin:10px 0 14px}
+.ballast-line .field.delivery-port{flex-direction:row;align-items:center;gap:9px;text-indent:0;white-space:nowrap}
+.ballast-line .field.delivery-port input{width:230px;max-width:52vw}
+@media print{.ballast-line .field.delivery-port input{border-bottom:1px solid #999;border-radius:0}}

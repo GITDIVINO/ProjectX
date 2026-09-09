@@ -10,6 +10,18 @@ test('Reject ECA longer than route and zero speed',()=>{for(const change of [{ec
 test('Zero aux does not require irrelevant price, missing aux is not zero',()=>{const s=M.demo();s.prices.aux=null;assert.ok(M.compute(s).budget);s.legs[0].aux=null;assert.equal(M.compute(s).budget,null);});
 test('Unknown used fuel price blocks calculation',()=>{const s=M.demo();s.prices.eca=null;assert.equal(M.compute(s).budget,null);});
 test('Ballast uses separate profile and adds cost/time to all parcels',()=>{const s=M.demo();const base=M.compute(s).budget;Object.assign(s.ballast,{distance:240,eca:0,speed:10,margin:0,burn:18,aux:0});s.ballastEnabled=true;const b=M.compute(s).budget;close(b.days-base.days,1);close(b.total-base.total,13500+18*540);assert.ok(b.rows.find(r=>r.name.startsWith('Vessel position')).eligible.length===2);});
+test('An entered delivery port names the ballast leg and survives a rebuilt rotation',()=>{
+ const s=M.demo();s.ballastEnabled=true;Object.assign(s.ballast,{distance:240,eca:0,speed:10,margin:0,burn:18,aux:0});
+ assert.equal(s.ballast.from,'Vessel position','an unentered delivery port stays a position');
+ s.deliveryPort=' Rotterdam ';M.syncRoute(s);
+ assert.equal(s.ballast.from,'Rotterdam','the entered port names the leg, trimmed');
+ assert.ok(M.compute(s).budget.rows.some(r=>r.name==='Rotterdam \u2192 Ust-Luga \u00b7 hire'),'and the cost lines carry that name');
+ M.moveCall(s,'Paranagu\u00e1',-1);
+ assert.equal(s.ballast.from,'Rotterdam','a reordered rotation does not discard it');
+ assert.equal(s.ballast.distance,240,'nor the distance entered for the approach');
+ s.deliveryPort='';M.syncRoute(s);
+ assert.equal(s.ballast.from,'Vessel position','clearing the field returns the leg to a position');
+});
 test('No commission discount on hire, gross-up algebra recovers total',()=>{const s=M.demo();s.commission=10;const b=M.compute(s).budget;close(b.requiredFreight*b.q*.9+s.extraIncome,b.total);close(b.hire,Math.round(b.days*s.hire*100)/100,.03);});
 test('100 percent commission blocked; missing freight leaves cost available',()=>{const s=M.demo();s.commission=100;assert.equal(M.compute(s).budget,null);s.commission=0;s.freight=null;const b=M.compute(s).budget;assert.ok(b);assert.equal(b.tce,null);});
 test('Manual calendar separates productive and idle days',()=>{const s=M.demo();Object.assign(s.ports[0],{terms:'manual',calendar:5,rate:10000,turn:24,extra:48});const p=M.compute(s).budget.ports[0];close(p.workDays,3);close(p.idleDays,5);close(p.days,8);s.ports[0].calendar=2;assert.equal(M.compute(s).budget,null);});
