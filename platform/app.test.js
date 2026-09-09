@@ -68,6 +68,9 @@ test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  assert.ok(html.includes('sea-distances'),'the distances are listed with their source');
  assert.ok(html.includes('>Entered<'),'a distance already in the file keeps governing');
  assert.ok(html.includes('not a passage plan'),'the estimate never claims to be a passage plan');
+ assert.ok(html.includes('data-action="map-zoom"')&&html.includes('data-action="map-reset"'),'the map can be scaled without a wheel');
+ assert.match(html,/<svg viewBox="[-\d. ]+" role="img" aria-label="Voyage route map"/,'the view is a plain viewBox, so zoom is just a box change');
+ assert.equal((html.match(/<path d="M/g)||[]).length-1,891,'the whole coastline is drawn, so panning cannot run off it');
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(!blank.includes('class="sea-track'),'an empty voyage draws no track');
 });

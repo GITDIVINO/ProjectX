@@ -105,6 +105,51 @@ function noteManualEntry(path,value){
  const m=/^legs\.(\d+)\.distance$/.exec(path||'');
  if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
 }
+let coastCache=null;
+const coastMarkup=()=>coastCache??=Sea.coastline().map(ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`).join('');
+// Pan and zoom live outside the voyage: they belong to this browsing session, not to the saved calculation.
+let mapZoom=null;
+const mapKey=box=>box.map(n=>n.toFixed(1)).join(' ');
+function mapView(fitted){
+ if(!mapZoom||mapZoom.key!==mapKey(fitted))mapZoom={key:mapKey(fitted),fitted:fitted.slice(),box:fitted.slice()};
+ return mapZoom.box;
+}
+// The view may travel one full frame beyond the voyage in each direction and no further.
+function clampView(fitted,box){
+ const min=Math.min(fitted[2],fitted[3])/60,max=Math.max(fitted[2]*3,fitted[3]*3);
+ const ratio=fitted[2]/fitted[3];
+ let [x,y,w,h]=box;
+ w=Math.min(Math.max(w,min*ratio),Math.min(max*ratio,360));
+ h=w/ratio;
+ x=Math.min(Math.max(x,fitted[0]-fitted[2]),fitted[0]+2*fitted[2]-w);
+ y=Math.min(Math.max(y,fitted[1]-fitted[3]),fitted[1]+2*fitted[3]-h);
+ return [x,y,w,h];
+}
+function zoomMap(factor,at){
+ if(!mapZoom)return;
+ const [x,y,w,h]=mapZoom.box;
+ const cx=at?at.x:x+w/2,cy=at?at.y:y+h/2;
+ mapZoom.box=clampView(mapZoom.fitted,[cx-(cx-x)*factor,cy-(cy-y)*factor,w*factor,h*factor]);
+ paintMapView();
+}
+function panMap(dx,dy){
+ if(!mapZoom)return;
+ const [x,y,w,h]=mapZoom.box;
+ mapZoom.box=clampView(mapZoom.fitted,[x-dx,y-dy,w,h]);
+ paintMapView();
+}
+function resetMap(){if(mapZoom){mapZoom.box=mapZoom.fitted.slice();paintMapView();}}
+// Screen pixels mean nothing to a viewBox in degrees; the element's own matrix does the conversion.
+function mapPoint(svg,event){
+ const ctm=svg.getScreenCTM();
+ if(!ctm)return null;
+ const p=svg.createSVGPoint();p.x=event.clientX;p.y=event.clientY;
+ return p.matrixTransform(ctm.inverse());
+}
+function paintMapView(){
+ const svg=document.querySelector('.voyage-map svg');
+ if(svg&&mapZoom)svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
+}
 function voyageMap(){
  if(!Sea)return '';
  const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
@@ -117,10 +162,10 @@ function voyageMap(){
  minLon-=padLon;maxLon+=padLon;minLat-=padLat;maxLat+=padLat;
  const width=maxLon-minLon,height=maxLat-minLat;
  // y grows south, so latitude is negated; nothing else about the projection is needed at this scale.
- const box=[minLon,-maxLat,width,height];
- const unit=Math.max(width,height)/100;
- const coast=Sea.coastline().filter(ring=>ring.some(p=>p[0]>=minLon&&p[0]<=maxLon&&p[1]>=minLat&&p[1]<=maxLat))
-  .map(ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`).join('');
+ const fitted=[minLon,-maxLat,width,height];
+ const box=mapView(fitted);
+ const unit=Math.max(box[2],box[3])/100;
+ const coast=coastMarkup();
  const tracks=drawn.map(l=>`<polyline class="${l.route.reliable?'sea-track':'sea-track sea-track-doubtful'}" points="${l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ')}"/>`).join('');
  // A label on the eastern half is written back towards the middle, so it cannot run off the edge.
  const middle=minLon+width/2;
@@ -131,7 +176,7 @@ function voyageMap(){
   while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
   placed.push([p[0],y]);
   return `<g class="sea-port"><circle cx="${p[0].toFixed(2)}" cy="${(-p[1]).toFixed(2)}" r="${(unit*.9).toFixed(2)}"/><text x="${(p[0]+gap).toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.4).toFixed(2)}">${esc(name)}</text></g>`;}).join('');
- return `<div class="voyage-map"><svg viewBox="${box.map(n=>n.toFixed(2)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet"><g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
+ return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet"><g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
 }
 function voyageDistanceLine(){
  if(!Sea)return '';
@@ -196,7 +241,21 @@ if(el.dataset.path.startsWith('portRecords.')){
 if(el.dataset.path.startsWith('cargoTypes.')&&el.dataset.path.endsWith('.sf')&&!M.ok(value,true)){el.value=get(el.dataset.path);$('status').textContent='Enter a positive planning SF';return;}
 if(/\.planning\.(arrival|departure)\.(aft|mid|fwd)$/.test(el.dataset.path)&&value!==null&&!M.ok(value,true)){el.value=get(el.dataset.path)??'';$('status').textContent='Enter a positive draft';return;}
 if(/\.planning\.(arrival|departure)\.trim$/.test(el.dataset.path)&&value!==null&&(!Number.isFinite(value)||Math.abs(value)>10)){el.value=get(el.dataset.path)??'';$('status').textContent='Enter trim in metres, positive by the stern';return;}set(el.dataset.path,value);if(el.dataset.path.endsWith('.sf')){const prefix=el.dataset.path.slice(0,-3);set(prefix+'.sfBasis','user-entered');}if(el.dataset.path.endsWith('.selected'))state.allocations=state.allocations.filter(a=>chosen().some(l=>l.id===a.lot));if(el.dataset.path.startsWith('sales.'))M.syncSalesToLots(state);changed();}else if(el.dataset.lot){if(state.stage!=='load')return;const quantity=tonnage(el.value),lot=el.dataset.lot,hold=Number(el.dataset.hold);if(!M.ok(quantity)){el.value='';$('status').textContent='Enter non-negative tonnage';return;}state.allocations=state.allocations.filter(a=>!(a.lot===lot&&a.hold===hold));if(quantity>0)state.allocations.push({lot,hold,quantity});$('status').textContent='';saveCalculation(false);}});
-$('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'new-sale':showSaleDialog();return;case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;case'new-cargo':showCargoDialog();return;case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'add-lot':showLotDialog();return;case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;case'calc-intake':state.intakeShownFor=intakeKey();break;case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();if(el.dataset.action==='add-cost')$('costs').open=true;});
+$('app').addEventListener('wheel',e=>{
+ const svg=e.target.closest?.('.voyage-map svg');if(!svg)return;
+ e.preventDefault();zoomMap(e.deltaY<0?.85:1.18,mapPoint(svg,e));
+},{passive:false});
+$('app').addEventListener('pointerdown',e=>{
+ const svg=e.target.closest?.('.voyage-map svg');if(!svg||e.button)return;
+ let last=mapPoint(svg,e);if(!last)return;
+ svg.setPointerCapture(e.pointerId);svg.classList.add('sea-dragging');
+ const move=event=>{const now=mapPoint(svg,event);if(!now)return;panMap(now.x-last.x,now.y-last.y);last=mapPoint(svg,event);};
+ const stop=()=>{svg.classList.remove('sea-dragging');svg.removeEventListener('pointermove',move);svg.removeEventListener('pointerup',stop);svg.removeEventListener('pointercancel',stop);};
+ svg.addEventListener('pointermove',move);svg.addEventListener('pointerup',stop);svg.addEventListener('pointercancel',stop);
+});
+$('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'new-sale':showSaleDialog();return;
+ case'map-zoom':zoomMap(Number(el.dataset.factor));return;
+ case'map-reset':resetMap();return;case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;case'new-cargo':showCargoDialog();return;case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'add-lot':showLotDialog();return;case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;case'calc-intake':state.intakeShownFor=intakeKey();break;case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();if(el.dataset.action==='add-cost')$('costs').open=true;});
 function saveCalculation(clearStatus=true){
  try{
   const previous=localStorage.getItem(key);
