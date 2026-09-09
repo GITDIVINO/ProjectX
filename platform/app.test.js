@@ -47,6 +47,17 @@ test('The berth is chosen in SALE, and the rotation no longer opens a berth dial
  assert.ok(sale.includes('data-path="sales.0.loadPortId"'),'the load berth is chosen in the SALE register');
  assert.ok(sale.includes('data-path="sales.0.dischargePortId"'),'so is the discharge berth');
 });
+test('Cargo tonnage is printed the same way everywhere it appears',()=>{
+ const s=M.demo();P.ensure(s);
+ const {elements}=boot(JSON.stringify(s));
+ const planner=elements.get('app').innerHTML;
+ assert.ok(planner.includes('<td>24,000.0</td>'),'the sale row in PLANNER carries one decimal');
+ assert.match(planner,/<td data-unassigned="S1">0\.0<\/td>/,'so does the unassigned column');
+ assert.ok(planner.includes('<td>30,000.0</td>'),'and the printed state table, where the same tonnage is repeated');
+ elements.get('tab-sale').onclick();
+ const sale=elements.get('app').innerHTML;
+ assert.match(sale,/data-path="sales.0.quantity" type="text" inputmode="decimal" data-format="tonnage" value="24,000.0"/,'the SALE register prints the same format in its editable field');
+});
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{
  const source=fs.readFileSync(__dirname+'/app.js','utf8');

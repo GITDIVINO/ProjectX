@@ -113,7 +113,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.evaluate(()=>{const s=ProjectXApp.getState();s.allocations=[];localStorage.setItem('projectx-current-v2',JSON.stringify(s));});await page.reload();
   const manualCells=page.locator('[data-lot="S1"][data-hold]:not(:disabled)');await manualCells.nth(0).fill('100');await manualCells.nth(1).fill('200');await page.reload();
   // A reloaded cell is printed in the table's format, not as it was typed.
-  assert.equal(await page.locator('[data-lot="S1"][data-hold="1"]').inputValue(),'100.000');assert.equal(await page.locator('[data-lot="S1"][data-hold="2"]').inputValue(),'200.000');
+  assert.equal(await page.locator('[data-lot="S1"][data-hold="1"]').inputValue(),'100.0');assert.equal(await page.locator('[data-lot="S1"][data-hold="2"]').inputValue(),'200.0');
   // Input events persist synchronously, even when the user reloads before blur/change.
   await page.locator('[data-path="hire"]').fill('14789.25');
   await page.reload();assert.equal(await page.locator('[data-path="hire"]').inputValue(),'14789.25');
@@ -122,7 +122,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.reload();assert.equal(await page.locator('[data-path="costs.0.amount"]').inputValue(),'4321.75');
   const firstAllocation=page.locator('[data-lot][data-hold]:not(:disabled)').first();
   await firstAllocation.fill('123.45');await page.reload();
-  assert.equal(await page.locator('[data-lot][data-hold]:not(:disabled)').first().inputValue(),'123.450');
+  assert.equal(await page.locator('[data-lot][data-hold]:not(:disabled)').first().inputValue(),'123.5');
   const confirmations=[];page.on('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});await page.locator('#reset').click();await page.locator('[data-action="allocate"]').click();
   assert.equal(await page.locator('[data-path^="lots."][data-path$=".sf"]').count(),0);
   const beforePropertyEdit=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
