@@ -30,7 +30,6 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 .chain-result{text-align:right;font-variant-numeric:tabular-nums;font-size:15px;font-weight:550}
 .chain-result small{font-size:11px;color:var(--muted);font-weight:400;margin-left:4px}
 .chain-parts{color:var(--muted);font-size:12px}
-.chain-empty{margin:14px 0}
 @media(max-width:760px){.chain-line{grid-template-columns:1fr auto;gap:4px}.chain-parts{grid-column:1/-1}}
 .voyage-map{margin:14px 0;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#1a1a1a}
 .voyage-map{position:relative}

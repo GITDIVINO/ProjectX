@@ -125,6 +125,26 @@ test('Section 4 opens with a chain whose parts add up to the result it states',(
  assert.ok(Math.abs(b.net-b.pnl-b.total)<0.005,'the result is net revenue less the model cost');
  assert.ok(Math.abs(b.tce*b.days-(b.net-(b.total-b.hire)))<0.01,'TCE before hire is that result per day, hire aside');
 });
+test('Section 4 hides routine prompts without accepting an incomplete voyage',()=>{
+ const incomplete=M.demo();incomplete.hire=null;
+ for(const s of [M.initial(),incomplete,M.demo()]){
+  const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+  for(const gone of ['The chain appears once','Complete the following','Vessel cost model · recalculated','id="missing"','<li>Hire rate</li>'])assert.ok(!html.includes(gone),gone);
+  assert.ok(html.includes('data-path="hire"'),'the hire input remains editable');
+  if(s.hire===null){assert.equal(app.getResult().budget,null);assert.ok(!html.includes('class="voyage-chain"'));}
+ }
+ const result=boot(JSON.stringify(incomplete)).app.getResult();
+ assert.ok(result.errors.includes('Hire rate'),'validation still identifies the missing input');
+});
+test('Voyage map folds like Intake Calculator, while distance inputs stay outside',()=>{
+ for(const s of [M.initial(),M.demo()]){
+  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+  assert.match(html,/<details id="voyage-map" class="fold"><summary><strong>Voyage map<\/strong><\/summary><div class="fold-body">/);
+  const start=html.indexOf('<details id="voyage-map"'),end=html.indexOf('</details>',start);
+  assert.ok(end<html.indexOf('<h3>Legs</h3>'),'working leg fields do not fold with the map');
+  if(s.lots.length){assert.ok(html.indexOf('class="voyage-map"')<end);assert.ok(html.indexOf('class="sea-distances"')>end);}
+ }
+});
 test('The chain says nothing about revenue until a freight rate is entered',()=>{
  const s=M.demo();P.ensure(s);s.freight=null;
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;

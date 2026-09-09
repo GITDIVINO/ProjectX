@@ -36,7 +36,6 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 .chain-result{text-align:right;font-variant-numeric:tabular-nums;font-size:15px;font-weight:550}
 .chain-result small{font-size:11px;color:var(--muted);font-weight:400;margin-left:4px}
 .chain-parts{color:var(--muted);font-size:12px}
-.chain-empty{margin:14px 0}
 @media(max-width:760px){.chain-line{grid-template-columns:1fr auto;gap:4px}.chain-parts{grid-column:1/-1}}
 .voyage-map{margin:14px 0;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#1a1a1a}
 .voyage-map{position:relative}
@@ -14379,7 +14378,7 @@ function voyageDistanceLine(){
 // then what is left. Every line is an equation with its own parts, so the total can be
 // followed without opening a single table.
 function voyageChain(b,ship){
- if(!b)return '<p class="chain-empty muted">The chain appears once the voyage has no missing inputs.</p>';
+ if(!b)return '';
  const usd=x=>fmt(x,2),day=x=>fmt(x,2);
  const line=(name,result,unit,parts)=>`<div class="chain-line"><span class="chain-name">${name}</span><span class="chain-result">${result} <small>${unit}</small></span><span class="chain-parts">${parts}</span></div>`;
  const kind=k=>b.rows.filter(r=>r.kind===k).reduce((n,r)=>n+r.cents,0)/100;
@@ -14418,8 +14417,8 @@ html+=`<section><div class="heading"><h2>2. Vessel and rotation</h2></div><div c
 // One planner check per render; both the section and the print evidence read the same result.
 const report=P.check(state,b);
 html+=plannerUI.section3(state,b,report)+plannerUI.printEvidence(state,b,report);
-html+=`<section><div class="heading"><h2>4. Voyage calculation</h2><small>Vessel cost model · recalculated when a field changes</small></div>${voyageChain(b,ship)}${r.errors.length?`<details id="missing" open><summary>Complete the following ${r.errors.length} fields / conditions</summary><ul class="errors">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></details>`:''}`;
-html+=voyageMap()+voyageDistanceLine();
+html+=`<section><div class="heading"><h2>4. Voyage calculation</h2></div>${voyageChain(b,ship)}`;
+html+=`<details id="voyage-map" class="fold"><summary><strong>Voyage map</strong></summary><div class="fold-body">${voyageMap()}</div></details>`+voyageDistanceLine();
 html+=`<h3>Legs</h3><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>`;
 const activePorts=M.callsOf(state);const displayedLegs=[];if(state.ballastEnabled)displayedLegs.push({l:state.ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state.legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state.legs[j],path:'legs.'+j});}
 html+=table(['Leg','Total <small>NM</small>','Of which ECA <small>NM</small>','Speed <small>kn</small>','Weather <small>% time</small>','Outside ECA <small>t/day</small>','In ECA <small>t/day</small>','Aux <small>t/day</small>','Days'],displayedLegs.map(({l,path})=>`<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td>${['distance','eca','speed','margin','burn','ecaBurn','aux'].map(k=>`<td>${input(path+'.'+k,l.from+' '+k)}</td>`).join('')}<td>${fmt(b?.legs.find(x=>x.from===l.from&&x.to===l.to)?.days,3)}</td></tr>`));html+=`<p class="form-note">Speeds and consumption come from the selected vessel type. Working values are in the legs table. Consumption under the fuel regime for ECA requires confirmation. The margin increases time and consumption; ECA is included in the total distance.</p>${calculationDetails('legs',b?.trace.legs,'Days = distance / (speed × 24) × (1 + weather / 100). ECA is part of total distance. Main mass = non-ECA days × burn; ECA mass = ECA days × burn; Aux mass = all sea days × additional burn. Fuel value = mass × price; hire = days × daily hire. Complete voyage inputs for values.')}`;
@@ -14446,6 +14445,9 @@ if(el.dataset.path.startsWith('portRecords.')){
 if(el.dataset.path.startsWith('cargoTypes.')&&el.dataset.path.endsWith('.sf')&&!M.ok(value,true)){el.value=get(el.dataset.path);$('status').textContent='Enter a positive planning SF';return;}
 if(/\.planning\.(arrival|departure)\.(aft|mid|fwd)$/.test(el.dataset.path)&&value!==null&&!M.ok(value,true)){el.value=get(el.dataset.path)??'';$('status').textContent='Enter a positive draft';return;}
 if(/\.planning\.(arrival|departure)\.trim$/.test(el.dataset.path)&&value!==null&&(!Number.isFinite(value)||Math.abs(value)>10)){el.value=get(el.dataset.path)??'';$('status').textContent='Enter trim in metres, positive by the stern';return;}set(el.dataset.path,value);if(el.dataset.path.endsWith('.sf')){const prefix=el.dataset.path.slice(0,-3);set(prefix+'.sfBasis','user-entered');}if(el.dataset.path.endsWith('.selected'))state.allocations=state.allocations.filter(a=>chosen().some(l=>l.id===a.lot));if(el.dataset.path.startsWith('sales.'))M.syncSalesToLots(state);changed();}else if(el.dataset.lot){if(state.stage!=='load')return;const quantity=tonnage(el.value),lot=el.dataset.lot,hold=Number(el.dataset.hold);if(!M.ok(quantity)){el.value='';$('status').textContent='Enter non-negative tonnage';return;}state.allocations=state.allocations.filter(a=>!(a.lot===lot&&a.hold===hold));if(quantity>0)state.allocations.push({lot,hold,quantity});$('status').textContent='';saveCalculation(false);}});
+$('app').addEventListener('toggle',e=>{
+ if(e.target.id==='voyage-map'&&e.target.open)fitMapFrame();
+},true);
 $('app').addEventListener('wheel',e=>{
  const svg=e.target.closest?.('.voyage-map svg');if(!svg)return;
  e.preventDefault();zoomMap(e.deltaY<0?.85:1.18,mapPoint(svg,e));
@@ -14522,6 +14524,7 @@ $('app').addEventListener('input',e=>{
 $('app').addEventListener('change',e=>{if(e.target.id==='cargo-family')filterCargo();});
 
 if(window.addEventListener)window.addEventListener('beforeprint',()=>document.querySelectorAll('.cargo-fill').forEach(el=>el.getAnimations?.().forEach(a=>a.finish())));
+if(window.addEventListener)window.addEventListener('resize',fitMapFrame);
 if(document.addEventListener){document.addEventListener('invalid',e=>{const el=e.target;if(el.setCustomValidity)el.setCustomValidity(el.validity.valueMissing?'Complete this field.':'Enter a valid value for this field.');},true);document.addEventListener('input',e=>{if(e.target.setCustomValidity)e.target.setCustomValidity('');},true);}
 window.ProjectXApp={getState:()=>JSON.parse(JSON.stringify(state)),getResult:()=>M.compute(state),getPlanningResult:()=>P.check(state)};ensureLegs();setupChrome();syncWorkspace();render();if(startupMessage)$('status').textContent=startupMessage;
 })();
