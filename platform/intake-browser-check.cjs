@@ -1,0 +1,33 @@
+// Runs only in an isolated Chromium profile; never touches the user's saved voyage.
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),{pathToFileURL}=require('node:url'),{chromium}=require('playwright');
+const M=require('./model'),P=require('./planning');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+ const out=path.resolve(process.argv[2]||'tmp/intake-qa');fs.mkdirSync(out,{recursive:true});
+ page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
+ await page.goto(pathToFileURL(path.join(__dirname,'ProjectX.html')).href);
+ const seed=async s=>{await page.evaluate(s=>{localStorage.setItem('projectx-current-v2',JSON.stringify(s));sessionStorage.setItem('projectx-current-tab','planner');},s);await page.reload();};
+ const base=()=>{const s=M.demo();for(const b of s.portRecords){b.maxDraft=30;b.waterDensity=1.025;}return s;};
+ const open=async()=>{if(!await page.locator('#intake-calculator').evaluate(e=>e.open))await page.locator('#intake-calculator summary').click();};
+ const calc=async()=>{await open();await page.locator('[data-action="calc-intake"]').click();};
+ const head=()=>page.locator('#intake-calculator summary').innerText();
+ const edit=async(path,value)=>{const el=page.locator(`[data-path="${path}"]`);await el.fill(value);await el.press('Tab');};
+ assert.equal(await page.locator('#intake-calculator').evaluate(e=>e.open),false);assert.equal(await page.locator('[data-action="calc-intake"]').isDisabled(),true);
+ await seed(base());await calc();assert.match(await head(),/35,692.00 t estimated restricted intake/);
+ assert.match(await page.locator('.cubic-intake').innerText(),/51,922.22 t/);assert.match(await page.locator('.restricted-intake').innerText(),/min\(35,692.00 t, 51,922.22 t\) = 35,692.00 t/);
+ await page.reload();assert.equal(await page.locator('#intake-calculator').evaluate(e=>e.open),false);assert.match(await head(),/35,692.00 t/);
+ await open();await edit('deductions.fuel','951');assert.match(await head(),/not calculated/);await calc();assert.match(await head(),/35,691.00 t/);
+ await edit('holds.0.volume','100');assert.match(await page.locator('.cubic-intake').innerText(),/43,202.22 t/);
+ await edit('holds.0.volume','');assert.match(await head(),/35,691.00 t DWT only · cubics not checked/);assert.doesNotMatch(await head(),/restricted intake/);
+ await edit('deductions.fuel','');assert.equal(await page.locator('[data-action="calc-intake"]').isDisabled(),true);
+ const s=base();s.vesselSnapshot={...M.vesselOf(s),dwt:57329,draft:12.8,tpc:58.94};s.deductions={fuel:1000,water:400,ballast:0,constant:200,draftLoss:0};
+ const b=s.portRecords.find(b=>b.name==='Ust-Luga');b.maxDraft=11;b.waterDensity=1;
+ await seed(s);await calc();assert.match(await head(),/43,538.48 t/);assert.match(await page.locator('.draft-formula').innerText(),/draft 12.8 × 1.025 ÷ ρ 1 = 13.12 m/);
+ assert.equal(await page.evaluate(()=>ProjectXApp.getState().planning.vesselBasis),undefined);
+ const idx=s.portRecords.findIndex(p=>p.name==='Ust-Luga');await page.locator('#tab-ports').click();await page.locator(`[data-path="portRecords.${idx}.waterDensity"]`).selectOption('');
+ await page.locator('#tab-planner').click();await open();assert.match(await page.locator('.draft-formula').innerText(),/Select water density.*Ust-Luga/);assert.equal(await page.locator('[data-action="calc-intake"]').isDisabled(),true);
+ await page.locator('#tab-ports').click();await page.locator(`[data-path="portRecords.${idx}.waterDensity"]`).selectOption('1.025');await page.locator('#tab-planner').click();await calc();assert.match(await head(),/45,119.80 t/);
+ await page.locator('#intake-calculator').screenshot({path:path.join(out,'intake.png')});
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.locator('#intake-calculator').screenshot({path:path.join(out,'intake-mobile.png')});
+ assert.deepEqual(errors,[]);console.log('PASS: intake browser — density without lightship, minimum, missing inputs, changes, reload, collapsed default and mobile.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

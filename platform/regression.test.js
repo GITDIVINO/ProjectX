@@ -72,6 +72,19 @@ test('Sale updates are validated before mutation and cannot extend PORT',()=>{
  assert.equal(s.lots[0].loadPort,'Murmansk');assert.equal(s.lots[0].quantity,900);
  assert.equal(s.sales[0].loadPortId,s.portRecords.find(p=>p.name==='Murmansk').id);
 });
+test('SALE owns the berth and the call carries it; the planner offers no berth dialog',()=>{
+ const s=M.initial(),sale=M.addSale(s,saleData(s));M.addSaleToPlanner(s,sale.id);
+ const rows=s.portRecords.filter(p=>p.name===sale.loadPort);
+ assert.equal(s.sales[0].loadPortId,rows[0].id,'a sale without an explicit berth takes the first registered row');
+ const call=s.ports.find(c=>c.name===sale.loadPort);
+ assert.equal(call.planning.berthId,rows[0].id,'the choice reaches the call it belongs to');
+ if(rows.length>1){
+  M.updateSale(s,sale.id,{loadPortId:rows[1].id});
+  assert.equal(s.ports.find(c=>c.name===sale.loadPort).planning.berthId,rows[1].id,'changing the berth in SALE moves the call');
+ }
+ M.updateSale(s,sale.id,{loadPortId:'not-a-berth'});
+ assert.equal(s.sales[0].loadPortId,rows[0].id,'a row that does not belong to the port falls back to the first, as a changed port must');
+});
 test('Registry deletions persist; used ports cannot be removed or renamed',()=>{
  const s=M.initial(),sale=M.addSale(s,saleData(s));
  const index=s.portRecords.findIndex(p=>p.name===sale.loadPort);

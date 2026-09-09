@@ -6,7 +6,8 @@ const copy=x=>JSON.parse(JSON.stringify(x)), valid=M.ok, active=s=>s.lots.filter
 const exactSum=xs=>xs.reduce((a,x)=>a.add(x),Rational.from(0)).number();
 const product=(a,b)=>Rational.from(a).mul(b).number();
 const id=prefix=>prefix+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
-const SEA_DENSITY=1.025,FRESH_DENSITY=1;
+const SEA_DENSITY=1.025,INTAKE_METHOD='average-vessel-1';
+const validDensity=x=>valid(x,true)&&x>=1&&x<=1.03;
 function ensure(s){
  s.planning??={};const p=s.planning;p.revision=1;p.compatibility??=[];p.limits??=[];p.reports??=[];p.snapshots??=[];
  p.intakeBasis??={state:'After final loading',source:'',date:'',draftLossSource:'',draftLossCall:'',constantIncludes:'',legacyDraftLoss:s.deductions?.draftLoss===0};
@@ -59,7 +60,7 @@ function updatePassport(s,lotId,data){
 }
 function snapshotInput(s){
  const clean=x=>{if(Array.isArray(x))return x.map(clean);if(x&&typeof x==='object')return Object.fromEntries(Object.keys(x).sort().map(k=>[k,clean(x[k])]));return x;};
- return clean({model:'planning-1',vessel:M.vesselOf(s),lots:active(s),holds:s.holds,allocations:s.allocations,deductions:s.deductions,calls:M.callsOf(s),berths:M.callsOf(s).map(c=>s.portRecords.find(p=>p.id===c.planning?.berthId)||null),intakeBasis:s.planning?.intakeBasis,compatibility:s.planning?.compatibility||[],limits:s.planning?.limits||[],vesselBasis:s.planning?.vesselBasis});
+ return clean({model:INTAKE_METHOD,vessel:M.vesselOf(s),lots:active(s),holds:s.holds,allocations:s.allocations,deductions:s.deductions,calls:M.callsOf(s),berths:M.callsOf(s).map(c=>s.portRecords.find(p=>p.id===c.planning?.berthId)||null),intakeBasis:s.planning?.intakeBasis,compatibility:s.planning?.compatibility||[],limits:s.planning?.limits||[],vesselBasis:s.planning?.vesselBasis});
 }
 const inputKey=s=>JSON.stringify(snapshotInput(s));
 const vesselBasisStatus=s=>!s.planning?.vesselBasis?'reference':s.planning.vesselBasis.vesselKey!==JSON.stringify(M.vesselOf(s))?'outdated':s.planning.vesselBasis.kind;
@@ -69,44 +70,38 @@ function freeze(s){ensure(s);const item={id:id('snapshot'),createdAt:new Date().
 // Automatic preliminary TPC estimate from existing voyage and registry data.
 function autoDraftLoss(s){
  ensure(s);const v=M.vesselOf(s),lots=active(s),calls=M.callsOf(s),warnings=[],rows=[];
- if(!lots.length)return {loss:null,reason:'Add cargo to the voyage',rows,warnings};
- if(!valid(v?.draft,true)||!valid(v?.tpc,true))return {loss:null,reason:'Enter vessel draft and TPC in VESSEL',rows,warnings};
- const loadCalls=calls.filter(c=>lots.some(l=>l.loadPort===c.name)),firstDischarge=calls.find(c=>lots.some(l=>l.port===c.name));
- const relevant=[...loadCalls,...(firstDischarge&&!loadCalls.includes(firstDischarge)?[firstDischarge]:[])];
- for(const c of relevant){const candidates=s.portRecords.filter(p=>p.name===c.name),selected=candidates.find(p=>p.id===c.planning?.berthId);
- // Without a nominated berth use the conservative registered draft, not an assumed best berth.
- const berth=selected||candidates.filter(p=>valid(p.maxDraft,true)).sort((a,b)=>a.maxDraft-b.maxDraft)[0];
- if(!berth||(!selected&&candidates.some(p=>!valid(p.maxDraft,true))))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
- if(!valid(berth.maxDraft,true))return {loss:null,reason:'Complete max draft for '+c.name+' in PORT',rows,warnings};
- if(!selected&&candidates.length>1)warnings.push(c.name+': lowest registered berth limit');
- // Textbook load-line arithmetic. FWA is the immersion a summer-marked hull gains in fresh
- // water; DWA scales it to the berth density; TPC scales with the water the ship floats in.
- const density=berth.waterDensity,b=s.planning.vesselBasis||{},current=vesselBasisStatus(s)!=='outdated';
- const referenceDensity=current&&valid(b.density,true)?b.density:SEA_DENSITY;
- const lightship=current&&valid(b.lightship,true)?b.lightship:null;
- const usesDensity=valid(density,true)&&density!==referenceDensity;
- let fwaCm=null,dwaCm=0,permissible=v.draft,tpcPort=v.tpc,densityApplied=false;
- if(usesDensity&&lightship!==null&&valid(v.dwt,true)){
-  fwaCm=(lightship+v.dwt)/(40*v.tpc);
-  dwaCm=fwaCm*(referenceDensity-density)/(referenceDensity-FRESH_DENSITY);
-  permissible=v.draft+dwaCm/100;
-  tpcPort=v.tpc*density/referenceDensity;
-  densityApplied=true;
- }else if(usesDensity)warnings.push(c.name+': '+(current?'density correction needs lightship in Vessel source':'vessel source was recorded for another vessel; reconfirm it in Vessel source')+'; reference-density estimate');
- else if(!valid(density,true))warnings.push(c.name+': density unknown; reference-density estimate');
- const shortfallCm=Math.max(0,product(permissible,100)-product(berth.maxDraft,100));
- const loss=product(shortfallCm,tpcPort);
- rows.push({call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density:density??null,fwaCm,dwaCm,permissible,tpcPort,shortfallCm,densityApplied,tpc:v.tpc,draft:v.draft,loss});
+ const incomplete=reason=>({method:INTAKE_METHOD,loss:null,reason,rows,warnings});
+ if(!lots.length)return incomplete('Add cargo to the voyage');
+ if(!valid(v?.dwt,true)||!valid(v?.draft,true)||!valid(v?.tpc,true))return incomplete('Enter vessel DWT, draft and TPC in VESSEL');
+ if(!lots.every(l=>valid(l.quantity,true)))return incomplete('Complete selected cargo quantities');
+ if(!STORES.every(k=>valid(s.deductions?.[k])))return incomplete('Complete fuel, fresh water, ballast and constant');
+ const names=calls.map(c=>c.name);
+ if(lots.some(l=>!names.includes(l.loadPort)||!names.includes(l.port)||names.indexOf(l.loadPort)>=names.indexOf(l.port))||lots.some(l=>lots.some(x=>x.port===l.loadPort)))return incomplete('Complete a loading-before-discharge route');
+ const quantity=exactSum(lots.map(l=>l.quantity)),stores=exactSum(STORES.map(k=>s.deductions[k])),baseIntake=Rational.from(v.dwt).sub(stores).number();
+ for(const [i,c] of calls.entries()){
+  const mass=phase=>exactSum(lots.filter(l=>onBoardIn({names,i,phase},l)).map(l=>l.quantity));
+  const arrival=mass('arrival'),departure=mass('departure'),onBoard=Math.max(arrival,departure),fraction=onBoard/quantity;
+  if(!onBoard)continue;
+  const candidates=s.portRecords.filter(p=>p.name===c.name),selected=candidates.find(p=>p.id===c.planning?.berthId);
+  if(c.planning?.berthId&&!selected)return incomplete('Select a valid berth for '+c.name);
+  const berths=selected?[selected]:candidates;
+  if(!berths.length||berths.some(b=>!valid(b.maxDraft,true)))return incomplete('Complete max draft for '+c.name+' in PORT');
+  if(berths.some(b=>!validDensity(b.waterDensity)))return incomplete('Select water density (1.000–1.030) for '+c.name+' in PORT');
+  if(!selected&&berths.length>1)warnings.push(c.name+': most restrictive estimated berth intake');
+  const estimates=berths.map(berth=>{
+   // Agreed average-vessel approximation: SW draft and TPC, no lightship/FWA.
+   const density=berth.waterDensity,permissible=v.draft*SEA_DENSITY/density,tpcPort=v.tpc*density/SEA_DENSITY;
+   const shortfallCm=Math.max(0,product(permissible,100)-product(berth.maxDraft,100)),portLoss=product(shortfallCm,tpcPort);
+   const cargoLimit=Rational.from(baseIntake).sub(portLoss).number(),voyageLimit=cargoLimit/fraction;
+   const loss=fraction===1?portLoss:Math.max(0,baseIntake-voyageLimit);
+   return {call:c.name,berth:berth.id,maxDraft:berth.maxDraft,density,referenceDensity:SEA_DENSITY,permissible,tpcPort,shortfallCm,densityApplied:true,tpc:v.tpc,draft:v.draft,portLoss,loss,cargoLimit,voyageLimit,fraction,onBoard,phase:arrival>=departure?'arrival':'departure'};
+  });
+  rows.push(estimates.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a));
  }
- if(!rows.length)return {loss:null,reason:'Add voyage ports',rows,warnings};
+ if(!rows.length)return incomplete('Add voyage ports');
  const limiting=rows.reduce((a,b)=>b.loss>a.loss||b.loss===a.loss&&b.maxDraft<a.maxDraft?b:a);
- const reason=limiting.loss>0?'TPC estimate · '+limiting.call+' · '+limiting.maxDraft+' m'
-  :'No draft restriction · shallowest limit '+limiting.call+' '+limiting.maxDraft+' m vs '+v.draft+' m draft';
- const densityNote=rows.some(x=>valid(x.density,true)&&!x.densityApplied)
-  ?(vesselBasisStatus(s)==='outdated'?'Density correction off · Vessel source was recorded for another vessel'
-   :'Density correction off · enter lightship in Vessel source')
-  :null;
- return {loss:limiting.loss,limiting,rows,warnings,reason,densityNote};
+ const reason=limiting.loss>0?'Average-vessel estimate · '+limiting.call+' · '+limiting.maxDraft+' m':'No draft restriction on the estimated cargo mix';
+ return {method:INTAKE_METHOD,loss:limiting.loss,limiting,rows,warnings,reason,baseIntake,quantity,stores};
 }
 function syncAutoDraftLoss(s){const r=autoDraftLoss(s);if(!s.planning.autoDraftLoss)s.planning.previousDraftLoss=s.deductions.draftLoss;s.deductions.draftLoss=r.loss;s.planning.autoDraftLoss=r;return r;}
 // Draft at every voyage state from that state's own displacement.
@@ -135,7 +130,7 @@ function bunkerRob(s,budget){
 }
 function stateDrafts(s,budget,summaries){
  ensure(s);const v=M.vesselOf(s),b=s.planning.vesselBasis||{},current=vesselBasisStatus(s)!=='outdated';
- const referenceDensity=current&&valid(b.density,true)?b.density:SEA_DENSITY;
+ const referenceDensity=SEA_DENSITY;
  const lightship=current&&valid(b.lightship,true)?b.lightship:null;
  const rob=bunkerRob(s,budget===undefined?M.compute(s).budget:budget);
  const hydrostatics=valid(v?.draft,true)&&valid(v?.dwt,true)&&valid(v?.tpc,true);
@@ -160,12 +155,10 @@ function stateDrafts(s,budget,summaries){
   if(deadweight!==null&&hydrostatics){
    // Immersion from the load-line reference: every tonne short of reference DWT lifts the hull by 1/TPC cm.
    meanRef=v.draft-(v.dwt-deadweight)/(100*v.tpc);mean=meanRef;
-   const usesDensity=valid(density,true)&&density!==referenceDensity;
-   if(usesDensity&&lightship!==null){
-    sinkageCm=(lightship+deadweight)/(40*v.tpc)*(referenceDensity-density)/(referenceDensity-FRESH_DENSITY);
-    mean=meanRef+sinkageCm/100;densityApplied=true;
-   }else if(usesDensity)notes.push(current?'Density correction off · enter lightship in Vessel source':'Density correction off · Vessel source was recorded for another vessel');
-   else if(!valid(density,true))notes.push(berth?'Berth water density not selected · reference-density draft':'Berth not selected · reference-density draft');
+   if(validDensity(density)){
+    mean=meanRef*referenceDensity/density;sinkageCm=(mean-meanRef)*100;densityApplied=true;
+   }else {mean=null;missing.push(berth?'Select berth water density':'Select a berth to estimate port draft');}
+   notes.push('Average-vessel estimate · SW draft scaled by 1.025 / port density');
   }
   const deltaCm=mean===null?null:product(mean-v.draft,100);
   const inRange=deltaCm!==null&&valid(b.tpcRangeCm,true)&&Math.abs(deltaCm)<=b.tpcRangeCm&&!!b.tpcSource;
@@ -220,6 +213,8 @@ function pairIssues(s,summary){
 function check(s,budget){
  const errors=[],warnings=[],lots=active(s),base=M.stowage(s),summary=stageSummary(s,'load');errors.push(...base.errors);
  if(!lots.length)warnings.push('Select a sale');
+ // One call, one berth: sales that disagree are reported rather than silently averaged.
+ for(const call of M.callsOf(s)){const ids=M.berthsAt(s,call);if(ids.length>1)warnings.push(call.name+': sales name different berths in SALE; the first is used');}
  const names=M.callsOf(s).map(c=>c.name);for(const l of lots){if(!names.includes(l.loadPort)||!names.includes(l.port)||names.indexOf(l.loadPort)>=names.indexOf(l.port))errors.push(l.id+': loading must precede discharge');if(!l.passport?.source||l.passport.basis!=='declared')warnings.push(l.id+': shipment properties are not declared');}
  if(lots.some(l=>lots.some(other=>other.port===l.loadPort)))errors.push('Mixed loading/discharge calls require a separate operation sequence');
  const ev=events(s);
@@ -273,6 +268,6 @@ function solve(s,maxNodes=100000){
 function applyPlan(s,result){if(result.status!=='feasible')throw Error('No complete plan to apply');ensure(s);s.planning.undo={allocations:copy(s.allocations),basis:planBasis(s)};s.allocations=copy(result.allocations);s.stage='load';}
 const planBasis=s=>JSON.stringify({lots:active(s).map(l=>({id:l.id,q:l.quantity,sf:l.sf})),holds:s.holds});
 function undo(s){if(!s.planning?.undo)throw Error('No previous plan');if(s.planning.undo.basis!==planBasis(s))throw Error('Cargo or holds changed; the previous plan cannot be restored automatically');s.allocations=copy(s.planning.undo.allocations);delete s.planning.undo;s.stage='load';}
-const api={autoDraftLoss,syncAutoDraftLoss,stateDrafts,bunkerRob,ensure,events,resolveStage,onBoard,stageSummary,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
+const api={INTAKE_METHOD,autoDraftLoss,syncAutoDraftLoss,stateDrafts,bunkerRob,ensure,events,resolveStage,onBoard,stageSummary,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlanning=api;
 })(globalThis);

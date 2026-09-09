@@ -38,6 +38,15 @@ test('Allocate by volume applies the plan itself, with no preview dialog',()=>{
  assert.equal(renders,1,'the section is redrawn once');
  assert.ok(!fs.readFileSync(__dirname+'/planner-ui.js','utf8').includes('Preview complete allocation'),'no preview dialog is built');
 });
+test('The berth is chosen in SALE, and the rotation no longer opens a berth dialog',()=>{
+ const s=M.demo();P.ensure(s);
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ for(const gone of ['data-action="call-source"','Berth / states'])assert.ok(!html.includes(gone),gone+' is still in the rotation');
+ const {elements}=boot(JSON.stringify(s));elements.get('tab-sale').onclick();
+ const sale=elements.get('app').innerHTML;
+ assert.ok(sale.includes('data-path="sales.0.loadPortId"'),'the load berth is chosen in the SALE register');
+ assert.ok(sale.includes('data-path="sales.0.dischargePortId"'),'so is the discharge berth');
+});
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{
  const source=fs.readFileSync(__dirname+'/app.js','utf8');
@@ -58,10 +67,11 @@ test('Restricted intake DWT appears only after Calculate intake and never outliv
  assert.match(blank,/data-action="calc-intake" disabled/,'no deductions entered yet, so the button is disabled');
  const s=M.demo();
  assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Restricted intake DWT: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
- s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
+ s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(shown.includes('− draft loss 0 = <strong>35,692.00 t</strong>'),'the calculated figure is shown');
- assert.ok(shown.includes('Restricted intake DWT/cubics: 46,730.00 m³ ÷ mix SF 0.90000 m³/t = <strong>51,922.22 t</strong>'),'the cubic limit is written out on its own line');
+ assert.ok(shown.includes('Cubics limit: 46,730.00 m³ ÷ mix SF 0.90000 m³/t = <strong>51,922.22 t</strong>'),'the cubic limit is written out on its own line');
+ assert.ok(shown.includes('Restricted intake DWT/cubics: min(35,692.00 t, 51,922.22 t) = <strong>35,692.00 t</strong>'),'the combined limit is the minimum, not the cubic branch');
  assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
  s.deductions.fuel=951;
  const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
@@ -102,18 +112,19 @@ test('Cargo volume sits under Holds and is the tonnage times SF of the selected 
 test('The draft loss calculation is printed and the field is not editable',()=>{
  const plain=M.demo();M.applyVessel(plain,'tbn-3');
  const html=boot(JSON.stringify(plain)).elements.get('app').innerHTML;
- assert.ok(html.includes('Draft loss: Santos 11.3 m · (12.8 − 11.3) m × 100 × TPC 58.8 = 8,820.0 t'),'the arithmetic is shown, not only the result');
+ assert.ok(html.includes('Draft loss: Santos 11.3 m · draft 12.8 × 1.025 ÷ ρ 1.015 = 12.926 m'),'the density conversion is shown');
+ assert.ok(html.includes('× TPC 58.8 × 1.015 ÷ 1.025 = 9,468.2 t'),'the arithmetic is shown, not only the result');
  const formula=html.slice(html.indexOf('<small class="draft-formula"'),html.indexOf('</small>',html.indexOf('<small class="draft-formula"')));
  assert.ok(!formula.includes('Ust-Luga'),'only the binding call is printed; the calls that do not bind are left out');
  assert.match(html,/aria-label="Loss due to draft, t" readonly/,'the platform owns this figure');
  assert.ok(!html.includes('data-path="deductions.draftLoss"'),'no input path, so it cannot be typed into');
  const clear=M.demo();M.applyVessel(clear,'tbn-1');
- assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('permissible draft 9.85 m is inside the 11.3 m limit = 0.0 t'),'a voyage with room states it');
+ assert.ok(boot(JSON.stringify(clear)).elements.get('app').innerHTML.includes('max(0, 9.947 − 11.3)'),'a voyage with room states the zero-loss formula');
  const corrected=M.demo();M.applyVessel(corrected,'tbn-3');P.ensure(corrected);
  corrected.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(corrected)),kind:'reference',source:'P',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10800,tpcRangeCm:200,tpcSource:'Hydro'};
  const dense=boot(JSON.stringify(corrected)).elements.get('app').innerHTML;
- assert.ok(dense.includes('FWA 28.6 cm → DWA 11.5 cm at ρ 1.015 · permissible 12.915 m − 11.3 m = 161.5 cm × TPC 58.23'),'the load-line terms are named: '+dense.slice(dense.indexOf('Draft loss'),dense.indexOf('Draft loss')+220));
- assert.ok(dense.includes('× TPC 58.23 = 9,401.0 t'));
+ assert.ok(dense.includes('× TPC 58.8 × 1.015 ÷ 1.025 = 9,468.2 t'),'saved lightship does not change the agreed average-vessel model');
+ assert.ok(!dense.includes('FWA '));
 });
 
 test('Every call gets a departure and an arrival draft calculated from its own loading',()=>{
@@ -194,10 +205,10 @@ test('Deductions and holds fold into one Intake Calculator that keeps its result
  assert.ok(block.includes('<summary><strong>Intake Calculator</strong>'),'the block names itself on the summary');
  assert.match(block,/<details id="intake-calculator" class="fold">/,'the calculator is folded on open even before intake is calculated');
  assert.ok(block.includes('Intake not calculated'),'the summary says so rather than showing a stale figure');
- const s=M.demo();s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);
+ const s=M.demo();s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.match(shown,/<details id="intake-calculator" class="fold">/,'a settled intake remains folded by default');
- assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span>35,692\.00 t restricted intake<\/span>/,'the result stays readable while collapsed');
+ assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span>35,692\.00 t estimated restricted intake<\/span>/,'the result stays readable while collapsed');
 });
 
 test('Drafts stay hidden by default and the summary still names the binding state',()=>{
@@ -207,8 +218,8 @@ test('Drafts stay hidden by default and the summary still names the binding stat
  const settled=tag(boot(JSON.stringify(s)).elements.get('app').innerHTML);
  assert.match(settled,/^<details id="drafts" class="fold">/,'the table is folded away on open');
  assert.ok(settled.includes('<summary><strong>Drafts</strong>'),'the block names itself');
- assert.match(settled,/deepest <strong>8\.73 m<\/strong> at Departure · Ust-Luga/,'the deepest state stays readable while collapsed');
- assert.match(settled,/tightest margin 2\.65 m at Arrival · Santos/,'so does the state with the least room');
+ assert.match(settled,/deepest <strong>8\.91 m<\/strong> at Departure · Ust-Luga/,'the deepest state stays readable while collapsed');
+ assert.match(settled,/tightest margin 2\.57 m at Arrival · Santos/,'so does the state with the least room');
  const tight=JSON.parse(JSON.stringify(s));
  tight.portRecords.find(p=>p.id===tight.ports[0].planning.berthId).maxDraft=8.5;
  const html=boot(JSON.stringify(tight)).elements.get('app').innerHTML;
@@ -230,4 +241,13 @@ test('A hold on the stowage diagram is a picture, not a button',()=>{
  for(const gone of ['data-hold-target','role="button"','tabindex="0"'])assert.ok(!ship.includes(gone),gone+' still makes a hold clickable');
  assert.ok(ship.includes('aria-label="Hold 1:'),'each hold is still described for a screen reader');
  assert.ok(!html.includes('Add maximum mass'),'the hold limit dialog is gone from PLANNER');
+});
+
+test('Estimated intake never labels missing cubics as a combined limit and retires legacy results',()=>{
+ const s=M.demo();s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);s.holds[0].volume=null;
+ let html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(html.includes('35,692.00 t DWT only · cubics not checked'));assert.ok(!html.includes('35,692.00 t estimated restricted intake'));
+ s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);html=boot(JSON.stringify(s)).elements.get('app').innerHTML;assert.ok(html.includes('Intake not calculated'));
+ s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);s.portRecords.find(p=>p.name==='Santos').waterDensity=null;
+ html=boot(JSON.stringify(s)).elements.get('app').innerHTML;assert.match(html,/Select water density.*Santos/);assert.match(html,/data-action="calc-intake" disabled/);
 });

@@ -34,7 +34,7 @@ test('Berth water density is validated, stored and clearable',()=>{
 });
 
 test('Automatic draft loss requires no source forms and follows vessel and route limits',()=>{const s=base();for(const b of s.portRecords){b.maxDraft=20;b.waterDensity=1.025;}const first=s.portRecords.find(p=>p.name===s.ports[0].name);first.maxDraft=M.vesselOf(s).draft-.3;nearly(P.syncAutoDraftLoss(s).loss,M.vesselOf(s).tpc*30);assert.equal(s.planning.vesselBasis,undefined);first.maxDraft=20;nearly(P.syncAutoDraftLoss(s).loss,0);first.maxDraft=null;assert.equal(P.syncAutoDraftLoss(s).loss,null);});
-test('Automatic density correction never invents lightship or changes the selected berth',()=>{const s=base();for(const b of s.portRecords){b.maxDraft=M.vesselOf(s).draft;b.waterDensity=1;}let r=P.autoDraftLoss(s);assert.ok(r.warnings.some(x=>x.includes('needs lightship')));assert.ok(!r.rows.some(x=>x.densityApplied));assert.equal(r.loss,0);const v=M.vesselOf(s);s.planning.vesselBasis={lightship:5000,density:1.025,vesselKey:JSON.stringify(v)};r=P.autoDraftLoss(s);assert.ok(r.loss>0);assert.ok(s.ports.every(c=>!c.planning.berthId));});
+test('Average-vessel density correction needs no lightship and never assigns a berth',()=>{const s=base();for(const b of s.portRecords){b.maxDraft=M.vesselOf(s).draft;b.waterDensity=1;}const r=P.autoDraftLoss(s);assert.ok(r.loss>0);assert.ok(r.rows.every(x=>x.densityApplied));assert.equal(s.planning.vesselBasis,undefined);assert.ok(s.ports.every(c=>!c.planning.berthId));s.planning.vesselBasis={lightship:5000,density:1,vesselKey:'obsolete'};nearly(P.autoDraftLoss(s).loss,r.loss);});
 
 test('A voyage with no draft restriction says so and names the shallowest limit',()=>{
  const s=M.demo();M.applyVessel(s,'tbn-1');P.ensure(s);
@@ -46,39 +46,26 @@ test('A voyage with no draft restriction says so and names the shallowest limit'
  const deep=M.demo();M.applyVessel(deep,'tbn-3');P.ensure(deep);
  const restricted=P.autoDraftLoss(deep);
  assert.ok(restricted.loss>0);
- assert.match(restricted.reason,/^TPC estimate · Santos/,'a real restriction still names its call');
+ assert.match(restricted.reason,/^Average-vessel estimate · Santos/,'a real restriction still names its call');
 });
 
-test('The density note names the actual obstacle, not a generic one',()=>{
- const basis=s=>({vesselKey:JSON.stringify(M.vesselOf(s)),kind:'reference',source:'P',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10800,tpcRangeCm:200,tpcSource:'Hydro'});
- const fresh=M.demo();M.applyVessel(fresh,'tbn-3');P.ensure(fresh);
- assert.match(P.autoDraftLoss(fresh).densityNote,/enter lightship in Vessel source/,'nothing recorded yet');
- const stale=M.demo();M.applyVessel(stale,'tbn-1');P.ensure(stale);stale.planning.vesselBasis=basis(stale);
- M.applyVessel(stale,'tbn-3');
- const note=P.autoDraftLoss(stale).densityNote;
- assert.match(note,/recorded for another vessel/,'lightship was entered, so asking for it again would be wrong');
- assert.doesNotMatch(note,/enter lightship/,'the stale basis must not read as a missing lightship');
- const ready=M.demo();M.applyVessel(ready,'tbn-3');P.ensure(ready);ready.planning.vesselBasis=basis(ready);
- const r=P.autoDraftLoss(ready);
- assert.equal(r.densityNote,null,'a complete basis leaves no note');
- assert.ok(r.rows.every(x=>x.densityApplied),'and every call is density corrected');
+test('Unknown or invalid berth density blocks estimated intake instead of skipping correction',()=>{
+ for(const density of [null,0,NaN,1.04]){const s=base();s.portRecords.find(p=>p.name==='Santos').waterDensity=density;const r=P.syncAutoDraftLoss(s);assert.equal(r.loss,null);assert.equal(M.intakeLimits(s).dwt,null);assert.match(r.reason,/water density.*Santos/);}
 });
 
-test('Draft loss follows the load-line arithmetic and reproduces the reference calculator',()=>{
- // Reference intake calculator: 57,329 DWT, 12.80 m SSW, TPC 58.94, stores 1,600 t, lightship 10,426 t.
+test('Draft loss follows the agreed density-ratio approximation, not a fitted Signal result',()=>{
  const s=M.demo();const v=M.vesselOf(s);v.dwt=57329;v.draft=12.80;v.tpc=58.94;s.vesselSnapshot={...v};
  s.deductions={fuel:1000,water:400,ballast:0,constant:200,draftLoss:0};
  P.ensure(s);
- s.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(s)),kind:'reference',source:'ref',date:'2026-09-08',dwtBasis:'Summer SW',density:1.025,lightship:10426,tpcRangeCm:400,tpcSource:'Hydrostatics'};
  const load=s.portRecords.find(p=>p.name==='Ust-Luga'),discharge=s.portRecords.find(p=>p.name==='Santos');
  discharge.maxDraft=99;discharge.waterDensity=1.025;
  const intakeAt=(density,limit)=>{load.waterDensity=density;load.maxDraft=limit;return 57329-1600-P.autoDraftLoss(s).loss;};
- assert.equal(Math.round(intakeAt(1,11.00)),43726,'Saint Petersburg 11 m fresh matches the reference to the tonne');
- assert.ok(Math.abs(Math.round(intakeAt(1.0124,11.30))-46161)<=8,'Santos 11.3 m brackish is within the reference density preset');
- assert.equal(Math.round(intakeAt(1,13.10)),55729,'a berth deeper than the permissible draft takes nothing');
+ nearly(intakeAt(1,11),43538.48292682927);
+ nearly(intakeAt(1.015,11.3),55729-(12.8*1.025/1.015-11.3)*100*58.94*1.015/1.025);
+ nearly(intakeAt(1,13.1),55613.99512195122);
+ nearly(intakeAt(1,16),55729);
  const row=P.autoDraftLoss(s).rows.find(x=>x.call==='Ust-Luga');
- assert.ok(Math.abs(row.fwaCm-28.74)<0.02,'FWA = displacement / (40 × TPC)');
- assert.ok(Math.abs(row.dwaCm-row.fwaCm)<1e-9,'fresh water takes the whole allowance');
+ nearly(row.permissible,13.12);
  assert.ok(Math.abs(row.tpcPort-v.tpc/1.025)<1e-9,'TPC is scaled into the water the ship floats in');
 });
 
@@ -114,12 +101,12 @@ test('A state draft follows its own deadweight and the water the ship floats in'
  // 5000 t short of the reference deadweight lifts her 5000 / 50 = 100 cm off the 10 m load line.
  nearly(row.mean,9);assert.equal(row.basis,'computed');
  s.portRecords.find(p=>p.id===s.ports[0].planning.berthId).waterDensity=1;
- // Fresh water sinks her by the state's own FWA: 30000 / (40 × 50) = 15 cm.
- nearly(departure(s,'Ust-Luga').mean,9.15);
+ // The same agreed density ratio applies to the estimated state draft.
+ nearly(departure(s,'Ust-Luga').mean,9.225);
  assert.ok(departure(s,'Ust-Luga').densityApplied);
  delete s.planning.vesselBasis.lightship;
- const off=departure(s,'Ust-Luga');nearly(off.mean,9);
- assert.ok(!off.densityApplied&&off.notes.some(x=>x.includes('enter lightship')),'the correction names what it lacks instead of guessing');
+ const off=departure(s,'Ust-Luga');nearly(off.mean,9.225);
+ assert.ok(off.densityApplied,'lightship is not required by the average-vessel estimate');
 });
 test('Discharging and burning bunkers lift the ship between states',()=>{
  const s=loadedFixture();
