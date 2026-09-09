@@ -157,6 +157,18 @@ test('A ballast distance already in the file outranks the estimate',()=>{
  assert.equal(app.getState().ballast.distanceSource,'entered','and counts as the user own');
  assert.ok(elements.get('app').innerHTML.includes('>Entered<'));
 });
+test('The legs and ports tables stand on their own, without an explanation or a How calculated',()=>{
+ for(const state of [M.initial(),M.demo()]){
+  const html=boot(JSON.stringify(state)).elements.get('app').innerHTML;
+  for(const gone of ['The ballast leg starts at the entered delivery port','Speeds and consumption come from the selected vessel type','Consumption under the fuel regime for ECA requires confirmation','id="calc-legs"','Days = distance / (speed × 24)',
+   'For SHEX/SSHEX enter the calendar handling period','not a contractual calculation of laytime','id="calc-ports"','Work days = handled tonnes / handling rate'])
+   assert.ok(!html.includes(gone),gone+' is still printed under the tables');
+  assert.ok(html.includes('<details id="portfuel">'),'the port fuel block is not what was removed');
+ }
+ const {app,elements}=boot(JSON.stringify(M.demo())),html=elements.get('app').innerHTML;
+ assert.ok(html.includes('<h3>Legs</h3>')&&html.includes('data-path="legs.0.distance"'),'the table itself is untouched');
+ assert.ok(app.getResult().budget.trace.legs.length>0&&app.getResult().budget.trace.ports.length>0,'and the evidence stays in the result the audit reads');
+});
 test('Section 4 opens with a chain whose parts add up to the result it states',()=>{
  const s=M.demo();P.ensure(s);
  const {app,elements}=boot(JSON.stringify(s));
@@ -182,6 +194,22 @@ test('Section 4 hides routine prompts without accepting an incomplete voyage',()
  }
  const result=boot(JSON.stringify(incomplete)).app.getResult();
  assert.ok(result.errors.includes('Hire rate'),'validation still identifies the missing input');
+});
+test('One quiet line names what the voyage is still waiting for',()=>{
+ const s=M.demo();P.ensure(s);s.hire=null;
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(html.includes('<p class="chain-missing">Voyage not calculated · Hire rate</p>'),'the missing input is named where the result would be');
+ assert.ok(!html.includes('Complete the following')&&!html.includes('id="missing"'),'the list that was removed does not come back');
+ assert.ok(!html.includes('class="voyage-chain"'),'and it stands in place of the chain, not beside it');
+ // Field keys are internal; the line says what the form says.
+ const ports=M.demo();P.ensure(ports);ports.ports[1].da=null;ports.ports[1].rate=null;
+ const line=boot(JSON.stringify(ports)).elements.get('app').innerHTML.match(/<p class="chain-missing">([^<]*)<\/p>/);
+ assert.ok(line,'a port with no DA is named too');
+ assert.match(line[1],/Santos: handling rate/);assert.match(line[1],/Santos: DA/);
+ assert.ok(!/: da\b/.test(line[1]),'no raw field key reaches the page: '+line[1]);
+ // Nothing to say when the voyage computes, or when there is no voyage yet.
+ assert.ok(!boot(JSON.stringify(M.demo())).elements.get('app').innerHTML.includes('chain-missing'),'a complete voyage says nothing');
+ assert.ok(!boot(null).elements.get('app').innerHTML.includes('chain-missing'),'nor does an empty planner, which already invites a sale');
 });
 test('Voyage map folds like Intake Calculator, while distance inputs stay outside',()=>{
  for(const s of [M.initial(),M.demo()]){
@@ -238,7 +266,9 @@ test('Restricted intake DWT appears only after Calculate intake and never outliv
  assert.ok(less.includes('Restricted intake DWT: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
- assert.match(html,/<span class="muted">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
+ // The line is printed in upper case by .vessel-summary; the text itself keeps its own case, so it copies as written.
+ assert.match(html,/<span class="muted vessel-summary">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
+ assert.match(fs.readFileSync(__dirname+'/styles.css','utf8'),/\.vessel-summary\{text-transform:uppercase\}/);
  assert.ok(!/Bale/.test(html),'bale capacity is not shown in PLANNER');
  assert.match(html,/<h3>Deductions<\/h3>.*<div class="grid">/,'the block is a permanent heading, not a disclosure');
  assert.ok(!html.includes('id="vessel"'),'nothing left to collapse');});
@@ -334,9 +364,9 @@ test('ProjectX footer is shared across tabs; calculation controls remain in PLAN
 test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
  const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
- for(const id of ['legs','ports','extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
- assert.ok(!html.includes('id="calc-vessel"'),'section 2 has no How calculated block');
- for(const text of ['Distance / (speed × 24)','Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','7200 NM','24000'])assert.ok(html.includes(text),text);
+ for(const id of ['extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
+ for(const gone of ['id="calc-vessel"','id="calc-legs"','id="calc-ports"'])assert.ok(!html.includes(gone),gone+' has no How calculated block');
+ for(const text of ['Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','24000'])assert.ok(html.includes(text),text);
  assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
 });
 test('Calculation evidence escapes labels and updates when selected stage changes',()=>{
@@ -344,8 +374,8 @@ test('Calculation evidence escapes labels and updates when selected stage change
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
  assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));
  for(const gone of ['id="calc-stowage"','id="technical"','Click a hold to edit','Cargo plan validation limits','Automatic suggestions above'])assert.ok(!html.includes(gone),gone+' should be gone from section 3');
- const legs=html.slice(html.indexOf('id="calc-legs"'),html.indexOf('id="calc-ports"'));
- assert.ok(legs.includes('Formula and values'),'the remaining disclosures still show their substitutions');
+ const totals=html.slice(html.indexOf('id="calc-totals"'),html.indexOf('id="audit"'));
+ assert.ok(totals.includes('Formula and values'),'the remaining disclosures still show their substitutions');
 });
 
 test('Deductions and holds fold into one Intake Calculator that keeps its result on the summary',()=>{

@@ -4,6 +4,8 @@
 
 h1{border:0;padding:0;margin:0;color:var(--text);font-size:18px;font-weight:500}.load-selector{max-width:390px;margin-bottom:18px}.load-selector input{width:100%}dialog{background:#212121;color:var(--text);border:1px solid var(--line);border-radius:12px;width:min(520px,92vw);padding:24px}dialog::backdrop{background:#0009}dialog .field{margin-bottom:16px}dialog .grid{grid-template-columns:1fr 1fr}dialog input{width:100%}
 
+/* The vessel particulars read as one plate: the case is presentation, the stored values are untouched. */
+.vessel-summary{text-transform:uppercase}
 .vessel-choice{display:flex;align-items:end;gap:24px;margin-bottom:18px}.vessel-choice .field{min-width:260px}.vessel-choice>span{padding-bottom:8px}.rotation-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:20px}.port-order{list-style:none;padding:0;margin:0}.port-order li{display:flex;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}.port-number{color:var(--muted);width:20px;text-align:center}.port-caption{flex:1}.port-caption strong{font-weight:500;display:block}.port-caption small{display:block;margin-top:3px}.port-caption .tag{margin:0 0 0 7px}.port-actions{display:flex;gap:6px}.port-actions button{padding:5px 11px}@media(max-width:700px){.rotation-grid{grid-template-columns:1fr;gap:10px}.vessel-choice{display:block}.vessel-choice>span{display:block;margin-top:10px}}
 
 .workspace-tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-top:16px}.workspace-tabs button{border:0;border-radius:0;padding:12px 0;color:var(--muted);background:transparent;border-bottom:2px solid transparent;font-size:13px;letter-spacing:.5px}.workspace-tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}.catalog-search{margin-bottom:16px;min-width:280px}tr[hidden]{display:none}
@@ -24,6 +26,8 @@ thead th,thead th:first-child{text-align:center;vertical-align:middle}#status:em
 main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 0 12px;border-bottom:1px solid var(--line)}.planner-actions[hidden],#planner-footer[hidden]{display:none}.section-intro{margin:4px 0 0;color:var(--muted);font-size:12px}.heading>div h2{margin:0}.empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;padding:56px 20px;border:1px dashed var(--accent);border-radius:12px;color:var(--muted);text-align:center}.empty-state strong{color:var(--text);font-weight:550}.date-range{display:flex;gap:6px}.port-cell{display:flex;gap:8px;align-items:center}
 /* The calculation chain: name, result, and the parts the result is made of. */
 .voyage-chain{margin:14px 0;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+/* The same slot as the chain, in one quiet line, when the voyage cannot be measured yet. */
+.chain-missing{margin:14px 0;padding:2px 0 2px 14px;border-left:2px solid var(--line);color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .chain-line{display:grid;grid-template-columns:170px 190px 1fr;gap:14px;align-items:baseline;padding:11px 16px;border-top:1px solid var(--line)}
 .chain-line:first-child{border-top:0}
 .chain-name{color:var(--text);font-weight:550}
