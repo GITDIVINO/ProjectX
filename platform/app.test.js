@@ -266,9 +266,11 @@ test('Restricted intake DWT appears only after Calculate intake and never outliv
  assert.ok(less.includes('Restricted intake DWT: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
- // The line is printed in upper case by .vessel-summary; the text itself keeps its own case, so it copies as written.
- assert.match(html,/<span class="muted vessel-summary">33,465 DWT · 5 holds · HDD34 · LOA 180\.0 m · Beam 30\.0 m · Draft 9\.85 m · TPC 50\.7 · Grain 45,517 m³<\/span>/);
- assert.match(fs.readFileSync(__dirname+'/styles.css','utf8'),/\.vessel-summary\{text-transform:uppercase\}/);
+ // Upper case in the text, not in a style rule, so a copy of the line carries it too.
+ assert.match(html,/<span class="muted vessel-summary">33,465 DWT · 5 HOLDS · HDD34 · LOA 180\.0 M · BEAM 30\.0 M · DRAFT 9\.85 M · TPC 50\.7 · GRAIN 45,517 M³<\/span>/);
+ const line=html.match(/<span class="muted vessel-summary">([^<]*)</)[1];
+ assert.equal(line,line.toUpperCase(),'nothing in the line is left in lower case: '+line);
+ assert.ok(!fs.readFileSync(__dirname+'/styles.css','utf8').includes('.vessel-summary{text-transform'),'the case does not depend on a style rule');
  assert.ok(!/Bale/.test(html),'bale capacity is not shown in PLANNER');
  assert.match(html,/<h3>Deductions<\/h3>.*<div class="grid">/,'the block is a permanent heading, not a disclosure');
  assert.ok(!html.includes('id="vessel"'),'nothing left to collapse');});
