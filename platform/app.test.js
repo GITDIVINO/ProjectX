@@ -27,7 +27,7 @@ test('MARKET restores as a read-only archive and does not change the saved voyag
  assert.equal(JSON.stringify(app.getState()),before);
  assert.equal(elements.get('planner-actions').hidden,true);
 });
-function boot(saved,savedTab=null){const elements=new Map(),tabWrites=[];const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',addEventListener(){},setAttribute(name,value){this[name]=value;}});return elements.get(id);},querySelectorAll:()=>[]};const context={window:{ProjectXModel:M,ProjectXPlanning:require('./planning'),ProjectXPlannerUI:require('./planner-ui'),ProjectXMarket:require('./market'),ProjectXGuide:require('./guide')},document,localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>savedTab,setItem:(key,value)=>tabWrites.push([key,value])},console,Blob,URL,setTimeout};vm.runInNewContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);return {app:context.window.ProjectXApp,elements,tabWrites};}
+function boot(saved,savedTab=null){const elements=new Map(),tabWrites=[];const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',addEventListener(){},setAttribute(name,value){this[name]=value;}});return elements.get(id);},querySelectorAll:()=>[]};const context={window:{ProjectXModel:M,ProjectXPlanning:require('./planning'),ProjectXPlannerUI:require('./planner-ui'),ProjectXMarket:require('./market'),ProjectXGuide:require('./guide'),ProjectXSeaRoute:require('./sea-route')},document,localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>savedTab,setItem:(key,value)=>tabWrites.push([key,value])},console,Blob,URL,setTimeout};vm.runInNewContext(fs.readFileSync(__dirname+'/app.js','utf8'),context);return {app:context.window.ProjectXApp,elements,tabWrites};}
 test('Allocate by volume applies the plan itself, with no preview dialog',()=>{
  const s=M.demo();P.ensure(s);let renders=0;
  const ui=require('./planner-ui').create({M,P,getState:()=>s,changed:()=>renders++});
@@ -57,6 +57,34 @@ test('Cargo tonnage is printed the same way everywhere it appears',()=>{
  elements.get('tab-sale').onclick();
  const sale=elements.get('app').innerHTML;
  assert.match(sale,/data-path="sales.0.quantity" type="text" inputmode="decimal" data-format="tonnage" value="24,000.0"/,'the SALE register prints the same format in its editable field');
+});
+test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
+ const s=M.demo();P.ensure(s);
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(html.includes('class="voyage-map"'),'the map is drawn');
+ assert.equal((html.match(/class="sea-track/g)||[]).length,2,'one track per leg of the demo rotation');
+ assert.ok(html.includes('sea-track-doubtful'),'the coastal leg is drawn differently');
+ assert.ok(html.indexOf('class="voyage-map"')<html.indexOf('<h3>Legs</h3>'),'the map sits above the legs it measures');
+ assert.ok(html.includes('sea-distances'),'the distances are listed with their source');
+ assert.ok(html.includes('>Entered<'),'a distance already in the file keeps governing');
+ assert.ok(html.includes('not a passage plan'),'the estimate never claims to be a passage plan');
+ const blank=boot(null).elements.get('app').innerHTML;
+ assert.ok(!blank.includes('class="sea-track'),'an empty voyage draws no track');
+});
+test('An unanswered leg takes the estimate, and a coastal one is left for the user',()=>{
+ const s=M.demo();P.ensure(s);
+ for(const leg of s.legs){leg.distance=null;leg.distanceSource=null;}
+ const {app,elements}=boot(JSON.stringify(s));
+ const legs=app.getState().legs;
+ const ocean=legs.find(l=>l.from==='Ust-Luga'&&l.to==='Santos');
+ assert.equal(ocean.distanceSource,'estimated','the ocean leg is filled by the estimate');
+ assert.ok(Math.abs(ocean.distance-6818)<5,'and carries the routed figure: '+ocean.distance);
+ const coastal=legs.find(l=>l.from==='Santos');
+ assert.equal(coastal.distance,null,'the coastal leg is not answered');
+ assert.equal(coastal.distanceSource,null,'and is not marked as estimated');
+ const html=elements.get('app').innerHTML;
+ assert.ok(html.includes('Coastal leg'),'the table says why it was left alone');
+ assert.ok(html.includes('Estimated over the lane network'),'and names the filled one as an estimate');
 });
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{

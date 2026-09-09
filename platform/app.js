@@ -77,6 +77,75 @@ function intakeCalculator(ship){
  const intake=intakeShown()?(limits.restricted!==null?`${fmt(limits.restricted,2)} t estimated restricted intake`:`${fmt(limits.dwt,2)} t DWT only · cubics not checked`):ship.intake!==null&&ship.intake<0?'No feasible intake · deductions exceed DWT':'Intake not calculated';
  return `<details id="intake-calculator" class="fold"><summary><strong>Intake Calculator</strong><span>${intake}</span></summary><div class="fold-body">${body}</div></details>`;
 }
+
+// The voyage on an equirectangular world. The drawn track is the check on the distance beside it:
+// a leg that loops out to sea and back is visible long before the number looks wrong.
+const Sea=typeof window!=='undefined'?window.ProjectXSeaRoute:null;
+const portAnchor=name=>{const p=state.portRecords.find(p=>p.name===name&&Number.isFinite(p.lat)&&Number.isFinite(p.lon));return p?[p.lon,p.lat]:null;};
+function voyageLegs(){
+ const calls=M.callsOf(state),out=[];
+ for(let i=0;i<calls.length-1;i++){
+  const from=portAnchor(calls[i].name),to=portAnchor(calls[i+1].name);
+  const leg=state.legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null;
+  out.push({from:calls[i].name,to:calls[i+1].name,a:from,b:to,leg,
+   route:Sea&&from&&to?Sea.route(from,to):null});
+ }
+ return out;
+}
+function syncRouteDistances(){
+ if(!Sea)return;
+ for(const l of voyageLegs()){
+  const leg=l.leg;if(!leg||leg.distanceSource==='entered')continue;
+  if(l.route?.reliable&&Number.isFinite(l.route.distance)){leg.distance=round(l.route.distance,0);leg.distanceSource='estimated';}
+  else if(leg.distanceSource==='estimated'){leg.distance=null;leg.distanceSource=null;}
+ }
+}
+// Typing into a leg distance makes it the user's figure; clearing it hands the leg back to the estimate.
+function noteManualEntry(path,value){
+ const m=/^legs\.(\d+)\.distance$/.exec(path||'');
+ if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
+}
+function voyageMap(){
+ if(!Sea)return '';
+ const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
+ const anchors=[...new Set(M.callsOf(state).map(c=>c.name))].map(name=>[name,portAnchor(name)]).filter(([,p])=>p);
+ if(!anchors.length)return '<div class="voyage-map-empty"><p class="muted">The route is drawn once the voyage calls have coordinates. Enter them in PORT.</p></div>';
+ const all=[...anchors.map(([,p])=>p),...drawn.flatMap(l=>l.route.path)];
+ let minLon=Math.min(...all.map(p=>p[0])),maxLon=Math.max(...all.map(p=>p[0]));
+ let minLat=Math.min(...all.map(p=>p[1])),maxLat=Math.max(...all.map(p=>p[1]));
+ const padLon=Math.max((maxLon-minLon)*.12,4),padLat=Math.max((maxLat-minLat)*.12,4);
+ minLon-=padLon;maxLon+=padLon;minLat-=padLat;maxLat+=padLat;
+ const width=maxLon-minLon,height=maxLat-minLat;
+ // y grows south, so latitude is negated; nothing else about the projection is needed at this scale.
+ const box=[minLon,-maxLat,width,height];
+ const unit=Math.max(width,height)/100;
+ const coast=Sea.coastline().filter(ring=>ring.some(p=>p[0]>=minLon&&p[0]<=maxLon&&p[1]>=minLat&&p[1]<=maxLat))
+  .map(ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`).join('');
+ const tracks=drawn.map(l=>`<polyline class="${l.route.reliable?'sea-track':'sea-track sea-track-doubtful'}" points="${l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ')}"/>`).join('');
+ // A label on the eastern half is written back towards the middle, so it cannot run off the edge.
+ const middle=minLon+width/2;
+ const placed=[];
+ const marks=anchors.map(([name,p])=>{
+  const east=p[0]>middle,gap=unit*(east?-2:2);
+  let y=-p[1]+unit*.8;
+  while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
+  placed.push([p[0],y]);
+  return `<g class="sea-port"><circle cx="${p[0].toFixed(2)}" cy="${(-p[1]).toFixed(2)}" r="${(unit*.9).toFixed(2)}"/><text x="${(p[0]+gap).toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.4).toFixed(2)}">${esc(name)}</text></g>`;}).join('');
+ return `<div class="voyage-map"><svg viewBox="${box.map(n=>n.toFixed(2)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet"><g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
+}
+function voyageDistanceLine(){
+ if(!Sea)return '';
+ const legs=voyageLegs().filter(l=>l.leg);
+ if(!legs.length)return '';
+ const rows=legs.map(l=>{
+  const source=l.leg.distanceSource==='entered'?'Entered'
+   :l.leg.distanceSource==='estimated'?'Estimated over the lane network'
+   :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports; enter it from a distance table'
+   :'No route · check the port positions in PORT';
+  return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
+ return table(['Leg','In the calculation, nm','Estimate, nm','Source'],rows,'sea-distances')
+  +'<p class="form-note">A leg with no entered distance takes the estimate: great-circle legs over the ORNL / Eurostat shipping-lane network, from the port positions in PORT. Type a distance and it governs; clear it and the estimate returns. A proposal, not a passage plan — it holds no draft, weather, traffic separation or canal transit.</p>';
+}
 const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 // Allocation cells are printed in the table's own format, so the grouping goes back out before the number is read.
 const tonnage=text=>{const clean=String(text).replace(/[\s,\u00a0\u202f]/g,'');return clean===''?0:Number(clean);};
@@ -93,13 +162,14 @@ function allocationCalculation(b){
  const lots=chosen();return `<details id="calc-allocation" class="calculation-details"><summary>How calculated</summary><p class="form-note">${state.allocation==='tonnage'?'Every line is shared by all selected sales in proportion to tonnage.':'Leg lines are shared by sales on board; port lines by sales handled at that call; ballast and additional items by all selected sales.'} Exact share in cents = line cents × sale tonnes / eligible tonnes. First take whole cents downward; distribute remaining cents to the largest fractional remainders. Ties follow the displayed sale order. The correction below is added to the downward-rounded share.</p>${table(['Line','Sale','Calculation, cents','Remainder correction','Allocated, USD'],b.rows.flatMap(row=>lots.map(l=>`<tr><td>${esc(row.name)}</td><td>${esc(l.saleId||l.id)} · ${esc(l.id)}</td><td class="calculation-expression"><code>${row.cents} × ${operand(row.weights[l.id])} t / ${operand(row.basis)} t</code>${row.weights[l.id]===0?'<small>Not eligible for this line</small>':''}</td><td>+${row.rounding[l.id]} cent</td><td>${fmt(row.shares[l.id]/100,2)}</td></tr>`)))}${table(['Sale','Total calculation, USD','USD/t calculation'],b.allocation.map(a=>`<tr><td>${esc(a.id)}</td><td class="calculation-expression"><code>${b.rows.map(row=>fmt(row.shares[a.id]/100,2)).join(' + ')} = ${fmt(a.cents/100,2)}</code></td><td>${fmt(a.cents/100,2)} / ${operand(a.quantity)} = ${operand(a.cents/100/a.quantity)}</td></tr>`))}<p>Reconciliation: ${b.allocation.map(a=>fmt(a.cents/100,2)).join(' + ')} = ${fmt(b.total,2)} USD. Difference: ${fmt((b.totalCents-b.allocation.reduce((n,a)=>n+a.cents,0))/100,2)} USD.</p></details>`;
 }
 function rotationList(title,isLoad){const loadNames=new Set(chosen().map(l=>l.loadPort)),group=M.callsOf(state).filter(p=>loadNames.has(p.name)===isLoad);return `<div><h3>${title}</h3><ol class="port-order">${group.map((p,i)=>{const parcels=chosen().filter(l=>(isLoad?l.loadPort:l.port)===p.name),q=parcels.every(l=>M.ok(l.quantity,true))?parcels.reduce((n,l)=>n+l.quantity,0):null;return `<li><span class="port-number">${i+1}</span><div class="port-caption"><strong>${esc(p.name)}</strong><small>${fmt(q,0)} t ${parcels.map(l=>`<span class="tag" style="background:${l.color}" title="${esc(l.name)}"></span>`).join('')}</small></div><div class="port-actions"><button data-action="move-port" data-port="${esc(p.name)}" data-direction="-1" aria-label="${esc(p.name)} earlier" ${i===0?'disabled':''}>↑</button><button data-action="move-port" data-port="${esc(p.name)}" data-direction="1" aria-label="${esc(p.name)} later" ${i===group.length-1?'disabled':''}>↓</button></div></li>`;}).join('')}</ol>${group.length?'':'<p class="muted">Add sales from SALE to the planner</p>'}</div>`;}
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();let html=`${state.demo?'<p class="notice">Demo example. Tonnage, SF, distances and prices are illustrative; replace the inputs before using the calculation.</p>':''}<section><div class="heading"><h2>1. Sales in voyage</h2><button data-action="add-lot">+ Add sale</button></div>`;
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();let html=`${state.demo?'<p class="notice">Demo example. Tonnage, SF, distances and prices are illustrative; replace the inputs before using the calculation.</p>':''}<section><div class="heading"><h2>1. Sales in voyage</h2><button data-action="add-lot">+ Add sale</button></div>`;
 html+=state.lots.length?table(['In voyage','Sale / cargo','Quantity <small>MT</small>','SF <small>m³/t</small>','Loading','Discharge',''],state.lots.map((l,i)=>`<tr><td><input type="checkbox" data-path="lots.${i}.selected" aria-label="Include ${esc(l.name)}" ${l.selected?'checked':''}></td><td class="name"><span class="tag" style="background:${l.color}"></span><small>${esc(l.saleId||'Legacy')}</small><br><button class="text-action" data-action="parcel-passport" data-id="${esc(l.id)}">${esc(l.name)}</button></td><td>${fmt(l.quantity,1)}</td><td>${fmt(l.sf,2)}</td><td>${esc(l.loadPort)}</td><td>${esc(l.port)}</td><td><button data-action="remove-lot" data-index="${i}" aria-label="Remove sale ${l.saleId||l.id} from voyage">×</button></td></tr>`)): '<div class="empty-state planner-empty"><strong>No sales in voyage yet</strong><span>Add a sale from SALE to start planning this voyage.</span></div>';html+='<p class="form-note">Only sales from SALE can be added to PLANNER. Edit commercial fields and shipment properties in SALE; reference properties in CARGO. Shipment properties are read-only in PLANNER.</p></section>';
 html+=`<section><div class="heading"><h2>2. Vessel and rotation</h2></div><div class="vessel-choice"><label class="field">Vessel${select('vesselId','Vessel',(state.vesselProfiles||M.VESSELS).map(v=>[v.id,v.name]))}</label><span class="muted">${fmt(M.vesselOf(state)?.dwt,0)} DWT · ${M.vesselOf(state)?.holds} holds · ${esc(M.vesselOf(state)?.model)} · LOA ${fmt(M.vesselOf(state)?.loa)} m · Beam ${fmt(M.vesselOf(state)?.beam)} m · Draft ${fmt(M.vesselOf(state)?.draft,2)} m · TPC ${fmt(M.vesselOf(state)?.tpc)} · Grain ${fmt(M.vesselOf(state)?.grain,0)} m³</span></div>${intakeCalculator(ship)}<div class="rotation-grid">${rotationList('Loading',true)}${rotationList('Discharge',false)}</div></section>`;
 // One planner check per render; both the section and the print evidence read the same result.
 const report=P.check(state,b);
 html+=plannerUI.section3(state,b,report)+plannerUI.printEvidence(state,b,report);
 html+=`<section><div class="heading"><h2>4. Voyage calculation</h2><small>Vessel cost model · recalculated when a field changes</small></div><div class="metrics">${[['Cargo, t',ship.quantity,0],['Voyage, days',b?.days,2],['Model cost, USD',b?.total,2],['Model cost, USD/t',b?.unit,2]].map(([t,v,d])=>`<div class="metric"><small>${t}</small><strong>${fmt(v,d)}</strong></div>`).join('')}</div>${r.errors.length?`<details id="missing" open><summary>Complete the following ${r.errors.length} fields / conditions</summary><ul class="errors">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></details>`:''}`;
+html+=voyageMap()+voyageDistanceLine();
 html+=`<h3>Legs</h3><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>`;
 const activePorts=M.callsOf(state);const displayedLegs=[];if(state.ballastEnabled)displayedLegs.push({l:state.ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state.legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state.legs[j],path:'legs.'+j});}
 html+=table(['Leg','Total <small>NM</small>','Of which ECA <small>NM</small>','Speed <small>kn</small>','Weather <small>% time</small>','Outside ECA <small>t/day</small>','In ECA <small>t/day</small>','Aux <small>t/day</small>','Days'],displayedLegs.map(({l,path})=>`<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td>${['distance','eca','speed','margin','burn','ecaBurn','aux'].map(k=>`<td>${input(path+'.'+k,l.from+' '+k)}</td>`).join('')}<td>${fmt(b?.legs.find(x=>x.from===l.from&&x.to===l.to)?.days,3)}</td></tr>`));html+=`<p class="form-note">Speeds and consumption come from the selected vessel type. Working values are in the legs table. Consumption under the fuel regime for ECA requires confirmation. The margin increases time and consumption; ECA is included in the total distance.</p>${calculationDetails('legs',b?.trace.legs,'Days = distance / (speed × 24) × (1 + weather / 100). ECA is part of total distance. Main mass = non-ECA days × burn; ECA mass = ECA days × burn; Aux mass = all sea days × additional burn. Fuel value = mass × price; hire = days × daily hire. Complete voyage inputs for values.')}`;
@@ -113,7 +183,7 @@ $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(i
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
 function changed(){ensureLegs();$('status').textContent='';saveCalculation(false);render();}
 function editableLotField(path){return !path?.startsWith('lots.')||/^lots\.\d+\.selected$/.test(path);}
-$('app').addEventListener('change',e=>{const el=e.target;if(!editableLotField(el.dataset.path)){$('status').textContent='Cargo properties are read-only in PLANNER. Edit them in CARGO.';render();return;}if(el.dataset.path==='vesselId'){try{M.applyVessel(state,el.value);changed();}catch(error){$('status').textContent=error.message;render();}return;}if(el.dataset.path){let value=el.type==='checkbox'?el.checked:el.dataset.format==='tonnage'?(el.value.trim()===''?null:tonnage(el.value)):el.type==='number'?(el.value===''?null:Number(el.value)):el.value;if(el.dataset.path.startsWith('sales.')){
+$('app').addEventListener('change',e=>{const el=e.target;if(!editableLotField(el.dataset.path)){$('status').textContent='Cargo properties are read-only in PLANNER. Edit them in CARGO.';render();return;}if(el.dataset.path==='vesselId'){try{M.applyVessel(state,el.value);changed();}catch(error){$('status').textContent=error.message;render();}return;}if(el.dataset.path){let value=el.type==='checkbox'?el.checked:el.dataset.format==='tonnage'?(el.value.trim()===''?null:tonnage(el.value)):el.type==='number'?(el.value===''?null:Number(el.value)):el.value;noteManualEntry(el.dataset.path,value);if(el.dataset.path.startsWith('sales.')){
  const [,index,fieldName]=el.dataset.path.split('.');
  try{M.updateSale(state,state.sales[Number(index)].id,{[fieldName]:value});changed();}catch(error){render();$('status').textContent=error.message;}
  return;
@@ -174,7 +244,7 @@ $('app').addEventListener('input',e=>{
  if(currentTab!=='planner')return;
  if(el.dataset.path&&editableLotField(el.dataset.path)){
   const value=el.type==='checkbox'?el.checked:el.type==='number'?(el.value===''?null:Number(el.value)):el.value;
-  set(el.dataset.path,value);saveCalculation(false);return;
+  noteManualEntry(el.dataset.path,value);set(el.dataset.path,value);saveCalculation(false);return;
  }
  if(el.dataset.lot){
   if(state.stage!=='load')return;
