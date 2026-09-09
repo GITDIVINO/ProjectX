@@ -1,6 +1,7 @@
 (function(root){
 'use strict';
 const Data=typeof module!=='undefined'&&module.exports?require('./sea-data'):root.ProjectXSeaData;
+const Table=typeof module!=='undefined'&&module.exports?require('./sea-table'):root.ProjectXSeaTable;
 const NM=3440.065,rad=d=>d*Math.PI/180;
 // Great-circle distance in nautical miles. Every edge weight and every port approach uses this one measure.
 function haversine(a,b){
@@ -27,6 +28,8 @@ function network(){
  return graph;
 }
 const coastline=()=>Data.coast.map(points);
+// Shallowest band first: each is the sea deeper than its own level, so they nest.
+const depths=()=>(Data.depths||[]).map(d=>({level:d.level,rings:d.rings.map(points)}));
 // The nearest network nodes to a position, nearest first.
 function nearest(position,count){
  const {nodes}=network(),best=[];
@@ -84,6 +87,24 @@ function solve(from,to,{approaches=3}={}){
   detour:direct>0?best/direct:null,
   reliable:approach<=best/4};
 }
-const api={haversine,route,network,coastline,points,NM};
+// Pub. 151 is a sparse table, and only the pairs it prints are used. Its junction figures
+// are distances along a route the publication has in mind, so adding two of them invents a
+// passage the book never states: Santos to Sao Francisco do Sul came out at 8,937 miles
+// through Gibraltar that way. A pair the table omits is left to the routed estimate.
+let table=null;
+function published(from,to){
+ if(!Table||!from||!to)return null;
+ if(!table){
+  const names=Table.names.split('\n'),index=new Map(names.map((n,i)=>[n,i])),legs=new Map();
+  for(let i=0;i<Table.pairs.length;i+=9)legs.set(dec(Table.pairs,i)+':'+dec(Table.pairs,i+3),dec(Table.pairs,i+6));
+  table={names,index,legs};
+ }
+ const a=table.index.get(from),b=table.index.get(to);
+ if(a===undefined||b===undefined)return null;
+ // A pair may be printed one way only, and the two directions may differ; both are honoured as printed.
+ const miles=table.legs.get(a+':'+b)??table.legs.get(b+':'+a);
+ return miles===undefined?null:{distance:miles};
+}
+const api={haversine,route,published,network,coastline,depths,points,NM};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSeaRoute=api;
 })(globalThis);

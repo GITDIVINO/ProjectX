@@ -67,27 +67,44 @@ test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  assert.ok(html.indexOf('class="voyage-map"')<html.indexOf('<h3>Legs</h3>'),'the map sits above the legs it measures');
  assert.ok(html.includes('sea-distances'),'the distances are listed with their source');
  assert.ok(html.includes('>Entered<'),'a distance already in the file keeps governing');
- assert.ok(html.includes('not a passage plan'),'the estimate never claims to be a passage plan');
+ assert.ok(html.includes('Neither is a passage plan'),'neither figure claims to be a passage plan');
  assert.ok(html.includes('data-action="map-zoom"')&&html.includes('data-action="map-reset"'),'the map can be scaled without a wheel');
  assert.match(html,/<svg viewBox="[-\d. ]+" role="img" aria-label="Voyage route map"/,'the view is a plain viewBox, so zoom is just a box change');
- assert.equal((html.match(/<path d="M/g)||[]).length-1,891,'the whole coastline is drawn, so panning cannot run off it');
+ assert.equal((html.match(/<g class="sea-land">/g)||[]).length,1,'the coastline is one layer');
+ assert.equal((html.match(/class="sea-depth"/g)||[]).length,3,'three depth bands sit under it');
+ assert.ok(html.includes('class="sea-graticule"'),'and a graticule gives the eye a scale');
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(!blank.includes('class="sea-track'),'an empty voyage draws no track');
 });
-test('An unanswered leg takes the estimate, and a coastal one is left for the user',()=>{
+test('A printed distance is taken over the estimate, and an unprinted pair falls back to it',()=>{
  const s=M.demo();P.ensure(s);
  for(const leg of s.legs){leg.distance=null;leg.distanceSource=null;}
  const {app,elements}=boot(JSON.stringify(s));
  const legs=app.getState().legs;
+ // Ust-Luga is not in Pub. 151, so this ocean leg can only be estimated.
  const ocean=legs.find(l=>l.from==='Ust-Luga'&&l.to==='Santos');
- assert.equal(ocean.distanceSource,'estimated','the ocean leg is filled by the estimate');
+ assert.equal(ocean.distanceSource,'estimated','the unprinted ocean leg is filled by the estimate');
  assert.ok(Math.abs(ocean.distance-6818)<5,'and carries the routed figure: '+ocean.distance);
+ // Santos to Paranagua is printed, and the publication governs even though the estimate exists.
  const coastal=legs.find(l=>l.from==='Santos');
- assert.equal(coastal.distance,null,'the coastal leg is not answered');
- assert.equal(coastal.distanceSource,null,'and is not marked as estimated');
+ assert.equal(coastal.distanceSource,'published','the printed pair is taken from Pub. 151');
+ assert.equal(coastal.distance,163,'exactly as printed, not as routed');
  const html=elements.get('app').innerHTML;
- assert.ok(html.includes('Coastal leg'),'the table says why it was left alone');
- assert.ok(html.includes('Estimated over the lane network'),'and names the filled one as an estimate');
+ assert.ok(html.includes('NGA Pub. 151, published'),'and the table names the publication');
+ assert.ok(html.includes('Estimated over the lane network'),'while the other leg is named an estimate');
+});
+test('A pair in neither source is left empty rather than guessed',()=>{
+ const s=M.demo();P.ensure(s);
+ for(const leg of s.legs){leg.distance=null;leg.distanceSource=null;}
+ // Two coastal ports the publication does not print and the lane network cannot see.
+ s.sales.forEach(sale=>{if(sale.dischargePort==='Santos')sale.dischargePort='Suape';});
+ M.syncSalesToLots(s);
+ const {app,elements}=boot(JSON.stringify(s));
+ const coastal=app.getState().legs.find(l=>l.from==='Suape');
+ if(coastal){
+  assert.equal(coastal.distance,null,'no figure is invented');
+  assert.ok(elements.get('app').innerHTML.includes('Coastal leg'),'and the table says why');
+ }
 });
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{

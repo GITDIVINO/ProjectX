@@ -88,7 +88,8 @@ function voyageLegs(){
   const from=portAnchor(calls[i].name),to=portAnchor(calls[i+1].name);
   const leg=state.legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null;
   out.push({from:calls[i].name,to:calls[i+1].name,a:from,b:to,leg,
-   route:Sea&&from&&to?Sea.route(from,to):null});
+   route:Sea&&from&&to?Sea.route(from,to):null,
+   published:Sea?Sea.published(M.portProfileOf(calls[i].name)?.pub151,M.portProfileOf(calls[i+1].name)?.pub151):null});
  }
  return out;
 }
@@ -96,8 +97,10 @@ function syncRouteDistances(){
  if(!Sea)return;
  for(const l of voyageLegs()){
   const leg=l.leg;if(!leg||leg.distanceSource==='entered')continue;
-  if(l.route?.reliable&&Number.isFinite(l.route.distance)){leg.distance=round(l.route.distance,0);leg.distanceSource='estimated';}
-  else if(leg.distanceSource==='estimated'){leg.distance=null;leg.distanceSource=null;}
+  // A printed distance outranks a routed one; both step aside for a figure the user typed.
+  if(l.published){leg.distance=l.published.distance;leg.distanceSource='published';}
+  else if(l.route?.reliable&&Number.isFinite(l.route.distance)){leg.distance=round(l.route.distance,0);leg.distanceSource='estimated';}
+  else if(leg.distanceSource==='published'||leg.distanceSource==='estimated'){leg.distance=null;leg.distanceSource=null;}
  }
 }
 // Typing into a leg distance makes it the user's figure; clearing it hands the leg back to the estimate.
@@ -105,8 +108,20 @@ function noteManualEntry(path,value){
  const m=/^legs\.(\d+)\.distance$/.exec(path||'');
  if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
 }
-let coastCache=null;
-const coastMarkup=()=>coastCache??=Sea.coastline().map(ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`).join('');
+const ringPath=ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`;
+let coastCache=null,depthCache=null;
+const coastMarkup=()=>coastCache??=Sea.coastline().map(ringPath).join('');
+// Shallow water first, each deeper band painted over it, so the shelf reads lighter than the abyss.
+const depthMarkup=()=>depthCache??=Sea.depths().map(d=>`<g class="sea-depth" data-depth="${d.level}">${d.rings.map(ringPath).join('')}</g>`).join('');
+// A graticule at a step the fitted view can carry: it gives the eye a scale the coastline alone does not.
+function graticule(box){
+ const span=Math.max(box[2],box[3]);
+ const step=span>120?30:span>60?15:span>24?10:span>10?5:span>4?2:1;
+ const [x,y,w,h]=box,lines=[];
+ for(let lon=Math.ceil((x-w)/step)*step;lon<=x+2*w;lon+=step)lines.push(`<line x1="${lon}" y1="${(y-h).toFixed(2)}" x2="${lon}" y2="${(y+2*h).toFixed(2)}"/>`);
+ for(let lat=Math.ceil((y-h)/step)*step;lat<=y+2*h;lat+=step)lines.push(`<line x1="${(x-w).toFixed(2)}" y1="${lat}" x2="${(x+2*w).toFixed(2)}" y2="${lat}"/>`);
+ return `<g class="sea-graticule">${lines.join('')}</g>`;
+}
 // Pan and zoom live outside the voyage: they belong to this browsing session, not to the saved calculation.
 let mapZoom=null;
 const mapKey=box=>box.map(n=>n.toFixed(1)).join(' ');
@@ -176,7 +191,7 @@ function voyageMap(){
   while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
   placed.push([p[0],y]);
   return `<g class="sea-port"><circle cx="${p[0].toFixed(2)}" cy="${(-p[1]).toFixed(2)}" r="${(unit*.9).toFixed(2)}"/><text x="${(p[0]+gap).toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.4).toFixed(2)}">${esc(name)}</text></g>`;}).join('');
- return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet"><g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
+ return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
 }
 function voyageDistanceLine(){
  if(!Sea)return '';
@@ -184,12 +199,13 @@ function voyageDistanceLine(){
  if(!legs.length)return '';
  const rows=legs.map(l=>{
   const source=l.leg.distanceSource==='entered'?'Entered'
+   :l.leg.distanceSource==='published'?'NGA Pub. 151, published'
    :l.leg.distanceSource==='estimated'?'Estimated over the lane network'
-   :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports; enter it from a distance table'
+   :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports and no printed pair; enter it from a distance table'
    :'No route · check the port positions in PORT';
-  return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
- return table(['Leg','In the calculation, nm','Estimate, nm','Source'],rows,'sea-distances')
-  +'<p class="form-note">A leg with no entered distance takes the estimate: great-circle legs over the ORNL / Eurostat shipping-lane network, from the port positions in PORT. Type a distance and it governs; clear it and the estimate returns. A proposal, not a passage plan — it holds no draft, weather, traffic separation or canal transit.</p>';
+  return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.published?fmt(l.published.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
+ return table(['Leg','In the calculation, nm','Pub. 151, nm','Estimate, nm','Source'],rows,'sea-distances')
+  +'<p class="form-note">A leg takes the distance NGA Pub. 151 prints for that pair; where the publication has no entry it takes a routed estimate over the ORNL / Eurostat shipping-lane network. Type a distance and it governs both; clear it and they return. Neither is a passage plan — no draft, weather, traffic separation or canal transit.</p>';
 }
 const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 // Allocation cells are printed in the table's own format, so the grouping goes back out before the number is read.
