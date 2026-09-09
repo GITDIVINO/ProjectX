@@ -1,10 +1,40 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),cp=require('node:child_process'),M=require('./model');
 const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
+test('MARKET import preserves the eight existing reports byte-for-byte',()=>{
+ const {createHash}=require('node:crypto'),market=require('./market');
+ const expected=[["dry-bulk-2026-07-09","55c7b2be5838d26d98b7edf4efbc564d5d7da59b4f6e31731b705c95ce7be15a"],["dry-bulk-2026-07-02","7c83559204676ed2f88465d79ee5f048bf5f7740540553ffe4bb148bf8ae0c74"],["dry-bulk-2026-06-25","4e2bcc0ad95f3ea9359fecaf9d84c8b5322f72592b569d8ed05fa15de3555515"],["dry-bulk-2026-06-18","8ecb0625f43c166cfc030a1c5ad38a1cb8462b97c755d37d1e79f9518dd6b2fa"],["dry-bulk-2026-06-11","cd76eb0f91b739655e6653023735250901481d14213409aaec2157086fc7939a"],["dry-bulk-2026-06-04","0cf9618af6a2e6ae87d60dd808cf1fa46cb5a23659b1e99a62b70d7d875aede2"],["dry-bulk-2026-05-28","6839c053f3cac79f8fa336c1f1bbdc4d9ce653c33fa10324bbe381823bbb6afd"],["dry-bulk-2026-05-21","0755f84c578c34b7157803c4d8a21c1b2165e77888bacbaa2809f17caa307210"]];
+ for(const [id,hash]of expected)assert.equal(createHash('sha256').update(JSON.stringify(market.reports.find(r=>r.id===id))).digest('hex'),hash,id);
+ assert.equal(market.reports.filter(r=>r.source).length,22);
+});
+test('MARKET keeps source date conflicts visible, with no duplicate next-day imports',()=>{
+ const market=require('./market');
+ assert.equal(market.reports[0].publishedDate,'2026-09-02');
+ assert.deepEqual(market.reports.filter(r=>r.dateStatus==='unconfirmed').map(r=>r.publishedDate),['2025-03-04','2025-02-25','2025-02-11','2025-02-05']);
+ for(const r of market.reports.filter(r=>r.dateStatus==='unconfirmed'))assert.match(market.render(r.id),/Date unconfirmed:.*2026/);
+ for(const d of ['2026-05-20','2026-06-03','2026-06-10','2026-06-17','2026-06-24','2026-07-01','2026-07-08'])assert.ok(!market.reports.some(r=>r.publishedDate===d),d);
+ assert.match(market.render('dry-bulk-2026-05-13'),/no year printed/);
+ assert.match(market.render('dry-bulk-2026-03-11'),/outer heading and subject say 2025/);
+});
+test('MARKET source text includes checked image rates and latest September guidance',()=>{
+ const market=require('./market'),may=market.render('dry-bulk-2026-05-13'),latest=market.render();
+ for(const value of ['NOPAC: | 19,000','RECA TA I63 | 31,000 USD','SBRAZ FH T58 | 16,250+625K USD','AG | 6 | 10 | (5 / 6)','RSEA | 4 | 7 | (9 / 12)','CONT–BALTIC/WAFR (non HRA) | 16,500 USD SKAW'])assert.ok(may.includes(value),value);
+ assert.ok(latest.includes('NOPAC | USD 20,000'));assert.ok(latest.includes('WEEKLY MARKET SCORECARD'));
+ for(const r of market.reports.filter(r=>r.source))assert.doesNotMatch(JSON.stringify(r),/@|mailto:|https?:|rgds|as brokers only|\\bAlex\\b|\\bBarbara\\b|<html|\\[cid:|[А-Яа-яЁё]/i,r.id);
+});
+test('MARKET escapes imported source, date warnings and region sections',()=>{
+ const market=require('./market'),r=market.reports[0],section=r.basins[0].regions[0].sections[0],before=JSON.stringify(r);
+ try{
+  const attack='<img src=x onerror=alert(1)>';
+  r.source.name=attack;r.source.dateNote=attack;section.name=attack;section.paragraphs=[attack];
+  const html=market.render(r.id);
+  assert.doesNotMatch(html,/<img/);assert.ok((html.match(/&lt;img/g)||[]).length>=4);
+ }finally{Object.keys(r).forEach(k=>delete r[k]);Object.assign(r,JSON.parse(before));}
+});
 test('MARKET archive has dated reports, complete regional content and escaped rendering',()=>{
- const market=require('./market');assert.equal(market.reports.length,8);
+ const market=require('./market');assert.equal(market.reports.length,30);
  assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'market.js'),'utf8'),/faox/i,'no source tool name left in the module');
- assert.equal(new Set(market.reports.map(r=>r.id)).size,8);
+ assert.equal(new Set(market.reports.map(r=>r.id)).size,30);
  let previous='9999-12-31';
  for(const r of market.reports){
   assert.ok(r.publishedDate<previous);previous=r.publishedDate;
@@ -12,7 +42,8 @@ test('MARKET archive has dated reports, complete regional content and escaped re
   const html=market.render(r.id);assert.ok(html.includes('Updates are not automatic'));
   assert.doesNotMatch(html,/faox/i,'the archive is presented without the source tool name');
   for(const b of r.basins)for(const region of b.regions){
-   assert.ok(region.forecast);assert.ok(region.cargoes.length);
+   if(r.source){assert.ok(region.sections.length);assert.ok(region.sections.every(s=>s.paragraphs.length));}
+   else{assert.ok(region.forecast);assert.ok(region.cargoes.length);}
    const filtered=market.render(r.id,region.name);assert.equal((filtered.match(/class="market-region"/g)||[]).length,1);
    assert.doesNotMatch(filtered,/faox/i,region.name);
   }

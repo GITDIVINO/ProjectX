@@ -109,8 +109,10 @@ function noteManualEntry(path,value){
  if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
 }
 const ringPath=ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`;
-let coastCache=null,depthCache=null;
+const linePath=line=>`<path d="M${line.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}"/>`;
+let coastCache=null,depthCache=null,borderCache=null;
 const coastMarkup=()=>coastCache??=Sea.coastline().map(ringPath).join('');
+const borderMarkup=()=>borderCache??=Sea.borders().map(linePath).join('');
 // Shallow water first, each deeper band painted over it, so the shelf reads lighter than the abyss.
 const depthMarkup=()=>depthCache??=Sea.depths().map(d=>`<g class="sea-depth" data-depth="${d.level}">${d.rings.map(ringPath).join('')}</g>`).join('');
 // A graticule at a step the fitted view can carry: it gives the eye a scale the coastline alone does not.
@@ -181,23 +183,46 @@ function paintMapView(){
  const svg=document.querySelector?.('.voyage-map svg');
  if(!svg||!mapZoom)return;
  svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
- const marks=svg.querySelector?.('.sea-marks');
- if(marks&&mapZoom.anchors)marks.innerHTML=markMarkup(mapZoom.anchors,mapZoom.box);
+ const width=svg.getBoundingClientRect?.().width;
+ if(!width)return;
+ const unit=mapZoom.box[2]/width,marks=svg.querySelector?.('.sea-marks'),places=svg.querySelector?.('.sea-places');
+ if(marks&&mapZoom.anchors)marks.innerHTML=markMarkup(mapZoom.anchors,mapZoom.box,unit);
+ if(places)places.innerHTML=placeMarkup(mapZoom.box,unit);
 }
-// Ports are drawn at a size the current view decides, so they keep their weight at every scale.
-// A label on the eastern half is written back towards the middle, and one that would land on
-// another steps down instead.
-function markMarkup(anchors,box){
- const unit=Math.max(box[2],box[3])/100,middle=box[0]+box[2]/2,placed=[];
+// A marker is a fixed number of screen pixels, like the strokes beside it: sizing it as a
+// fraction of the frame made a 44-pixel label on a wide monitor. `unit` is map units per pixel,
+// so every measurement below reads as the pixels it will occupy.
+const LABEL_RANK=[[200,2,2],[90,3,2],[40,4,4],[15,5,5],[0,6,6]];
+function placeMarkup(box,unit){
+ const span=Math.max(box[2],box[3]),[,countryRank,seaRank]=LABEL_RANK.find(([from])=>span>from)||LABEL_RANK[LABEL_RANK.length-1];
+ const inside=p=>p.lon>=box[0]&&p.lon<=box[0]+box[2]&&-p.lat>=box[1]&&-p.lat<=box[1]+box[3];
+ const {countries,seas}=Sea.places();
+ // Two names in the same place read as neither, so the more important one keeps the ground.
+ const taken=[];
+ const draw=(list,rank,cls,size)=>[...list].filter(p=>p.rank<=rank&&inside(p)).sort((a,b)=>a.rank-b.rank)
+  .map(p=>{
+   const height=unit*size,width=p.name.length*height*(cls==='country-name'?.68:.5),x=p.lon,y=-p.lat;
+   if(taken.some(q=>Math.abs(q[0]-x)<(q[2]+width)/2&&Math.abs(q[1]-y)<(q[3]+height)*.7))return '';
+   taken.push([x,y,width,height]);
+   return `<text class="${cls}" x="${x.toFixed(3)}" y="${y.toFixed(3)}" font-size="${height.toFixed(3)}">${esc(p.name)}</text>`;
+  }).join('');
+ return draw(seas,seaRank,'sea-name',12)+draw(countries,countryRank,'country-name',9);
+}
+const MARK={ring:4.5,dot:1.6,label:11,gap:8,line:13,crowd:130};
+function markMarkup(anchors,box,unit){
+ const middle=box[0]+box[2]/2,placed=[];
  return anchors.map(([name,p])=>{
-  const east=p[0]>middle,gap=unit*(east?-2:2);
-  let y=-p[1]+unit*.8;
-  while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
+  const east=p[0]>middle,gap=unit*MARK.gap*(east?-1:1);
+  let y=-p[1]+unit*MARK.label*.35;
+  while(placed.some(q=>Math.abs(q[1]-y)<unit*MARK.line&&Math.abs(q[0]-p[0])<unit*MARK.crowd))y+=unit*MARK.line;
   placed.push([p[0],y]);
   const x=p[0].toFixed(3),cy=(-p[1]).toFixed(3);
-  return `<g class="sea-port"><circle class="sea-port-ring" cx="${x}" cy="${cy}" r="${(unit*1.05).toFixed(3)}"/><circle class="sea-port-dot" cx="${x}" cy="${cy}" r="${(unit*.34).toFixed(3)}"/><text x="${(p[0]+gap).toFixed(3)}" y="${y.toFixed(3)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.2).toFixed(3)}">${esc(name)}</text></g>`;
+  return `<g class="sea-port"><circle class="sea-port-ring" cx="${x}" cy="${cy}" r="${(unit*MARK.ring).toFixed(3)}"/><circle class="sea-port-dot" cx="${x}" cy="${cy}" r="${(unit*MARK.dot).toFixed(3)}"/><text x="${(p[0]+gap).toFixed(3)}" y="${y.toFixed(3)}" text-anchor="${east?'end':'start'}" font-size="${(unit*MARK.label).toFixed(3)}">${esc(name)}</text></g>`;
  }).join('');
 }
+// Before the page has laid out there is no width to measure; the first draw assumes a common
+// one and paintMapView corrects it as soon as the real frame is known.
+const mapUnit=box=>box[2]/(document.querySelector?.('.voyage-map svg')?.getBoundingClientRect?.().width||1100);
 function voyageMap(){
  if(!Sea)return '';
  const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
@@ -219,8 +244,8 @@ function voyageMap(){
   const kind=l.route.reliable?'':' sea-track-doubtful';
   return `<polyline class="sea-glow${kind}" points="${points}"/><polyline class="sea-track${kind}" points="${points}"/>`;
  }).join('');
- const marks=markMarkup(anchors,box);
- return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g>${tracks}<g class="sea-marks">${marks}</g></svg></div>`;
+ const marks=markMarkup(anchors,box,mapUnit(box));
+ return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g><g class="sea-borders">${borderMarkup()}</g><g class="sea-places">${placeMarkup(box,mapUnit(box))}</g>${tracks}<g class="sea-marks">${marks}</g></svg></div>`;
 }
 function voyageDistanceLine(){
  if(!Sea)return '';
@@ -235,6 +260,27 @@ function voyageDistanceLine(){
   return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.published?fmt(l.published.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
  return table(['Leg','In the calculation, nm','Pub. 151, nm','Estimate, nm','Source'],rows,'sea-distances')
   +'<p class="form-note">A leg takes the distance NGA Pub. 151 prints for that pair; where the publication has no entry it takes a routed estimate over the ORNL / Eurostat shipping-lane network. Type a distance and it governs both; clear it and they return. Neither is a passage plan — no draft, weather, traffic separation or canal transit.</p>';
+}
+// The voyage stated as the chain it is: time, then what it costs, then what it earns,
+// then what is left. Every line is an equation with its own parts, so the total can be
+// followed without opening a single table.
+function voyageChain(b,ship){
+ if(!b)return '<p class="chain-empty muted">The chain appears once the voyage has no missing inputs.</p>';
+ const usd=x=>fmt(x,2),day=x=>fmt(x,2);
+ const line=(name,result,unit,parts)=>`<div class="chain-line"><span class="chain-name">${name}</span><span class="chain-result">${result} <small>${unit}</small></span><span class="chain-parts">${parts}</span></div>`;
+ const kind=k=>b.rows.filter(r=>r.kind===k).reduce((n,r)=>n+r.cents,0)/100;
+ const bunkers=kind('fuel'),ports=kind('ports'),other=kind('other');
+ const chain=[
+  line('Voyage time',day(b.days),'days',`at sea ${day(b.sea)} + working ${day(b.work)} + waiting and stops ${day(b.idle)}`),
+  line('Model cost',usd(b.total),'USD',`hire ${usd(b.hire)} + bunkers ${usd(bunkers)} + port charges ${usd(ports)} + other ${usd(other)}`),
+  line('Cost per tonne',fmt(b.unit,2),'USD/t',`${usd(b.total)} USD / ${fmt(ship.quantity,0)} t of cargo`)];
+ if(b.gross!==null)chain.push(
+  line('Net revenue',usd(b.net),'USD',`gross freight ${usd(b.gross)} − commission ${usd(b.commission)} + other income ${usd(b.net-b.gross+b.commission)}`),
+  line('Result after hire',usd(b.pnl),'USD',`net revenue ${usd(b.net)} − model cost ${usd(b.total)}`),
+  line('TCE before hire',fmt(b.tce,0),'USD/day',`(net revenue ${usd(b.net)} − cost excluding hire ${usd(b.total-b.hire)}) / ${day(b.days)} days`));
+ else chain.push(line('Freight not entered','—','',`the revenue side stays unstated; ${fmt(b.requiredFreightQuote,2)} USD/t would cover the model cost`));
+ chain.push(line('Freight to cover cost',fmt(b.requiredFreightQuote,2),'USD/t',`(model cost ${usd(b.total)} − other income ${usd(b.net===null?0:b.net-b.gross+b.commission)}) / (1 − commission) / ${fmt(ship.quantity,0)} t, rounded up`));
+ return `<div class="voyage-chain">${chain.join('')}</div>`;
 }
 const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
 // Allocation cells are printed in the table's own format, so the grouping goes back out before the number is read.
@@ -258,7 +304,7 @@ html+=`<section><div class="heading"><h2>2. Vessel and rotation</h2></div><div c
 // One planner check per render; both the section and the print evidence read the same result.
 const report=P.check(state,b);
 html+=plannerUI.section3(state,b,report)+plannerUI.printEvidence(state,b,report);
-html+=`<section><div class="heading"><h2>4. Voyage calculation</h2><small>Vessel cost model · recalculated when a field changes</small></div><div class="metrics">${[['Cargo, t',ship.quantity,0],['Voyage, days',b?.days,2],['Model cost, USD',b?.total,2],['Model cost, USD/t',b?.unit,2]].map(([t,v,d])=>`<div class="metric"><small>${t}</small><strong>${fmt(v,d)}</strong></div>`).join('')}</div>${r.errors.length?`<details id="missing" open><summary>Complete the following ${r.errors.length} fields / conditions</summary><ul class="errors">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></details>`:''}`;
+html+=`<section><div class="heading"><h2>4. Voyage calculation</h2><small>Vessel cost model · recalculated when a field changes</small></div>${voyageChain(b,ship)}${r.errors.length?`<details id="missing" open><summary>Complete the following ${r.errors.length} fields / conditions</summary><ul class="errors">${r.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></details>`:''}`;
 html+=voyageMap()+voyageDistanceLine();
 html+=`<h3>Legs</h3><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>`;
 const activePorts=M.callsOf(state);const displayedLegs=[];if(state.ballastEnabled)displayedLegs.push({l:state.ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state.legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state.legs[j],path:'legs.'+j});}

@@ -32,7 +32,8 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.evaluate(s=>localStorage.setItem('projectx-current-v2',JSON.stringify(s)),originalState);await page.reload();
   await page.locator('#tab-market').click();
   const beforeMarket=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
-  assert.equal(await page.locator('#market-report option').count(),8);
+  assert.equal(await page.locator('#market-report option').count(),30);
+  assert.match(await page.locator('.market-disclaimer').first().innerText(),/2 September 2026/);
   const reportIds=await page.locator('#market-report option').evaluateAll(options=>options.map(o=>o.value));
   for(const id of reportIds){
    await page.locator('#market-report').selectOption(id);await scan();

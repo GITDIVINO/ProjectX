@@ -30,6 +30,11 @@ function network(){
 const coastline=()=>Data.coast.map(points);
 // Shallowest band first: each is the sea deeper than its own level, so they nest.
 const depths=()=>(Data.depths||[]).map(d=>({level:d.level,rings:d.rings.map(points)}));
+const borders=()=>(Data.borders||[]).map(points);
+// Each place carries the rank at which its publisher expects it to be worth showing.
+const places=()=>({
+ countries:(Data.countries||[]).map(([name,lon,lat,rank])=>({name,lon,lat,rank})),
+ seas:(Data.seas||[]).map(([name,lon,lat,rank])=>({name,lon,lat,rank}))});
 // The nearest network nodes to a position, nearest first.
 function nearest(position,count){
  const {nodes}=network(),best=[];
@@ -105,6 +110,6 @@ function published(from,to){
  const miles=table.legs.get(a+':'+b)??table.legs.get(b+':'+a);
  return miles===undefined?null:{distance:miles};
 }
-const api={haversine,route,published,network,coastline,depths,points,NM};
+const api={haversine,route,published,network,coastline,depths,borders,places,points,NM};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSeaRoute=api;
 })(globalThis);

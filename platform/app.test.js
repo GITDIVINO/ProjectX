@@ -21,8 +21,8 @@ test('MARKET restores as a read-only archive and does not change the saved voyag
  const saved=M.demo();const {app,elements}=boot(JSON.stringify(saved),'market');
  const before=JSON.stringify(app.getState());
  const html=elements.get('app').innerHTML;
- assert.ok(html.includes('9 July 2026'));assert.ok(html.includes('not a live market feed'));
- assert.ok(html.includes('US Gulf'));assert.ok(html.includes('Outlook at publication'));
+ assert.ok(html.includes('2 September 2026'));assert.ok(html.includes('not a live market feed'));
+ assert.ok(html.includes('US Gulf'));assert.ok(html.includes('IFCHOR GALBRAITHS'));
  elements.get('tab-planner').onclick();elements.get('tab-market').onclick();
  assert.equal(JSON.stringify(app.getState()),before);
  assert.equal(elements.get('planner-actions').hidden,true);
@@ -73,6 +73,10 @@ test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  assert.equal((html.match(/<g class="sea-land">/g)||[]).length,1,'the coastline is one layer');
  assert.equal((html.match(/class="sea-depth"/g)||[]).length,3,'three depth bands sit under it');
  assert.ok(html.includes('class="sea-graticule"'),'and a graticule gives the eye a scale');
+ assert.ok(html.includes('class="sea-borders"'),'country borders are drawn');
+ assert.match(html,/<text class="country-name"/,'and country names');
+ assert.match(html,/<text class="sea-name"/,'and the names of the seas crossed');
+ assert.ok(html.includes('>North Atlantic Ocean<'),'the ocean this voyage crosses is named');
  const blank=boot(null).elements.get('app').innerHTML;
  assert.ok(!blank.includes('class="sea-track'),'an empty voyage draws no track');
 });
@@ -105,6 +109,29 @@ test('A pair in neither source is left empty rather than guessed',()=>{
   assert.equal(coastal.distance,null,'no figure is invented');
   assert.ok(elements.get('app').innerHTML.includes('Coastal leg'),'and the table says why');
  }
+});
+test('Section 4 opens with a chain whose parts add up to the result it states',()=>{
+ const s=M.demo();P.ensure(s);
+ const {app,elements}=boot(JSON.stringify(s));
+ const html=elements.get('app').innerHTML,b=app.getResult().budget;
+ assert.ok(html.includes('class="voyage-chain"'),'the chain is the first thing in section 4');
+ assert.ok(html.indexOf('voyage-chain')<html.indexOf('<h3>Legs</h3>'),'it stands above the tables it summarises');
+ for(const name of ['Voyage time','Model cost','Cost per tonne','Net revenue','Result after hire','TCE before hire','Freight to cover cost'])
+  assert.ok(html.includes('>'+name+'<'),name+' is missing from the chain');
+ // Every part printed beside a result must be the result: the chain may not merely look like arithmetic.
+ const kind=k=>b.rows.filter(r=>r.kind===k).reduce((n,r)=>n+r.cents,0);
+ assert.equal(kind('hire')+kind('fuel')+kind('ports')+kind('other'),Math.round(b.total*100),'the cost parts are the whole cost');
+ assert.equal(Math.round(b.sea*100)+Math.round(b.work*100)+Math.round(b.idle*100),Math.round(b.days*100),'the time parts are the whole voyage');
+ assert.ok(Math.abs(b.net-b.pnl-b.total)<0.005,'the result is net revenue less the model cost');
+ assert.ok(Math.abs(b.tce*b.days-(b.net-(b.total-b.hire)))<0.01,'TCE before hire is that result per day, hire aside');
+});
+test('The chain says nothing about revenue until a freight rate is entered',()=>{
+ const s=M.demo();P.ensure(s);s.freight=null;
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ assert.ok(html.includes('Freight not entered'),'the revenue side is named as unstated');
+ for(const gone of ['>Net revenue<','>Result after hire<','>TCE before hire<'])
+  assert.ok(!html.includes(gone),gone+' must not appear without a freight rate');
+ assert.ok(html.includes('Freight to cover cost'),'the covering rate is still worth knowing');
 });
 test('App boots with a clean PLANNER and no saved calculation',()=>{const {app,elements}=boot(null);assert.equal(app.getResult().budget,null);assert.equal(app.getState().lots.length,0);assert.equal(app.getState().sales.length,0);assert.ok(elements.get('app').innerHTML.includes('Allocate by volume'));assert.ok(!elements.get('app').innerHTML.includes('SALE-S1'));});
 test('Every accepted change is autosaved while manual Save remains available',()=>{
