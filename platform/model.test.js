@@ -6,6 +6,32 @@ test('Signal screenshot loading arithmetic 55000/20000 +24h+288h',()=>{const s=M
 test('Signal screenshot gross freight and commission',()=>{const s=M.demo();s.lots[0].quantity=55000;s.lots[1].selected=false;s.freight=50;s.commission=1.25;const b=M.compute(s).budget;assert.equal(b.gross,2750000);assert.equal(b.commission,34375);assert.equal(b.net,2715625);});
 test('Independent Historical benchmark deadweight reference arithmetic',()=>{const displacement=67680.9,lightship=10857.5,deductions=[730.5,458,0,300,34.5,200,108,500,650];close(displacement-lightship-deductions.reduce((a,b)=>a+b,0),53842.4);});
 test('ECA is split from total distance, never charged twice; weather applies equally',()=>{const s=M.demo();Object.assign(s.legs[0],{distance:2400,eca:1200,speed:10,margin:10,burn:20,ecaBurn:10,aux:0});const l=M.compute(s).budget.legs[0];close(l.days,11);close(l.ecaDays,5.5);close(l.massMain,110);close(l.massEca,55);});
+test('A new leg opens with a 7 per cent weather margin, and a saved leg keeps its own',()=>{
+ const s=M.initial();
+ for(const l of s.legs)assert.equal(l.margin,7,l.from+' → '+l.to);
+ assert.equal(s.ballast.margin,7,'the ballast approach opens the same way');
+ const grown=M.demo();grown.lots[1].port='Suape';M.syncRoute(grown);
+ const added=grown.legs.find(l=>l.to==='Suape');
+ assert.ok(added,'the rotation grew a leg');assert.equal(added.margin,7,'a leg the route builds opens at 7 too');
+ const kept=M.demo();kept.legs[0].margin=0;kept.ballast.margin=12;M.syncRoute(kept);
+ assert.equal(kept.legs[0].margin,0,'a figure already in the file is never raised to the new default');
+ assert.equal(kept.ballast.margin,12,'nor is the approach own margin');
+});
+test('An empty ECA distance no longer stops the voyage from being calculated',()=>{
+ // Every other missing input is the user's own figure; an ECA distance nobody entered is none.
+ const s=M.initial();
+ for(const l of [...s.legs,s.ballast])assert.equal(l.eca,0,'a new leg opens with no ECA distance rather than an unanswered one');
+ const old=M.initial();for(const l of [...old.legs,old.ballast])l.eca=null;
+ M.ensureCatalogs(old);
+ for(const l of [...old.legs,old.ballast])assert.equal(l.eca,0,'a saved leg that never carried one is read as none');
+ const stated=M.demo();stated.legs[0].eca=1000;M.ensureCatalogs(stated);
+ assert.equal(stated.legs[0].eca,1000,'a stated ECA distance is untouched');
+ // The complete voyage: with the route, the ports and the prices entered, the time is now stated.
+ const s2=M.demo();s2.ballastEnabled=true;Object.assign(s2.ballast,{distance:1381,aux:0});
+ const b=M.compute(s2).budget;
+ assert.ok(b,'the budget no longer waits on an ECA distance for the approach');
+ assert.ok(b.days>0&&b.sea>0,'and the voyage has a stated duration: '+b.days);
+});
 test('Reject ECA longer than route and zero speed',()=>{for(const change of [{eca:99999},{speed:0},{distance:null},{burn:-1}]){const s=M.demo();Object.assign(s.legs[0],change);assert.equal(M.compute(s).budget,null);}});
 test('Zero aux does not require irrelevant price, missing aux is not zero',()=>{const s=M.demo();s.prices.aux=null;assert.ok(M.compute(s).budget);s.legs[0].aux=null;assert.equal(M.compute(s).budget,null);});
 test('Unknown used fuel price blocks calculation',()=>{const s=M.demo();s.prices.eca=null;assert.equal(M.compute(s).budget,null);});
