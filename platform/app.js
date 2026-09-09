@@ -179,7 +179,24 @@ function mapPoint(svg,event){
 }
 function paintMapView(){
  const svg=document.querySelector?.('.voyage-map svg');
- if(svg&&mapZoom)svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
+ if(!svg||!mapZoom)return;
+ svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
+ const marks=svg.querySelector?.('.sea-marks');
+ if(marks&&mapZoom.anchors)marks.innerHTML=markMarkup(mapZoom.anchors,mapZoom.box);
+}
+// Ports are drawn at a size the current view decides, so they keep their weight at every scale.
+// A label on the eastern half is written back towards the middle, and one that would land on
+// another steps down instead.
+function markMarkup(anchors,box){
+ const unit=Math.max(box[2],box[3])/100,middle=box[0]+box[2]/2,placed=[];
+ return anchors.map(([name,p])=>{
+  const east=p[0]>middle,gap=unit*(east?-2:2);
+  let y=-p[1]+unit*.8;
+  while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
+  placed.push([p[0],y]);
+  const x=p[0].toFixed(3),cy=(-p[1]).toFixed(3);
+  return `<g class="sea-port"><circle class="sea-port-ring" cx="${x}" cy="${cy}" r="${(unit*1.05).toFixed(3)}"/><circle class="sea-port-dot" cx="${x}" cy="${cy}" r="${(unit*.34).toFixed(3)}"/><text x="${(p[0]+gap).toFixed(3)}" y="${y.toFixed(3)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.2).toFixed(3)}">${esc(name)}</text></g>`;
+ }).join('');
 }
 function voyageMap(){
  if(!Sea)return '';
@@ -195,19 +212,15 @@ function voyageMap(){
  // y grows south, so latitude is negated; nothing else about the projection is needed at this scale.
  const fitted=[minLon,-maxLat,width,height];
  const box=mapView(fitted);
- const unit=Math.max(box[2],box[3])/100;
+ mapZoom.anchors=anchors;
  const coast=coastMarkup();
- const tracks=drawn.map(l=>`<polyline class="${l.route.reliable?'sea-track':'sea-track sea-track-doubtful'}" points="${l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ')}"/>`).join('');
- // A label on the eastern half is written back towards the middle, so it cannot run off the edge.
- const middle=minLon+width/2;
- const placed=[];
- const marks=anchors.map(([name,p])=>{
-  const east=p[0]>middle,gap=unit*(east?-2:2);
-  let y=-p[1]+unit*.8;
-  while(placed.some(q=>Math.abs(q[1]-y)<unit*2.6&&Math.abs(q[0]-p[0])<unit*26))y+=unit*2.8;
-  placed.push([p[0],y]);
-  return `<g class="sea-port"><circle cx="${p[0].toFixed(2)}" cy="${(-p[1]).toFixed(2)}" r="${(unit*.9).toFixed(2)}"/><text x="${(p[0]+gap).toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${east?'end':'start'}" font-size="${(unit*2.4).toFixed(2)}">${esc(name)}</text></g>`;}).join('');
- return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g>${tracks}${marks}</svg></div>`;
+ const tracks=drawn.map(l=>{
+  const points=l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ');
+  const kind=l.route.reliable?'':' sea-track-doubtful';
+  return `<polyline class="sea-glow${kind}" points="${points}"/><polyline class="sea-track${kind}" points="${points}"/>`;
+ }).join('');
+ const marks=markMarkup(anchors,box);
+ return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g>${tracks}<g class="sea-marks">${marks}</g></svg></div>`;
 }
 function voyageDistanceLine(){
  if(!Sea)return '';
