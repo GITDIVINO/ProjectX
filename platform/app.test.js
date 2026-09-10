@@ -169,6 +169,26 @@ test('The legs and ports tables stand on their own, without an explanation or a 
  assert.ok(html.includes('<h3>Legs</h3>')&&html.includes('data-path="legs.0.distance"'),'the table itself is untouched');
  assert.ok(app.getResult().budget.trace.legs.length>0&&app.getResult().budget.trace.ports.length>0,'and the evidence stays in the result the audit reads');
 });
+test('A leg and a call state their days before the rest of the voyage is complete',()=>{
+ // Time is the row's own arithmetic; a missing hire rate or DA says nothing about it.
+ const s=M.demo();P.ensure(s);s.hire=null;s.prices={main:null,eca:null,aux:null};s.ports[1].da=null;
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.equal(app.getResult().budget,null,'the budget is still refused');
+ const legs=html.slice(html.indexOf('<h3>Legs</h3>'),html.indexOf('<h3>Ports</h3>'));
+ assert.ok(legs.includes('<td>25.200</td>'),'7,200 nm at 12.5 kn with 5 % weather is 25.200 days');
+ const ports=html.slice(html.indexOf('<h3>Ports</h3>'));
+ assert.ok(ports.includes('<td>3.750</td>'),'and the call with no DA still states its own time');
+ // An incomplete row of its own says nothing rather than guessing.
+ const partial=M.demo();P.ensure(partial);partial.legs[0].speed=null;partial.ports[0].rate=null;
+ const empty=boot(JSON.stringify(partial)).elements.get('app').innerHTML;
+ const emptyLegs=empty.slice(empty.indexOf('<h3>Legs</h3>'),empty.indexOf('<h3>Ports</h3>'));
+ assert.ok(emptyLegs.includes('<td>—</td>'),'a leg with no speed has no time');
+ assert.equal(M.legDays(partial.legs[0]),null);assert.equal(M.portDays(partial,partial.ports[0]),null);
+ // The figure a complete voyage prints is the same one the budget carries.
+ const full=M.demo();const b=M.compute(full).budget;
+ assert.equal(M.legDays(full.legs[0]),b.legs[0].days,'one arithmetic, not two');
+ assert.equal(M.portDays(full,full.ports[0]),b.ports[0].days);
+});
 test('Section 4 opens with a chain whose parts add up to the result it states',()=>{
  const s=M.demo();P.ensure(s);
  const {app,elements}=boot(JSON.stringify(s));

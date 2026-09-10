@@ -10,6 +10,10 @@ const sum=a=>a.reduce((n,x)=>n+x,0),R=x=>Rational.from(x),cents=x=>R(x).roundCen
 const rInput=x=>typeof x==='number'&&Number.isFinite(x)?R(x):R(0);
 const ratio=(a,b)=>b.n===0n?R(0):a.div(b);
 const rsum=xs=>xs.reduce((n,x)=>n.add(x),R(0));
+// Time is a leg's or a call's own arithmetic: it needs no price, no hire and no other call.
+// compute() measures with these, and the tables state the same figures while the budget is still incomplete.
+const legTimeR=l=>{const factor=rInput(l.margin).div(100).add(1),speed=rInput(l.speed).mul(24);return {days:ratio(rInput(l.distance),speed).mul(factor),eca:ratio(rInput(l.eca),speed).mul(factor)};};
+const portTimeR=(cargoR,p)=>{const work=ratio(cargoR,rInput(p.rate)),calendar=p.terms==='manual'?rInput(p.calendar):work;return {work,idle:rInput(p.turn).add(rInput(p.extra)).div(24).add(calendar).sub(work)};};
 const port=name=>({name,rate:null,terms:'SHINC',calendar:null,turn:0,extra:0,da:null,working:4.8,idle:2.7,aux:null,fuel:'eca'});
 // A new leg opens with a 7 % weather margin and no ECA distance; a saved leg keeps the figures it was given.
 // An empty ECA used to block the whole budget, and nothing on the page said so.
@@ -156,6 +160,17 @@ const LOAD_PORT=['Ust-Luga','Murmansk','St. Petersburg'];
 const loadOf=(s,l)=>l.loadPort??s.ports[0].name;
 const callsOf=s=>s.ports.filter(p=>active(s).some(l=>loadOf(s,l)===p.name||l.port===p.name));
 const CARGO_TYPES=[{name:'BULK SULPHUR APP C',group:''},{name:'Crushed lump sulphur',group:'B',un:'1350'}];
+// Days for one leg or one call, or null when that row's own inputs are not complete yet.
+// Deliberately silent about everything else: a missing hire rate or DA says nothing about time.
+function legDays(l){return l&&ok(l.distance,true)&&ok(l.speed,true)&&ok(l.margin)&&ok(l.eca)&&l.eca<=l.distance?legTimeR(l).days.number():null;}
+function portDays(s,p){
+ if(!p||!ok(p.rate,true)||!ok(p.turn)||!ok(p.extra)||!['SHINC','manual'].includes(p.terms))return null;
+ if(p.terms==='manual'&&!ok(p.calendar,true))return null;
+ const handled=active(s).filter(l=>loadOf(s,l)===p.name||l.port===p.name);
+ if(handled.some(l=>!ok(l.quantity)))return null;
+ const {work,idle}=portTimeR(rsum(handled.map(l=>R(l.quantity))),p);
+ return idle.n<0n?null:work.add(idle).number();
+}
 function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSON.stringify(CARGO_TYPES)),sales:[],portRecords:[...portRecordsFor('P4','Murmansk'),...portRecordsFor('P5','St. Petersburg'),...portRecordsFor('P1','Ust-Luga'),...portRecordsFor('P2','Santos'),...portRecordsFor('P3','Paranaguá')],demo:false,notes:'',lots:[],holds:JSON.parse(JSON.stringify(VESSELS[0].holdData)),allocations:[],stage:'load',deductions:{fuel:null,water:null,ballast:null,constant:null,draftLoss:null},ports:[port('Ust-Luga'),port('Santos'),port('Paranaguá')],legs:[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')],ballastEnabled:false,deliveryPort:'',ballast:leg(DELIVERY_PLACEHOLDER,'Ust-Luga'),prices:{main:null,eca:null,aux:null},hire:null,commission:0,freight:null,extraIncome:0,costs:[],allocation:'route'};ensureCatalogs(s);ensureBusinessData(s);applyVessel(s,'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return s;}
 function demo(){const s=initial();s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});s.demo=true;s.deductions={fuel:950,water:200,ballast:300,constant:525,draftLoss:0};s.hire=13500;s.freight=50;s.commission=1.25;s.prices={main:540,eca:800,aux:800};s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));s.allocations=allocate(s);return s;}
 function active(s){return s.lots.filter(l=>l.selected);}
@@ -251,7 +266,7 @@ function computeChecked(s){
   if(l.eca>l.distance)errors.push(label+': ECA exceeds total distance');
   if(l.eca>0)need(l.ecaBurn,label+': consumption ECA');
   else if(l.ecaBurn!==null&&l.ecaBurn!==undefined)need(l.ecaBurn,label+': consumption ECA');
-  const factor=rInput(l.margin).div(100).add(1),daysR=ratio(rInput(l.distance),rInput(l.speed).mul(24)).mul(factor),ecaR=ratio(rInput(l.eca),rInput(l.speed).mul(24)).mul(factor);
+  const {days:daysR,eca:ecaR}=legTimeR(l);
   const before=s.ports.findIndex(p=>p.name===l.from),eligible=l===s.ballast?lots:lots.filter(x=>s.ports.findIndex(p=>p.name===loadOf(s,x))<=before&&s.ports.findIndex(p=>p.name===x.port)>before);
   const mainR=daysR.sub(ecaR).mul(rInput(l.burn)),ecaMassR=ecaR.mul(rInput(l.ecaBurn)),auxR=daysR.mul(rInput(l.aux));
   explain(section,label+' · time','Distance / (speed × 24) × (1 + weather / 100)',`${text(l.distance)} NM / (${text(l.speed)} kn × 24) × (1 + ${text(l.margin)} / 100)`,daysR,'days');
@@ -273,7 +288,7 @@ function computeChecked(s){
   if(!['main','eca'].includes(p.fuel))errors.push(p.name+': fuel');if(!['SHINC','manual'].includes(p.terms))errors.push(p.name+': handling terms');
   const workR=ratio(cargoR,rInput(p.rate));
   if(p.terms==='manual'){need(p.calendar,p.name+': calendar handling days',true);if(rInput(p.calendar).sub(workR).n<0n)errors.push(p.name+': calendar period is shorter than working days');}
-  const calendarR=p.terms==='manual'?rInput(p.calendar):workR,idleR=rInput(p.turn).add(rInput(p.extra)).div(24).add(calendarR).sub(workR),daysR=workR.add(idleR);
+  const calendarR=p.terms==='manual'?rInput(p.calendar):workR,{idle:idleR}=portTimeR(cargoR,p),daysR=workR.add(idleR);
   explain(section,label+' · cargo','Sum of selected sales handled at this call',eligible.map(l=>l.id+': '+l.quantity+' t').join(' + '),cargoR,'t');
   explain(section,label+' · working time','Handled cargo / handling rate',`${text(cargoR)} t / ${text(p.rate)} t/day`,workR,'days');
   explain(section,label+' · idle time','(Turn + waiting) / 24 + calendar − working days',`(${text(p.turn)} + ${text(p.extra)}) h / 24 + ${text(calendarR)} − ${text(workR)} days`,idleR,'days');
@@ -452,5 +467,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,legDays,portDays,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);
