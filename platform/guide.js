@@ -19,7 +19,7 @@ const STEPS=[
 const PLANNER_STEPS=[
  ['1','Sales in voyage','Add sales as parcels, select them and review shipment sources. Edit shipment properties in SALE.'],
  ['2','Vessel and rotation','Apply a vessel, record sources and deductions, order calls and check arrival / departure limits.'],
- ['3','Stowage by hold','Preview a volume allocation, apply or undo it, or edit by hand. Review each state and sourced limits in Checks.'],
+ ['3','Stowage by hold','Preview a volume allocation, apply or undo it, or edit by hand. Review each state and sourced limits in Checks. Cargo distribution screens every arrival and departure for mass gathered in one end, empty holds between loaded ones and similar patterns; these are preliminary signals, not a stability or strength calculation.'],
  ['4','Voyage calculation','Distances, speeds, port time, fuel prices, hire, DA, freight and commission.'],
  ['5','Cost by sale','The voyage cost split across the parcels, to the cent, on the chosen basis.']
 ];

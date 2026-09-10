@@ -33,9 +33,63 @@ const onBoard=(s,lot,stage=s.stage)=>onBoardIn(stageContext(s,stage),lot);
 function stageSummary(s,stage=s.stage){
  const lots=active(s),ctx=stageContext(s,stage),byId=new Map(lots.map(l=>[l.id,l]));
  const allocations=s.allocations.filter(a=>byId.has(a.lot)&&onBoardIn(ctx,byId.get(a.lot)));
- const holds=s.holds.map(h=>{const cells=allocations.filter(a=>a.hold===h.id),known=cells.every(a=>valid(a.quantity)&&valid(byId.get(a.lot)?.sf,true));const mass=known?exactSum(cells.map(a=>a.quantity)):null,volume=known?exactSum(cells.map(a=>product(a.quantity,byId.get(a.lot).sf))):null;return {...h,mass,used:volume,fill:volume!==null&&valid(h.volume,true)?volume/h.volume*100:null,cells};});
+ const holds=s.holds.map(h=>{const cells=allocations.filter(a=>a.hold===h.id),massKnown=cells.every(a=>valid(a.quantity)),volumeKnown=massKnown&&cells.every(a=>valid(byId.get(a.lot)?.sf,true));const mass=massKnown?exactSum(cells.map(a=>a.quantity)):null,volume=volumeKnown?exactSum(cells.map(a=>product(a.quantity,byId.get(a.lot).sf))):null;return {...h,mass,used:volume,fill:volume!==null&&valid(h.volume,true)?volume/h.volume*100:null,cells};});
  const rows=lots.map(l=>{const cells=s.allocations.filter(a=>a.lot===l.id),known=cells.every(a=>valid(a.quantity)),assigned=known?exactSum(cells.map(a=>a.quantity)):null;return {...l,onBoard:onBoardIn(ctx,l)?l.quantity:0,assigned,unassigned:valid(l.quantity)&&assigned!==null?Rational.from(l.quantity).sub(assigned).number():null};});
  return {stage,allocations,holds,rows,quantity:rows.every(l=>valid(l.onBoard))?exactSum(rows.map(l=>l.onBoard)):null};
+}
+// The share of the cargo by which the two end groups may differ before the state is raised for review.
+// A screening trigger for a preliminary signal, not a limit from any rule or ship's approved conditions.
+const END_GROUP_SHARE=.25;
+// Descriptive cargo patterns, not stability, trim or strength calculations.
+// Hold array order is forward to aft, as in the vessel profile and diagram.
+// The only numerical tolerance below reconciles allocations; it is not a safety limit.
+function loadingPatterns(s,summaries){
+ const lots=active(s),byId=new Map(lots.map(l=>[l.id,l])),holdIds=s.holds.map(h=>h.id),holdSet=new Set(holdIds),count=holdIds.length,half=Math.floor(count/2);
+ const names=M.callsOf(s).map(c=>c.name),routeKnown=lots.every(l=>names.includes(l.loadPort)&&names.includes(l.port)&&names.indexOf(l.loadPort)<names.indexOf(l.port))&&!lots.some(l=>lots.some(other=>other.port===l.loadPort));
+ const sumMass=hs=>hs.every(h=>valid(h.mass))?exactSum(hs.map(h=>h.mass)):null;
+ const labels=ids=>ids.map(h=>'№'+h).join(', ');
+ function inspect(event){
+  const stage=event.key,summary=summaries?.get(stage)||stageSummary(s,stage),ctx=stageContext(s,stage),onboard=lots.filter(l=>onBoardIn(ctx,l));
+  const masses=summary.holds.map(h=>({hold:h.id,mass:h.mass})),occupied=masses.filter(h=>valid(h.mass,true)).map(h=>h.hold),missing=[],issues=[];
+  const row={...event,quantity:summary.quantity,masses,occupied,foreMass:sumMass(masses.slice(0,half)),middleMass:sumMass(masses.slice(half,count-half)),aftMass:sumMass(masses.slice(count-half)),issues,missing,status:'incomplete'};
+  if(stage!=='load'&&!routeKnown)missing.push('Complete a loading-before-discharge route to screen this state');
+  if(summary.quantity===null)missing.push('Complete the cargo quantities on board');
+  for(const l of onboard){
+   const cells=s.allocations.filter(a=>a.lot===l.id);
+   if(!valid(l.quantity)){missing.push(l.id+': complete the cargo quantity');continue;}
+   if(cells.some(a=>!valid(a.quantity))){missing.push(l.id+': enter non-negative allocated quantities');continue;}
+   if(cells.some(a=>!holdSet.has(a.hold)))missing.push(l.id+': an allocation refers to an unknown hold');
+   const assigned=exactSum(cells.map(a=>a.quantity));
+   if(Math.abs(Rational.from(assigned).sub(l.quantity).number())>1e-7||l.quantity>0&&assigned===0)missing.push(l.id+': allocate the full on-board quantity without over-allocation');
+  }
+  // A genuinely empty cargo state has no distribution to screen. It is not an approval of a ballast condition.
+  if(summary.quantity===0&&!missing.length){row.status='empty';return row;}
+  if(!count)missing.push('Enter the vessel holds');
+  if(holdSet.size!==count||holdIds.some(h=>h===null||h===undefined||h===''))missing.push('Use existing, unique hold IDs');
+  if(byId.size!==lots.length)missing.push('Use unique cargo IDs');
+  if(s.allocations.some(a=>!byId.has(a.lot)))missing.push('Remove allocations that do not belong to selected cargo');
+  if(masses.some(h=>!valid(h.mass)))missing.push('Complete the allocated masses in every hold');
+  const allocated=sumMass(masses);
+  if(valid(summary.quantity)&&allocated!==null&&Math.abs(Rational.from(allocated).sub(summary.quantity).number())>1e-7)missing.push('Hold masses do not reconcile with cargo on board');
+  if(summary.quantity>0&&!occupied.length)missing.push('Allocate the cargo on board to vessel holds');
+  if(missing.length){row.missing=[...new Set(missing)];return row;}
+  const indexes=masses.map((h,i)=>valid(h.mass,true)?i:-1).filter(i=>i>=0),first=indexes[0],last=indexes.at(-1);
+  const forward=count>1&&indexes.every(i=>i<half),aft=count>1&&indexes.every(i=>i>=count-half),single=count>1&&occupied.length===1;
+  if(forward||aft)issues.push({code:forward?'end-only-forward':'end-only-aft',text:'Cargo only in '+(forward?'forward':'aft')+' holds '+labels(occupied)+'. Review trim and ballast for this state.',holds:occupied.slice()});
+  else if(single)issues.push({code:'single-hold',text:'All cargo is in hold '+labels(occupied)+'. Review the approved loading condition and hull-strength limits for this state.',holds:occupied.slice()});
+  const gaps=masses.filter((h,i)=>i>first&&i<last&&h.mass===0).map(h=>h.hold);
+  if(gaps.length)issues.push({code:'gapped',text:'Empty holds '+labels(gaps)+' lie between loaded holds. Review the approved loading condition and hull-strength limits for this state.',holds:gaps});
+  else if(!forward&&!aft&&!single&&occupied.length<count)issues.push({code:'partial-block',text:'Cargo occupies a partial continuous block of holds '+labels(occupied)+'. Review the approved loading condition and hull-strength limits for this state.',holds:occupied.slice()});
+  // End groups: a fully occupied ship can still carry most of its cargo in one end, which the signals above never see.
+  // The threshold is a screening trigger chosen for this purpose, not a published limit on trim or distribution.
+  if(count>1&&!forward&&!aft&&!single&&valid(row.foreMass)&&valid(row.aftMass)&&summary.quantity>0){
+   const apart=Rational.from(row.foreMass).sub(row.aftMass),share=Math.abs(apart.number())/summary.quantity;
+   if(share>END_GROUP_SHARE)issues.push({code:'end-heavy',text:'Cargo mass is gathered '+(apart.number()>0?'forward':'aft')+': the end groups differ by '+Math.round(share*100)+' % of the cargo on board. Review trim and ballast for this state.',holds:(apart.number()>0?masses.slice(0,half):masses.slice(count-half)).filter(h=>valid(h.mass,true)).map(h=>h.hold)});
+  }
+  if(count>=3&&!single&&!forward&&!aft){const major=masses.find(h=>h.mass>summary.quantity/2);if(major)issues.push({code:'majority-hold',text:'Hold '+labels([major.hold])+' carries more than half of the cargo mass. Review the approved loading condition and local and hull-strength limits for this state.',holds:[major.hold]});}
+  row.status=issues.length?'attention':'no-pattern';return row;
+ }
+ return {method:'cargo-pattern-2',plan:inspect({key:'load',label:'After all loadings'}),states:events(s).map(e=>inspect({key:e.key,label:(e.phase==='arrival'?'Arrival · ':'Departure · ')+e.call.name,call:e.call.name,phase:e.phase}))};
 }
 function grain(s){const total=s.holds.length&&s.holds.every(h=>valid(h.volume,true))?exactSum(s.holds.map(h=>h.volume)):null,declared=M.vesselOf(s)?.grain??null;return {total,declared,difference:total!==null&&valid(declared)?Rational.from(total).sub(declared).number():null};}
 function sfValue(value,unit){if(!valid(value,true))throw Error('Enter a positive SF or bulk density');const factors={'m3/t':1,'ft3/metric-ton':.028316846592,'ft3/long-ton':.028316846592/1.0160469088,'ft3/short-ton':.028316846592/.90718474};if(unit==='kg/m3')return 1000/value;if(!(unit in factors))throw Error('Select an explicit SF unit');return value*factors[unit];}
@@ -229,7 +283,8 @@ function check(s,budget){
  for(const rule of limitsAt(s,'load')){const h=summary.holds.filter(h=>rule.holds.includes(h.id));if(h.length!==rule.holds.length||h.some(h=>h.mass===null))errors.push('Invalid hold limit');else if(exactSum(h.map(h=>h.mass))>rule.max+1e-7)errors.push('Loading plan · hold '+rule.holds.join(' + ')+': mass limit exceeded');}
  for(const item of pairIssues(s,summary))(item.level==='error'?errors:warnings).push(item.text);
  const unassigned=summary.rows.some(l=>l.unassigned===null||Math.abs(l.unassigned)>1e-7);
- return {errors:[...new Set(errors)],warnings:[...new Set(warnings)],states,drafts,unassigned,technical:reportStatus(s),status:errors.length?'exceeded':unassigned?'unassigned':'volume-allocated'};
+ summaries.set('load',summary);
+ return {errors:[...new Set(errors)],warnings:[...new Set(warnings)],states,drafts,unassigned,technical:reportStatus(s),status:errors.length?'exceeded':unassigned?'unassigned':'volume-allocated',loadingPatterns:loadingPatterns(s,summaries)};
 }
 // Exhaustive assignment of whole holds to parcels (parcels may split across holds).
 // Search is bounded and never labels an interrupted search as infeasible.
@@ -268,6 +323,6 @@ function solve(s,maxNodes=100000){
 function applyPlan(s,result){if(result.status!=='feasible')throw Error('No complete plan to apply');ensure(s);s.planning.undo={allocations:copy(s.allocations),basis:planBasis(s)};s.allocations=copy(result.allocations);s.stage='load';}
 const planBasis=s=>JSON.stringify({lots:active(s).map(l=>({id:l.id,q:l.quantity,sf:l.sf})),holds:s.holds});
 function undo(s){if(!s.planning?.undo)throw Error('No previous plan');if(s.planning.undo.basis!==planBasis(s))throw Error('Cargo or holds changed; the previous plan cannot be restored automatically');s.allocations=copy(s.planning.undo.allocations);delete s.planning.undo;s.stage='load';}
-const api={INTAKE_METHOD,autoDraftLoss,syncAutoDraftLoss,stateDrafts,bunkerRob,ensure,events,resolveStage,onBoard,stageSummary,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
+const api={INTAKE_METHOD,autoDraftLoss,syncAutoDraftLoss,stateDrafts,bunkerRob,ensure,events,resolveStage,onBoard,stageSummary,loadingPatterns,grain,sfValue,updatePassport,inputKey,snapshotInput,vesselBasisStatus,addReport,reportStatus,freeze,stateCheck,check,solve,applyPlan,undo,exactSum,product};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlanning=api;
 })(globalThis);

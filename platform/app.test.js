@@ -419,6 +419,41 @@ test('Drafts stay hidden by default and the summary still names the binding stat
  assert.ok(partial.includes('6 not checked against a berth limit'),'an unverified draft must not read as an all-clear');
 });
 
+test('Cargo distribution screening reaches the plan, the diagram and the printed evidence',()=>{
+ // The case the task names: everything in the two forward holds, and the same again after a discharge.
+ const s=M.demo();P.ensure(s);
+ s.allocations=[{lot:'S1',hold:1,quantity:12000},{lot:'S1',hold:2,quantity:12000},{lot:'S2',hold:1,quantity:3000},{lot:'S2',hold:2,quantity:3000}];
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.ok(html.includes('id="loading-patterns"'),'the screening stands in section 3');
+ assert.ok(html.includes('Cargo only in forward holds №1, №2'),'and names the pattern in words');
+ assert.ok(html.includes('2 departure states need review'),'the heading counts the departures, discharge included');
+ assert.equal((html.match(/hold-review/g)||[]).length,2,'both loaded holds are marked on the diagram');
+ const patterns=app.getPlanningResult().loadingPatterns;
+ assert.equal(patterns.method,'cargo-pattern-2');
+ assert.equal(patterns.states.find(x=>x.label==='Departure · Santos').issues[0].code,'end-only-forward','the state after the Santos discharge is screened too');
+ // The printed evidence carries the same verdict and the same caveat.
+ const evidence=html.slice(html.indexOf('class="print-evidence"'));
+ assert.ok(evidence.includes('Cargo distribution'),'the printed states table has its own column');
+ assert.ok(evidence.includes('Cargo only in forward holds'),'with the verdict of each state');
+ assert.match(evidence,/not a stability, trim or strength calculation/,'and the caveat that it is a preliminary signal');
+});
+test('A cargo spread over every hold stays quiet, and a later state is raised on its own',()=>{
+ // Both parcels across all five holds: every state of the voyage keeps every hold loaded.
+ const quiet=M.demo();P.ensure(quiet);
+ quiet.allocations=[1,2,3,4,5].flatMap(hold=>[{lot:'S1',hold,quantity:4800},{lot:'S2',hold,quantity:1200}]);
+ const {app,elements}=boot(JSON.stringify(quiet)),html=elements.get('app').innerHTML;
+ assert.ok(!html.includes('loading-pattern-alert'),'nothing is raised');
+ assert.ok(!html.includes('hold-review'),'and no hold is marked on the diagram');
+ assert.ok(html.includes('No listed pattern found · ship-specific checks still required'),'the line still refuses to approve the state');
+ assert.ok(app.getPlanningResult().loadingPatterns.states.every(x=>['no-pattern','empty'].includes(x.status)),'every state of the voyage is clean');
+ // A plan that is clean now but empties into one end still raises that later state, and offers to open it.
+ const later=M.demo();P.ensure(later);
+ later.allocations=[1,2,3,5].map(hold=>({lot:'S1',hold,quantity:6000})).concat([{lot:'S2',hold:4,quantity:6000}]);
+ const raised=boot(JSON.stringify(later)).elements.get('app').innerHTML;
+ assert.equal(raised.match(/<p class="loading-pattern-alert"><strong>([^<]*)</)[1],'Departure · Santos','the alert belongs to the state that needs it, not to the current one');
+ assert.ok(raised.includes('Cargo only in aft holds №4'),'and says what will be wrong there');
+ assert.ok(raised.includes('data-action="loading-state"'),'with a way to open that state');
+});
 test('A hold on the stowage diagram is a picture, not a button',()=>{
  const html=boot(JSON.stringify(M.demo())).elements.get('app').innerHTML;
  const ship=html.slice(html.indexOf('<svg class="ship"'),html.indexOf('</svg>'));
