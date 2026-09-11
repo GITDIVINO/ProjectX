@@ -43,6 +43,7 @@ jobs:
           node platform/planner-browser-check.cjs
           node platform/sales-browser-check.cjs
           node platform/calculations-browser-check.cjs
+          node platform/shared-browser-check.cjs
 
   browser-stale:
     runs-on: ubuntu-latest

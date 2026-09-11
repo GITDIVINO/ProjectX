@@ -8,24 +8,25 @@
 // Access is enforced by the policies in the database, not by this file. Nothing here is a
 // permission check: an adapter that forgot a filter would still be refused by the server.
 
-const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots'};
+const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots',memberships:'memberships'};
 
 const fail=(error,reason='error')=>({ok:false,reason,error:error?.message||String(error||'Unknown storage error')});
 
 function create(options={}){
  const client=options.client;
  if(!client)throw Error('A Supabase client is required');
- const orgId=options.orgId||null;
+ // The organisation is resolved from the signed-in user's membership, so a deployment does
+ // not have to name one. A configured id is only a preference between several.
+ let orgId=options.orgId||null;
 
  // Every read and write is scoped to one organisation. The policies repeat this server-side;
  // the filter here keeps a wrong-org row from being requested in the first place.
  const scoped=table=>client.from(table);
- const withOrg=q=>orgId?q.eq('org_id',orgId):q;
+ const withOrg=q=>orgId?q.eq('org_id',orgId):q;   // reads orgId at call time, after sign-in resolved it
 
  return {
   kind:'supabase',
   shared:true,
-  orgId,
 
   async ready(){
    const {data,error}=await client.auth.getUser();
@@ -38,6 +39,40 @@ function create(options={}){
    return data?.user?{id:data.user.id,email:data.user.email}:null;
   },
 
+  // Sign-in is a link or a code sent to the address the person typed. No password is stored
+  // by this application and none is asked for.
+  async signIn(email){
+   const {error}=await client.auth.signInWithOtp({email});
+   return error?fail(error,'sign-in'):{ok:true,sent:email};
+  },
+  async verifyCode(email,token){
+   const {data,error}=await client.auth.verifyOtp({email,token,type:'email'});
+   return error?fail(error,'sign-in'):{ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
+  },
+  async signOut(){
+   const {error}=await client.auth.signOut();
+   return error?fail(error):{ok:true};
+  },
+  onAuthChange(handler){
+   if(typeof client.auth.onAuthStateChange!=='function')return ()=>{};
+   const {data}=client.auth.onAuthStateChange((event,session)=>handler(event,session?.user||null));
+   return ()=>data?.subscription?.unsubscribe?.();
+  },
+
+  // Which organisations this account belongs to. The policies decide what comes back; an
+  // account that was never added sees an empty list rather than somebody else's data.
+  async organisations(){
+   const {data,error}=await client.from(TABLES.memberships).select('org_id,role,organisations(id,name)');
+   if(error)return fail(error);
+   return (data||[]).map(row=>({
+    id:row.org_id,
+    name:row.organisations?.name||row.org_id,
+    role:row.role
+   }));
+  },
+  useOrganisation(id){orgId=id;return orgId;},
+  get orgId(){return orgId;},
+
   async loadCatalogs(){
    const {data,error}=await withOrg(scoped(TABLES.catalogs).select('document,revision,updated_at')).maybeSingle();
    if(error)return fail(error);
@@ -46,7 +81,21 @@ function create(options={}){
   },
   // Optimistic concurrency: the update matches on the revision the caller read. No matched row
   // means somebody else wrote first, and the caller is handed the current record to resolve.
+  //
+  // Revision 0 means nothing has been read because nothing is there yet: a new organisation
+  // has no catalogs row, and an update would match nothing and read as a conflict forever.
+  // The first write creates the row, the same way a first sale does.
   async saveCatalogs(document,revision){
+   if(!revision){
+    const row={document,revision:1};
+    if(orgId)row.org_id=orgId;
+    const {data,error}=await scoped(TABLES.catalogs).insert(row).select('revision,updated_at').maybeSingle();
+    // org_id is the primary key, so two people opening a brand-new organisation at the same
+    // moment race here. The loser reads what the winner wrote and resolves it as a conflict
+    // rather than reporting a database error the user cannot act on.
+    if(error){const current=await this.loadCatalogs();return current&&current.revision?{ok:false,reason:'conflict',current}:fail(error);}
+    return {ok:true,revision:data.revision,updatedAt:data.updated_at};
+   }
    const {data,error}=await withOrg(
     scoped(TABLES.catalogs).update({document,revision:revision+1}).eq('revision',revision)
    ).select('revision,updated_at').maybeSingle();

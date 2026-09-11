@@ -21,7 +21,8 @@ function fakeStore(seed={}){
 // Mimics the supabase-js builder chain closely enough to exercise the query shapes, the
 // revision match and the error path. Every call is recorded so a test can assert that a read
 // was scoped to the organisation rather than trusting the adapter.
-function fakeClient(tables={},user={id:'user-1',email:'planner@example.com'}){
+function fakeClient(tables={},initialUser={id:'user-1',email:'planner@example.com'}){
+ let user=initialUser;
  const calls=[];
  const data=JSON.parse(JSON.stringify(tables));
  function builder(table){
@@ -58,12 +59,20 @@ function fakeClient(tables={},user={id:'user-1',email:'planner@example.com'}){
   }
   return {data:state.single?(hit[0]||null):hit,error:null};
  }
- return {
-  from:builder,
-  auth:{getUser:async()=>({data:{user},error:null})},
-  calls,
-  tables:data
+ const auth={
+  sent:[],verified:[],signedOut:0,
+  getUser:async()=>({data:{user},error:null}),
+  signInWithOtp:async({email})=>{auth.sent.push(email);return {error:null};},
+  verifyOtp:async({email,token})=>{
+   auth.verified.push([email,token]);
+   if(token!=='123456')return {data:null,error:{message:'Token has expired or is invalid'}};
+   user={id:'user-1',email};
+   return {data:{user},error:null};
+  },
+  signOut:async()=>{auth.signedOut++;user=null;return {error:null};},
+  onAuthStateChange:handler=>{auth.handler=handler;return {data:{subscription:{unsubscribe(){auth.handler=null;}}}};}
  };
+ return {from:builder,auth,calls,tables:data};
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +341,67 @@ test('Both adapters answer the same contract',()=>{
  }
  assert.equal(local.shared,false);
  assert.equal(shared.shared,true);
+});
+
+test('Signing in sends a code and never asks for a password',async()=>{
+ const client=fakeClient({},null);
+ const storage=Supabase.create({client});
+ assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'});
+
+ assert.deepEqual(await storage.signIn('planner@example.com'),{ok:true,sent:'planner@example.com'});
+ assert.deepEqual(client.auth.sent,['planner@example.com']);
+
+ const wrong=await storage.verifyCode('planner@example.com','000000');
+ assert.equal(wrong.ok,false);
+ assert.match(wrong.error,/expired or is invalid/);
+ assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'},'a rejected code does not sign anybody in');
+
+ const right=await storage.verifyCode('planner@example.com','123456');
+ assert.equal(right.ok,true);
+ assert.equal(right.user.email,'planner@example.com');
+ assert.equal((await storage.ready()).ok,true);
+});
+
+test('Signing out ends the session',async()=>{
+ const client=fakeClient();
+ const storage=Supabase.create({client});
+ assert.equal((await storage.ready()).ok,true);
+ assert.deepEqual(await storage.signOut(),{ok:true});
+ assert.equal(client.auth.signedOut,1);
+ assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'});
+});
+
+test('The organisation comes from membership, not from the page',async()=>{
+ const client=fakeClient({memberships:[{org_id:'org-7',role:'member',organisations:{id:'org-7',name:'Exporter'}}]});
+ const storage=Supabase.create({client});
+ assert.equal(storage.orgId,null,'nothing is assumed before it is read');
+
+ const list=await storage.organisations();
+ assert.deepEqual(list,[{id:'org-7',name:'Exporter',role:'member'}]);
+
+ storage.useOrganisation('org-7');
+ assert.equal(storage.orgId,'org-7');
+ client.calls.length=0;
+ await storage.listVoyages();
+ assert.ok(client.calls[0].filters.some(([c,v])=>c==='org_id'&&v==='org-7'),'reads are scoped once the organisation is known');
+});
+
+test('An account in no organisation is told so, and reads nothing',async()=>{
+ const client=fakeClient({memberships:[],voyages:[{id:'v1',org_id:'someone-else',name:'Theirs',document:{},revision:1}]});
+ const storage=Supabase.create({client});
+ assert.deepEqual(await storage.organisations(),[],'membership decides, and there is none');
+ assert.equal(storage.orgId,null);
+});
+
+test('Auth changes can be followed and the subscription released',()=>{
+ const client=fakeClient();
+ const storage=Supabase.create({client});
+ const seen=[];
+ const stop=storage.onAuthChange((event,user)=>seen.push([event,user&&user.email]));
+ client.auth.handler('SIGNED_IN',{user:{id:'user-1',email:'planner@example.com'}});
+ assert.deepEqual(seen,[['SIGNED_IN','planner@example.com']]);
+ stop();
+ assert.equal(client.auth.handler,null,'the subscription is released');
 });
 
 // ---------------------------------------------------------------------------

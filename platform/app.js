@@ -35,7 +35,7 @@ const storage=window.ProjectXStorage.create({
  createClient:window.supabase&&window.supabase.createClient
 });
 const session=window.ProjectXSession.create(storage,{fresh:()=>M.initial(),firstName:'Calculation 1'});
-let state=M.initial(),voyage=null,pendingOpen=null;
+let state=M.initial(),voyage=null,pendingOpen=null,account=null;
 const recall=()=>{try{return localStorage.getItem(currentKey);}catch{return null;}};
 const remember=id=>{try{localStorage.setItem(currentKey,id);}catch{}};
 function adopt(loaded){
@@ -560,14 +560,84 @@ window.ProjectXApp={
  getPlanningResult:()=>P.check(state),
  getCalculation:()=>voyage&&{...voyage},
  listCalculations:()=>session.list(),
- storageKind:storage.kind
+ storageKind:storage.kind,
+ isShared:!!storage.shared,
+ getAccount:()=>account&&{...account},
+ signOut:async()=>{if(storage.signOut){await storage.signOut();account=null;showSignIn('You have been signed out.');}}
 };
 ensureLegs();setupChrome();setupCalculations();syncWorkspace();render();if(startupMessage)$('status').textContent=startupMessage;
 
+// A shared workspace belongs to an account. Until somebody is signed in the page shows the
+// sign-in form and nothing else: no blank calculation that looks like lost work, and no
+// planner chrome over data that has not been read.
+let signInAddress='';
+// The tab strip and the calculation controls are meaningless before anything has been read.
+function showChrome(visible){
+ const actions=$('planner-actions');
+ if(actions)actions.hidden=!visible;
+ const tabList=typeof document.querySelector==='function'?document.querySelector('.workspace-tabs'):null;
+ if(tabList)tabList.hidden=!visible;
+}
+function showSignIn(message){
+ showChrome(false);
+ $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
+  `<p class="section-intro">Calculations are shared with your organisation. Enter your work address and we will send you a sign-in code.</p>`+
+  `<form id="sign-in-form"><div class="grid">`+
+  `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
+  `<label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Sent by email"></label>`+
+  `</div><div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
+  `<button id="sign-in-verify" type="submit">Sign in</button></div></form>`+
+  `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
+ const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
+ const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
+ $('sign-in-send').onclick=async()=>{
+  if(!address()){say('Enter your work email address.');return;}
+  say('Sending…');
+  const sent=await storage.signIn(address());
+  say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it above.':(sent.error||'The code could not be sent.'));
+ };
+ $('sign-in-form').onsubmit=async event=>{
+  event.preventDefault();
+  const code=(($('sign-in-code')||{}).value||'').trim();
+  if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
+  say('Signing in…');
+  const verified=await storage.verifyCode(address(),code);
+  if(!verified.ok){say(verified.error||'That code was not accepted.');return;}
+  await startShared();
+ };
+}
+
+// Signed in: find which organisation this account belongs to, then open its workspace.
+async function startShared(){
+ const who=await storage.ready();
+ if(!who.ok){
+  if(who.reason==='signed-out')showSignIn('');
+  else showSignIn(who.error||'The workspace could not be reached.');
+  return;
+ }
+ const organisations=await storage.organisations();
+ if(organisations.ok===false){showSignIn(organisations.error||'Your organisations could not be read.');return;}
+ if(!organisations.length){
+  showSignIn('Signed in as '+who.user.email+', but this account is not a member of any organisation yet. Ask an administrator to add it.');
+  return;
+ }
+ const preferred=organisations.find(x=>x.id===storage.orgId)||organisations[0];
+ storage.useOrganisation(preferred.id);
+
+ showChrome(true);
+ const loaded=await session.open(recall());
+ if(loaded&&loaded.error){$('status').textContent=loaded.error;return;}
+ if(!adopt(loaded)){$('status').textContent='The workspace could not be opened.';return;}
+ account={email:who.user.email,organisation:preferred.name};
+ ensureLegs();setupCalculations();syncWorkspace();render();
+ $('status').textContent='Signed in as '+who.user.email+' · '+preferred.name;
+ await refreshCalculations();
+}
+
 // An adapter that had to be awaited finishes here and the page is drawn again with the
 // workspace it found. A failure says so rather than leaving a blank calculation on screen.
-window.ProjectXApp.ready=Promise.resolve(pendingOpen).then(loaded=>{
+window.ProjectXApp.ready=(storage.shared?startShared():Promise.resolve(pendingOpen).then(loaded=>{
  if(loaded&&loaded.error){$('status').textContent=loaded.error;return;}
  if(loaded&&adopt(loaded)){ensureLegs();syncWorkspace();render();}
-}).then(refreshCalculations).catch(()=>{$('status').textContent='The workspace could not be opened.';});
+}).then(refreshCalculations)).catch(()=>{$('status').textContent='The workspace could not be opened.';});
 })();

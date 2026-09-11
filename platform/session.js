@@ -56,13 +56,16 @@ function create(storage,options={}){
 
   // A new workspace starts from the model's seeded registers. Store them now rather than on
   // whichever edit happens to come first, so what is on disk matches what is on screen.
+  // A failure here leaves the workspace half-seeded, so it is reported rather than swallowed.
   if(stable(parts.catalogs)!==writtenCatalogs){
    const written=await storage.saveCatalogs(parts.catalogs,catalogRevision);
-   if(written.ok){catalogRevision=written.revision;writtenCatalogs=stable(parts.catalogs);}
+   if(!written.ok)throw Error(written.error||'The reference catalogs could not be stored');
+   catalogRevision=written.revision;writtenCatalogs=stable(parts.catalogs);
   }
   for(const sale of parts.sales.sales||[]){
    const written=await storage.saveSale(sale.id,sale,0);
-   if(written.ok)saleRevisions.set(sale.id,written.revision);
+   if(!written.ok)throw Error(written.error||'The sales register could not be stored');
+   saleRevisions.set(sale.id,written.revision);
   }
   writtenSales=stable(parts.sales.sales||[]);
   return state;
