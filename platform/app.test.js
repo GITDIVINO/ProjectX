@@ -67,7 +67,7 @@ test('Values stand in the middle of their column, and the first column reads fro
  // The sale and its cargo name in section 1 are read from the left, beside the first column.
  assert.match(css,/\.voyage-sales-table td\.name\{text-align:left\}/);
  // Wrapped prose is read rather than compared, so it keeps its left edge.
- assert.match(css,/\.calculation-expression,\.calculation-expression code,\.state-check-text,\.snapshot-data\{text-align:left\}/);
+ assert.match(css,/\.state-check-text,\.snapshot-data\{text-align:left\}/);
  assert.match(css,/\.loading-pattern-text\{[^}]*text-align:left/);
  // Fields outside a table are not a column and keep their own alignment.
  assert.match(css,/input\[type=number\]\{width:104px;text-align:right\}/);
@@ -474,22 +474,25 @@ test('VESSEL lays hold volumes out as fields, not as a table',()=>{const {elemen
  assert.match(html,/data-path="vesselProfiles\.0\.airDraft"/);});
 
 test('ProjectX footer is shared across tabs; calculation controls remain in PLANNER',()=>{const html=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(html.includes('id="planner-actions"'));assert.ok(html.includes('id="planner-footer" class="projectx-footer"'));assert.ok(html.includes('Voyage Planner Prototype'));assert.ok(html.includes('id="pdf">Save PDF'));const {elements}=boot(null);for(const tab of ['planner','sale','cargo','ports','vessel','market']){elements.get('tab-'+tab).onclick();assert.equal(elements.get('planner-actions').hidden,tab!=='planner');assert.equal(elements.get('planner-footer').hidden,false);}});
-test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
+test('Section 4 keeps its result and nothing that explains it',()=>{
  const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
- const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
- assert.ok(html.includes('id="calc-totals"'),'the totals keep their substitutions');
- for(const gone of ['id="calc-vessel"','id="calc-legs"','id="calc-ports"','id="calc-extras"','id="calc-allocation"'])assert.ok(!html.includes(gone),gone+' has no How calculated block');
- for(const text of ['Model cost per tonne','24000'])assert.ok(html.includes(text),text);
- for(const gone of ['Exact share in cents','Reconciliation:','Remainder correction','Proposed method: leg costs'])assert.ok(!html.includes(gone),gone+' belonged to the allocation block that was removed');
- assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ for(const gone of ['class="calculation-details"','How calculated','Review calculation lines and fuel consumption','id="audit"','This is a vessel cost model','Model cost per tonne'])
+  assert.ok(!html.includes(gone),gone+' is still printed');
+ assert.ok(!fs.readFileSync(__dirname+'/app.js','utf8').includes('calculationDetails'),'the builder behind those blocks is gone, not left unused');
+ // The result itself, and the warning that the plan does not confirm it, stay.
+ for(const kept of ['<h3>Costs</h3>','<h3>Freight estimate</h3>','TCE before hire, USD/day','P&L after hire, USD','Freight required to cover model cost, USD/t'])
+  assert.ok(html.includes(kept),kept+' is missing from the result');
+ const b=app.getResult().budget;
+ assert.ok(b.trace.totals.length&&b.rows.length,'and the evidence stays in the result the audit tests read');
 });
 test('Calculation evidence escapes labels and updates when selected stage changes',()=>{
  const s=M.demo();s.costs=[{name:'<img src=x onerror=alert(1)>',amount:0,days:0,burn:0,fuel:'main'}];s.stage='Paranaguá';
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
  assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));
  for(const gone of ['id="calc-stowage"','id="technical"','Click a hold to edit','Cargo plan validation limits','Automatic suggestions above'])assert.ok(!html.includes(gone),gone+' should be gone from section 3');
- const totals=html.slice(html.indexOf('id="calc-totals"'),html.indexOf('id="audit"'));
- assert.ok(totals.includes('Formula and values'),'the remaining disclosures still show their substitutions');
+ assert.ok(!html.includes('class="calculation-details"'),'no How calculated block is left to escape into');
+ assert.ok(html.includes('data-path="costs.0.name"'),'the item is still editable, with its name escaped in the field');
 });
 
 test('Deductions and holds fold into one Intake Calculator that keeps its result on the summary',()=>{
