@@ -601,7 +601,7 @@ test('Section 3 draws two views: how full each hold is, and what is in it',()=>{
  assert.match(profile,/class="ship ship-profile"/);
  for(const part of ['class="ship-hull"','class="ship-hatch"','class="ship-deckline"','class="hold-edge"','<clipPath id="hold-clip-0">'])assert.ok(profile.includes(part),part+' is missing from the profile');
  // The house is cut into the silhouette itself, as it is on the reference drawing, not pasted on top of it.
- assert.match(profile,/class="ship-hull" d="[^"]*H230 V50 H200 V36 H160 V22 H96/,'the accommodation steps down forward from the funnel');
+ assert.match(profile,/class="ship-hull" d="[^"]*H170 V50 H142 V36 H114 V22 H78/,'the accommodation steps down forward from the funnel, clear of the first hold at 180');
  // A hold in profile is the space a bulk carrier actually has: topside tanks cut its upper corners, hopper tanks its lower ones.
  const shape=profile.match(/<polygon class="hold-outline" points="([^"]*)"/)[1].split(' ').length;
  assert.equal(shape,8,'eight corners, not four');
@@ -612,10 +612,11 @@ test('Section 3 draws two views: how full each hold is, and what is in it',()=>{
  // The profile carries the figures: how full, and how much.
  assert.match(profile,/<text class="profile-fill"[^>]*>55\.2 %<\/text>/);
  assert.match(profile,/<text class="profile-mass"[^>]*>6,000\.0 t<\/text>/);
+ assert.match(profile,/<text class="profile-volume"[^>]*>9,782\.00 m³<\/text>/,'the size of the hold stands with them');
  assert.ok(!profile.includes('BULK SULPHUR'),'and nothing else');
  // The plan carries the cargo and the port it is loaded at.
  assert.match(plan,/<div>BULK SULPHUR APP C<small>Ust-Luga → Santos<\/small><\/div>/,'the cargo with the ports it moves between');
- assert.ok(!plan.includes('profile-fill')&&!plan.includes('hold-stat'),'the figures moved out of it');
+ for(const gone of ['profile-fill','hold-stat','HOLD №','m³'])assert.ok(!plan.includes(gone),gone+' is still in the plan; the hold is named and measured above it');
  // Holds stand at the same place in both, so one reads above the other.
  // A hatch coaming is inset 20 from its hold, so its x places the hold in the profile.
  const profileX=[...profile.matchAll(/<rect class="ship-hatch" x="(\d+)"/g)].map(m=>Number(m[1])-20);
