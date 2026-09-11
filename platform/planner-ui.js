@@ -30,18 +30,29 @@ function create(env){
  function draw(s,patterns){
   const summary=P.stageSummary(s),lots=s.lots.filter(l=>l.selected),pattern=currentPattern(s,patterns||P.loadingPatterns(s)),flagged=new Set(pattern?.issues.flatMap(x=>x.holds)||[]);
   const n=s.holds.length,w=815/n-17,at=i=>180+i*(w+17),hold=i=>summary.holds[n-1-i];
+  // Both views are drawn to the same length, 44 to 1096, so the profile stands over the plan frame for frame.
+  // The profile follows the sections a bulk carrier actually has: a single deck with hatch coamings above it,
+  // topside tanks cutting the upper corners of each hold and hopper tanks cutting the lower ones.
+  const DECK=68,KEEL=186,HOLD_TOP=68,HOLD_FOOT=176,TOPSIDE=[20,12],HOPPER=[16,18];
+  const holdShape=x=>[[x+TOPSIDE[0],HOLD_TOP],[x+w-TOPSIDE[0],HOLD_TOP],[x+w,HOLD_TOP+TOPSIDE[1]],[x+w,HOLD_FOOT-HOPPER[1]],[x+w-HOPPER[0],HOLD_FOOT],[x+HOPPER[0],HOLD_FOOT],[x,HOLD_FOOT-HOPPER[1]],[x,HOLD_TOP+TOPSIDE[1]]].map(p=>p.join(',')).join(' ');
   let plan='',profile='';
   for(let i=0;i<n;i++){
    const h=hold(i),x=at(i),contents=lots.filter(l=>h.cells.some(a=>a.lot===l.id&&a.quantity>0));
    const names=contents.map(l=>l.name).join(', ')||'Empty';
    // Profile: how full the hold is, in the same colours as the plan below it.
-   profile+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${fmt(h.fill,1)} percent full; ${fmt(h.mass,1)} t"><rect class="hold-outline" x="${x}" y="72" width="${w}" height="116" rx="3"/>${holdBars(h,lots,x,w,188,116)}<text class="profile-hold" x="${x+w/2}" y="96" text-anchor="middle">№${h.id}</text><text class="profile-fill" x="${x+w/2}" y="136" text-anchor="middle">${fmt(h.fill,1)} %</text><text class="profile-mass" x="${x+w/2}" y="160" text-anchor="middle">${fmt(h.mass,1)} t</text></g>`;
+   profile+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${fmt(h.fill,1)} percent full; ${fmt(h.mass,1)} t"><polygon class="hold-outline" points="${holdShape(x)}"/><g clip-path="url(#hold-clip-${i})">${holdBars(h,lots,x,w,HOLD_FOOT,HOLD_FOOT-HOLD_TOP)}</g><polygon class="hold-edge" points="${holdShape(x)}"/><text class="profile-hold" x="${x+w/2}" y="${HOLD_TOP+28}" text-anchor="middle">№${h.id}</text><text class="profile-fill" x="${x+w/2}" y="${HOLD_TOP+64}" text-anchor="middle">${fmt(h.fill,1)} %</text><text class="profile-mass" x="${x+w/2}" y="${HOLD_TOP+86}" text-anchor="middle">${fmt(h.mass,1)} t</text></g>`;
    // Plan: the cargo itself and the port each parcel is loaded at.
-   plan+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${esc(names)}"><title>${esc(contents.map(l=>l.name).join(' / ')||'Empty hold')}</title><rect class="hold-outline" x="${x}" y="85" width="${w}" height="130" rx="3"/>${holdBars(h,lots,x,w,215,130)}<text x="${x+w/2}" y="65" text-anchor="middle" font-size="13">№${h.id}</text><foreignObject x="${x+7}" y="94" width="${w-14}" height="112"><div xmlns="http://www.w3.org/1999/xhtml" class="hold-names">${contents.map(l=>`<div>${esc(l.name)}<small>${esc(l.loadPort||'Load port not set')}</small></div>`).join('')||'<span class="muted">Empty</span>'}</div></foreignObject><text x="${x+w/2}" y="260" text-anchor="middle" font-size="11">${fmt(h.volume)} m³</text></g>`;
+   plan+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${esc(names)}"><title>${esc(contents.map(l=>l.name).join(' / ')||'Empty hold')}</title><rect class="hold-outline" x="${x}" y="85" width="${w}" height="130" rx="3"/>${holdBars(h,lots,x,w,215,130)}<text x="${x+w/2}" y="65" text-anchor="middle" font-size="13">№${h.id}</text><foreignObject x="${x+7}" y="94" width="${w-14}" height="112"><div xmlns="http://www.w3.org/1999/xhtml" class="hold-names">${contents.map(l=>`<div>${esc(l.name)}<small>${esc(l.loadPort||'Load port not set')} → ${esc(l.port||'Discharge port not set')}</small></div>`).join('')||'<span class="muted">Empty</span>'}</div></foreignObject><text x="${x+w/2}" y="260" text-anchor="middle" font-size="11">${fmt(h.volume)} m³</text></g>`;
   }
-  const hull=`<path class="ship-hull" d="M95 60 V160 Q95 200 140 200 H980 Q1040 192 1078 130 Q1040 68 980 60 Z"/><path class="ship-house" d="M104 60 V26 H168 V60"/><path class="ship-house" d="M126 26 V12 H146 V26"/>`;
-  return `<svg class="ship ship-profile" viewBox="0 0 1120 215" role="group" aria-label="How full each hold is: aft left, forward right">${hull}<text class="ship-end" x="120" y="182" font-size="10" text-anchor="middle">AFT</text>${profile}<text class="ship-end" x="1020" y="130" font-size="10" text-anchor="middle">FWD</text></svg>`
-   +`<svg class="ship" viewBox="0 0 1120 300" role="group" aria-label="Stowage: aft left, forward right"><path d="M25 74 Q25 45 55 45 H998 Q1058 58 1090 160 Q1058 262 998 275 H55 Q25 275 25 245 Z" fill="none" stroke="#606060" stroke-width="1.5"/><text class="ship-end" x="88" y="165" font-size="10" text-anchor="middle">AFT</text>${plan}<text class="ship-end" x="1058" y="165" font-size="10" text-anchor="middle">FWD</text></svg>`;
+  const clips=Array.from({length:n},(_,i)=>`<clipPath id="hold-clip-${i}"><polygon points="${holdShape(at(i))}"/></clipPath>`).join('');
+  const coamings=Array.from({length:n},(_,i)=>`<rect class="ship-hatch" x="${at(i)+TOPSIDE[0]}" y="${DECK-11}" width="${w-TOPSIDE[0]*2}" height="11"/>`).join('');
+  // Stern counter, poop, a stepped house with its funnel, the main deck, a forecastle step and a raked stem.
+  const profileHull=`<path class="ship-hull" d="M44 ${DECK} V150 Q56 178 140 ${KEEL} H1000 Q1074 176 1090 138 L1096 56 V${DECK-12} H990 L990 ${DECK} H230 V50 H200 V36 H160 V22 H96 V${DECK} Z"/>`
+   +`<rect class="ship-hull" x="104" y="6" width="26" height="16"/>`
+   +`<path class="ship-deckline" d="M230 ${DECK} H990"/>`+coamings;
+  const planHull=`<path class="ship-hull" d="M44 74 Q44 45 76 45 H1000 Q1056 58 1096 160 Q1056 262 1000 275 H76 Q44 275 44 246 Z"/>`;
+  return `<svg class="ship ship-profile" viewBox="0 0 1120 200" role="group" aria-label="How full each hold is: aft left, forward right"><defs>${clips}</defs>${profileHull}<text class="ship-end" x="150" y="${DECK+40}" font-size="10" text-anchor="middle">AFT</text>${profile}<text class="ship-end" x="1030" y="${DECK+40}" font-size="10" text-anchor="middle">FWD</text></svg>`
+   +`<svg class="ship" viewBox="0 0 1120 300" role="group" aria-label="Stowage: aft left, forward right">${planHull}<text class="ship-end" x="106" y="165" font-size="10" text-anchor="middle">AFT</text>${plan}<text class="ship-end" x="1032" y="165" font-size="10" text-anchor="middle">FWD</text></svg>`;
  }
 
  // Every arrival and departure draft follows from that state's own displacement.

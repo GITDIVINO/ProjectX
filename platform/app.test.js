@@ -598,17 +598,29 @@ test('Section 3 draws two views: how full each hold is, and what is in it',()=>{
  const ships=[...html.matchAll(/<svg class="ship([^"]*)"[\s\S]*?<\/svg>/g)].map(m=>m[0]);
  assert.equal(ships.length,2,'a profile above the plan');
  const [profile,plan]=ships;
- assert.match(profile,/class="ship ship-profile"/);assert.ok(profile.includes('class="ship-hull"')&&profile.includes('class="ship-house"'),'drawn as a ship, not a row of boxes');
+ assert.match(profile,/class="ship ship-profile"/);
+ for(const part of ['class="ship-hull"','class="ship-hatch"','class="ship-deckline"','class="hold-edge"','<clipPath id="hold-clip-0">'])assert.ok(profile.includes(part),part+' is missing from the profile');
+ // The house is cut into the silhouette itself, as it is on the reference drawing, not pasted on top of it.
+ assert.match(profile,/class="ship-hull" d="[^"]*H230 V50 H200 V36 H160 V22 H96/,'the accommodation steps down forward from the funnel');
+ // A hold in profile is the space a bulk carrier actually has: topside tanks cut its upper corners, hopper tanks its lower ones.
+ const shape=profile.match(/<polygon class="hold-outline" points="([^"]*)"/)[1].split(' ').length;
+ assert.equal(shape,8,'eight corners, not four');
+ assert.match(profile,/<g clip-path="url\(#hold-clip-\d\)">/,'and the cargo in it is clipped to that shape');
+ // Both views are drawn to the same length, so one stands over the other frame for frame.
+ const span=v=>/class="ship-hull" d="M44 \d+ /.test(v)&&/1096/.test(v);
+ assert.ok(span(profile)&&span(plan),'the two hulls start and end at the same x');
  // The profile carries the figures: how full, and how much.
  assert.match(profile,/<text class="profile-fill"[^>]*>55\.2 %<\/text>/);
  assert.match(profile,/<text class="profile-mass"[^>]*>6,000\.0 t<\/text>/);
  assert.ok(!profile.includes('BULK SULPHUR'),'and nothing else');
  // The plan carries the cargo and the port it is loaded at.
- assert.match(plan,/<div>BULK SULPHUR APP C<small>Ust-Luga<\/small><\/div>/);
+ assert.match(plan,/<div>BULK SULPHUR APP C<small>Ust-Luga → Santos<\/small><\/div>/,'the cargo with the ports it moves between');
  assert.ok(!plan.includes('profile-fill')&&!plan.includes('hold-stat'),'the figures moved out of it');
  // Holds stand at the same place in both, so one reads above the other.
- const xOf=v=>[...v.matchAll(/<rect class="hold-outline" x="(\d+)"/g)].map(m=>m[1]);
- assert.deepEqual(xOf(profile),xOf(plan),'the two views line up hold for hold');
+ // A hatch coaming is inset 20 from its hold, so its x places the hold in the profile.
+ const profileX=[...profile.matchAll(/<rect class="ship-hatch" x="(\d+)"/g)].map(m=>Number(m[1])-20);
+ const planX=[...plan.matchAll(/<rect class="hold-outline" x="(\d+)"/g)].map(m=>Number(m[1]));
+ assert.deepEqual(profileX,planX,'the two views line up hold for hold');
  // A hold nobody filled says so in both.
  assert.match(profile,/<text class="profile-fill"[^>]*>0\.0 %<\/text>/);
  assert.ok(plan.includes('<span class="muted">Empty</span>'));
