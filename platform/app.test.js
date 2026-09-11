@@ -58,6 +58,18 @@ test('Cargo tonnage is printed the same way everywhere it appears',()=>{
  const sale=elements.get('app').innerHTML;
  assert.match(sale,/data-path="sales.0.quantity" type="text" inputmode="decimal" data-format="tonnage" value="24,000.0"/,'the SALE register prints the same format in its editable field');
 });
+test('Values stand in the middle of their column, and the first column reads from the left',()=>{
+ const css=fs.readFileSync(__dirname+'/styles.css','utf8');
+ assert.match(css,/\btd\{[^}]*text-align:center/,'the cell rule centres values');
+ assert.match(css,/td:first-child\{text-align:left\}/,'the first column of every table is the exception');
+ assert.match(css,/td input,td input\[type=number\],td select\{text-align:center\}/,'a field follows its column, outranking the number input rule');
+ assert.ok(!/(?:^|[,}])[^,{}]*td:nth-child\([^)]*\)[^{]*\{[^}]*text-align:(left|right)/m.test(css),'no column is pinned aside any more');
+ // Wrapped prose is read rather than compared, so it keeps its left edge.
+ assert.match(css,/\.calculation-expression,\.calculation-expression code,\.state-check-text,\.snapshot-data\{text-align:left\}/);
+ assert.match(css,/\.loading-pattern-text\{[^}]*text-align:left/);
+ // Fields outside a table are not a column and keep their own alignment.
+ assert.match(css,/input\[type=number\]\{width:104px;text-align:right\}/);
+});
 test('Every table heads its columns the same way: centred, with the unit after a comma',()=>{
  const {elements}=boot(JSON.stringify(M.demo()));
  const css=fs.readFileSync(__dirname+'/styles.css','utf8');
