@@ -58,6 +58,21 @@ test('Cargo tonnage is printed the same way everywhere it appears',()=>{
  const sale=elements.get('app').innerHTML;
  assert.match(sale,/data-path="sales.0.quantity" type="text" inputmode="decimal" data-format="tonnage" value="24,000.0"/,'the SALE register prints the same format in its editable field');
 });
+test('Every table heads its columns the same way: centred, with the unit after a comma',()=>{
+ const {elements}=boot(JSON.stringify(M.demo()));
+ const css=fs.readFileSync(__dirname+'/styles.css','utf8');
+ assert.match(css,/thead th,thead th:first-child\{text-align:center/,'one rule centres every header');
+ assert.ok(!/[^d]th:nth-child\([^)]*\)[^{]*\{[^}]*text-align:(left|right)/.test(css),'and nothing left- or right-aligns a header again');
+ for(const tab of ['planner','sale','cargo','ports','vessel']){
+  if(tab!=='planner')elements.get('tab-'+tab).onclick();
+  const html=elements.get('app').innerHTML;
+  for(const head of html.match(/<th[^>]*>.*?<\/th>/g)||[])assert.ok(!head.includes('<small>'),tab+': a unit is still set below the name — '+head);
+ }
+ elements.get('tab-planner').onclick();
+ const html=elements.get('app').innerHTML;
+ for(const head of ['Total, NM','Of which ECA, NM','Speed, kn','Weather, % time','Aux, t/day','Cargo, MT','Handling rate, t/day','Turn time, h','DA, USD','Quantity, MT','SF, m³/t'])
+  assert.ok(html.includes('<th scope="col">'+head+'</th>'),head+' is not headed that way');
+});
 test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  const s=M.demo();P.ensure(s);
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
