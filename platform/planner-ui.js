@@ -11,20 +11,39 @@ function create(env){
  const btn=(action,label,attrs='')=>`<button type="button" data-action="${action}" ${attrs}>${label}</button>`;
  const table=(head,rows)=>`<div class="table-wrap"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
  function state(){return getState();}
- function motionSnapshot(){const map=new Map();if(typeof document==='undefined'||typeof document.querySelectorAll!=='function'||typeof getComputedStyle!=='function')return map;document.querySelectorAll('.cargo-fill').forEach(el=>map.set(el.dataset.fillKey,getComputedStyle(el).transform));return map;}
- function animate(map){if(!map.size||typeof matchMedia!=='function'||matchMedia('(prefers-reduced-motion: reduce)').matches||matchMedia('print').matches)return;document.querySelectorAll('.cargo-fill').forEach(el=>{const target=el.style.transform,from=map.get(el.dataset.fillKey)||'translate(0px, 215px) scale(1, 0)';if(el.animate&&from!==getComputedStyle(el).transform)el.animate([{transform:from},{transform:target}],{duration:280,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});});}
- function draw(s,patterns){
-  const summary=P.stageSummary(s),lots=s.lots.filter(l=>l.selected),pattern=currentPattern(s,patterns||P.loadingPatterns(s)),flagged=new Set(pattern?.issues.flatMap(x=>x.holds)||[]);let blocks='';
-  for(let i=0;i<s.holds.length;i++){
-   const w=815/s.holds.length-17,h=summary.holds[s.holds.length-1-i],x=180+i*(w+17);let bottom=215,bars='';
-   for(const l of lots){const cells=h.cells.filter(a=>a.lot===l.id),q=cells.every(a=>M.ok(a.quantity))?P.exactSum(cells.map(a=>a.quantity)):0,volume=M.ok(l.sf,true)?q*l.sf:0,height=M.ok(h.volume,true)?Math.max(0,Math.min(bottom-85,volume/h.volume*130)):0;
-    bars+=`<rect class="cargo-fill" data-fill-key="${esc(h.id+'|'+l.id)}" x="${x+1}" y="0" width="${w-2}" height="1" fill="${esc(l.color)}" opacity=".7" style="transform:translate(0px, ${bottom-height}px) scale(1, ${height});transform-origin:0 0"/>`;bottom-=height;
-   }
-   const contents=lots.filter(l=>h.cells.some(a=>a.lot===l.id&&a.quantity>0));
-   blocks+=`<g data-hold="${esc(h.id)}" class="hold ${h.fill>100?'hold-exceeded':''} ${flagged.has(h.id)?'hold-review':''}" aria-label="Hold ${h.id}: ${esc(contents.map(l=>l.name).join(', ')||'Empty')}; ${fmt(h.mass)} t; ${fmt(h.fill,1)} percent"><title>${esc(contents.map(l=>l.name).join(' / ')||'Empty hold')}</title><rect class="hold-outline" x="${x}" y="85" width="${w}" height="130" rx="3"/>${bars}<text x="${x+w/2}" y="65" text-anchor="middle" font-size="13">№${h.id}</text><foreignObject x="${x+7}" y="94" width="${w-14}" height="112"><div xmlns="http://www.w3.org/1999/xhtml" class="hold-names">${contents.map(l=>`<div>${esc(l.name)}</div>`).join('')||'<span class="muted">Empty</span>'}<div class="hold-stat">${fmt(h.fill,1)}% · ${fmt(h.mass,1)} t</div></div></foreignObject><text x="${x+w/2}" y="260" text-anchor="middle" font-size="11">${fmt(h.volume)} m³</text></g>`;
+ function motionSnapshot(){const map=new Map();if(typeof document==='undefined'||typeof document.querySelectorAll!=='function'||typeof getComputedStyle!=='function')return map;document.querySelectorAll('.cargo-fill').forEach(el=>map.set(el.dataset.fillKey+'|'+el.closest('svg')?.getAttribute('class'),getComputedStyle(el).transform));return map;}
+ function animate(map){if(!map.size||typeof matchMedia!=='function'||matchMedia('(prefers-reduced-motion: reduce)').matches||matchMedia('print').matches)return;document.querySelectorAll('.cargo-fill').forEach(el=>{const target=el.style.transform,from=map.get(el.dataset.fillKey+'|'+el.closest('svg')?.getAttribute('class'))||el.dataset.fillFrom||'translate(0px, 215px) scale(1, 0)';if(el.animate&&from!==getComputedStyle(el).transform)el.animate([{transform:from},{transform:target}],{duration:280,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});});}
+
+ // Two views of the same plan, holds at the same x in both: the profile states how full each hold is,
+ // the plan states what is in it and where that cargo is loaded.
+ const holdBars=(h,lots,x,w,floor,depth)=>{
+  let bottom=floor,bars='';
+  for(const l of lots){
+   const cells=h.cells.filter(a=>a.lot===l.id),q=cells.every(a=>M.ok(a.quantity))?P.exactSum(cells.map(a=>a.quantity)):0;
+   const volume=M.ok(l.sf,true)?q*l.sf:0,height=M.ok(h.volume,true)?Math.max(0,Math.min(floor-(floor-depth),volume/h.volume*depth)):0;
+   bars+=`<rect class="cargo-fill" data-fill-key="${esc(h.id+'|'+l.id)}" data-fill-from="translate(0px, ${floor}px) scale(1, 0)" x="${x+1}" y="0" width="${w-2}" height="1" fill="${esc(l.color)}" opacity=".7" style="transform:translate(0px, ${bottom-height}px) scale(1, ${height});transform-origin:0 0"/>`;
+   bottom-=height;
   }
-  return `<svg class="ship" viewBox="0 0 1120 300" role="group" aria-label="Stowage: aft left, forward right"><path d="M25 74 Q25 45 55 45 H998 Q1058 58 1090 160 Q1058 262 998 275 H55 Q25 275 25 245 Z" fill="none" stroke="#606060" stroke-width="1.5"/><text class="ship-end" x="88" y="165" font-size="10" text-anchor="middle">AFT</text>${blocks}<text class="ship-end" x="1058" y="165" font-size="10" text-anchor="middle">FWD</text></svg>`;
+  return bars;
+ };
+ const holdClass=(h,flagged)=>`hold ${h.fill>100?'hold-exceeded':''} ${flagged.has(h.id)?'hold-review':''}`;
+ function draw(s,patterns){
+  const summary=P.stageSummary(s),lots=s.lots.filter(l=>l.selected),pattern=currentPattern(s,patterns||P.loadingPatterns(s)),flagged=new Set(pattern?.issues.flatMap(x=>x.holds)||[]);
+  const n=s.holds.length,w=815/n-17,at=i=>180+i*(w+17),hold=i=>summary.holds[n-1-i];
+  let plan='',profile='';
+  for(let i=0;i<n;i++){
+   const h=hold(i),x=at(i),contents=lots.filter(l=>h.cells.some(a=>a.lot===l.id&&a.quantity>0));
+   const names=contents.map(l=>l.name).join(', ')||'Empty';
+   // Profile: how full the hold is, in the same colours as the plan below it.
+   profile+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${fmt(h.fill,1)} percent full; ${fmt(h.mass,1)} t"><rect class="hold-outline" x="${x}" y="72" width="${w}" height="116" rx="3"/>${holdBars(h,lots,x,w,188,116)}<text class="profile-hold" x="${x+w/2}" y="96" text-anchor="middle">№${h.id}</text><text class="profile-fill" x="${x+w/2}" y="136" text-anchor="middle">${fmt(h.fill,1)} %</text><text class="profile-mass" x="${x+w/2}" y="160" text-anchor="middle">${fmt(h.mass,1)} t</text></g>`;
+   // Plan: the cargo itself and the port each parcel is loaded at.
+   plan+=`<g data-hold="${esc(h.id)}" class="${holdClass(h,flagged)}" aria-label="Hold ${h.id}: ${esc(names)}"><title>${esc(contents.map(l=>l.name).join(' / ')||'Empty hold')}</title><rect class="hold-outline" x="${x}" y="85" width="${w}" height="130" rx="3"/>${holdBars(h,lots,x,w,215,130)}<text x="${x+w/2}" y="65" text-anchor="middle" font-size="13">№${h.id}</text><foreignObject x="${x+7}" y="94" width="${w-14}" height="112"><div xmlns="http://www.w3.org/1999/xhtml" class="hold-names">${contents.map(l=>`<div>${esc(l.name)}<small>${esc(l.loadPort||'Load port not set')}</small></div>`).join('')||'<span class="muted">Empty</span>'}</div></foreignObject><text x="${x+w/2}" y="260" text-anchor="middle" font-size="11">${fmt(h.volume)} m³</text></g>`;
+  }
+  const hull=`<path class="ship-hull" d="M95 60 V160 Q95 200 140 200 H980 Q1040 192 1078 130 Q1040 68 980 60 Z"/><path class="ship-house" d="M104 60 V26 H168 V60"/><path class="ship-house" d="M126 26 V12 H146 V26"/>`;
+  return `<svg class="ship ship-profile" viewBox="0 0 1120 215" role="group" aria-label="How full each hold is: aft left, forward right">${hull}<text class="ship-end" x="120" y="182" font-size="10" text-anchor="middle">AFT</text>${profile}<text class="ship-end" x="1020" y="130" font-size="10" text-anchor="middle">FWD</text></svg>`
+   +`<svg class="ship" viewBox="0 0 1120 300" role="group" aria-label="Stowage: aft left, forward right"><path d="M25 74 Q25 45 55 45 H998 Q1058 58 1090 160 Q1058 262 998 275 H55 Q25 275 25 245 Z" fill="none" stroke="#606060" stroke-width="1.5"/><text class="ship-end" x="88" y="165" font-size="10" text-anchor="middle">AFT</text>${plan}<text class="ship-end" x="1058" y="165" font-size="10" text-anchor="middle">FWD</text></svg>`;
  }
+
  // Every arrival and departure draft follows from that state's own displacement.
  const stateLabel=r=>(r.phase==='arrival'?'Arrival · ':'Departure · ')+r.call;
  function draftTable(s,rows){

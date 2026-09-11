@@ -565,7 +565,7 @@ test('Cargo distribution screening reaches the plan, the diagram and the printed
  assert.ok(html.includes('id="loading-patterns"'),'the screening stands in section 3');
  assert.ok(html.includes('Cargo only in forward holds №1, №2'),'and names the pattern in words');
  assert.ok(html.includes('2 departure states need review'),'the heading counts the departures, discharge included');
- assert.equal((html.match(/hold-review/g)||[]).length,2,'both loaded holds are marked on the diagram');
+ assert.equal((html.match(/hold-review/g)||[]).length,4,'both loaded holds are marked, in the profile and in the plan');
  const patterns=app.getPlanningResult().loadingPatterns;
  assert.equal(patterns.method,'cargo-pattern-2');
  assert.equal(patterns.states.find(x=>x.label==='Departure · Santos').issues[0].code,'end-only-forward','the state after the Santos discharge is screened too');
@@ -592,9 +592,30 @@ test('A cargo spread over every hold stays quiet, and a later state is raised on
  assert.ok(raised.includes('Cargo only in aft holds №4'),'and says what will be wrong there');
  assert.ok(raised.includes('data-action="loading-state"'),'with a way to open that state');
 });
+test('Section 3 draws two views: how full each hold is, and what is in it',()=>{
+ const s=M.demo();P.ensure(s);
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ const ships=[...html.matchAll(/<svg class="ship([^"]*)"[\s\S]*?<\/svg>/g)].map(m=>m[0]);
+ assert.equal(ships.length,2,'a profile above the plan');
+ const [profile,plan]=ships;
+ assert.match(profile,/class="ship ship-profile"/);assert.ok(profile.includes('class="ship-hull"')&&profile.includes('class="ship-house"'),'drawn as a ship, not a row of boxes');
+ // The profile carries the figures: how full, and how much.
+ assert.match(profile,/<text class="profile-fill"[^>]*>55\.2 %<\/text>/);
+ assert.match(profile,/<text class="profile-mass"[^>]*>6,000\.0 t<\/text>/);
+ assert.ok(!profile.includes('BULK SULPHUR'),'and nothing else');
+ // The plan carries the cargo and the port it is loaded at.
+ assert.match(plan,/<div>BULK SULPHUR APP C<small>Ust-Luga<\/small><\/div>/);
+ assert.ok(!plan.includes('profile-fill')&&!plan.includes('hold-stat'),'the figures moved out of it');
+ // Holds stand at the same place in both, so one reads above the other.
+ const xOf=v=>[...v.matchAll(/<rect class="hold-outline" x="(\d+)"/g)].map(m=>m[1]);
+ assert.deepEqual(xOf(profile),xOf(plan),'the two views line up hold for hold');
+ // A hold nobody filled says so in both.
+ assert.match(profile,/<text class="profile-fill"[^>]*>0\.0 %<\/text>/);
+ assert.ok(plan.includes('<span class="muted">Empty</span>'));
+});
 test('A hold on the stowage diagram is a picture, not a button',()=>{
  const html=boot(JSON.stringify(M.demo())).elements.get('app').innerHTML;
- const ship=html.slice(html.indexOf('<svg class="ship"'),html.indexOf('</svg>'));
+ const ship=html.slice(html.indexOf('<svg class="ship" viewBox'),html.indexOf('</svg>',html.indexOf('<svg class="ship" viewBox')));
  assert.ok(ship.includes('class="hold '),'the holds are still drawn');
  for(const gone of ['data-hold-target','role="button"','tabindex="0"'])assert.ok(!ship.includes(gone),gone+' still makes a hold clickable');
  assert.ok(ship.includes('aria-label="Hold 1:'),'each hold is still described for a screen reader');
