@@ -11,6 +11,7 @@ const SALES_KEY='projectx-sales-v3';
 const INDEX_KEY='projectx-voyages-v3';
 const VOYAGE_PREFIX='projectx-voyage-v3:';
 const LEGACY_KEY='projectx-current-v2';   // the prototype's single save; never deleted here
+const LEGACY_SEEN='projectx-legacy-seen-v3';
 
 const now=()=>new Date().toISOString();
 const id=()=>'v-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
@@ -22,23 +23,31 @@ function create(options={}){
  const read=key=>{const raw=store.getItem(key);if(raw===null||raw===undefined)return null;return JSON.parse(raw);};
  const write=(key,value)=>store.setItem(key,JSON.stringify(value));
 
- // The prototype's single save carries catalogs and voyage together. Move it into the split
- // layout once, keeping the original key so an older build still opens the same calculation.
- function migrateLegacy(){
-  if(read(INDEX_KEY))return false;
+ // The prototype's single save carries catalogs and voyage together. It is treated as an
+ // inbox rather than a one-time migration: whenever its contents differ from what was last
+ // imported, they are taken in again. That is what lets a calculation saved by an older
+ // build, or by the offline page, be opened here. The original key is never written or
+ // deleted by this adapter, so the older build keeps working on its own copy.
+ function importLegacy(){
   const legacy=store.getItem(LEGACY_KEY);
   if(!legacy)return false;
+  if(legacy===store.getItem(LEGACY_SEEN))return false;
   let state;
-  try{state=JSON.parse(legacy);}catch{return false;}
-  if(!state||typeof state!=='object')return false;
+  try{state=JSON.parse(legacy);}
+  catch{store.setItem(LEGACY_SEEN,legacy);return false;}   // unreadable: noted, so it is not retried
+  if(!state||typeof state!=='object'){store.setItem(LEGACY_SEEN,legacy);return false;}
+  store.setItem(LEGACY_SEEN,legacy);
   const parts=Schema.split(state);
   write(CATALOG_KEY,{document:parts.catalogs,revision:1,updatedAt:now()});
   const sales={};
   for(const sale of parts.sales.sales||[])if(sale&&sale.id)sales[sale.id]={document:sale,revision:1,updatedAt:now()};
   write(SALES_KEY,sales);
-  const voyageId=id();
+  const existing=index();
+  const voyageId=existing[0]?existing[0].id:id();
+  const revision=existing[0]?existing[0].revision+1:1;
   write(VOYAGE_PREFIX+voyageId,Schema.stamp(parts.voyage,1));
-  write(INDEX_KEY,[{id:voyageId,name:'Imported calculation',revision:1,catalogRevision:1,updatedAt:now()}]);
+  write(INDEX_KEY,[{id:voyageId,name:existing[0]?existing[0].name:'Imported calculation',revision,catalogRevision:1,updatedAt:now()},
+   ...existing.slice(1)]);
   return true;
  }
 
@@ -48,11 +57,29 @@ function create(options={}){
  return {
   kind:'local',
   shared:false,
-  async ready(){migrateLegacy();return {kind:'local',user:null};},
+  async ready(){importLegacy();return {kind:'local',user:null};},
   async user(){return null;},
 
+  // This adapter reads a synchronous store, so it can answer the whole workspace at once.
+  // The page then renders the saved calculation on first paint instead of a loading state.
+  // An adapter that has to cross a network does not offer this, and the caller awaits open().
+  openSync(preferred){
+   importLegacy();
+   const list=index();
+   const chosen=list.find(x=>x.id===preferred)||list[0];
+   if(!chosen)return null;
+   const document=read(VOYAGE_PREFIX+chosen.id);
+   if(!document)return null;
+   const sales=read(SALES_KEY)||{};
+   return {
+    catalogs:read(CATALOG_KEY)||{document:{},revision:0,updatedAt:null},
+    sales:Object.entries(sales).map(([saleId,x])=>({id:saleId,document:x.document,revision:x.revision,updatedAt:x.updatedAt})),
+    voyage:{...chosen,document}
+   };
+  },
+
   async loadCatalogs(){
-   migrateLegacy();
+   importLegacy();
    return read(CATALOG_KEY)||{document:{},revision:0,updatedAt:null};
   },
   async saveCatalogs(document,revision){
@@ -65,7 +92,7 @@ function create(options={}){
 
   // Sales are one row per deal, so two traders editing different deals do not collide.
   async listSales(){
-   migrateLegacy();
+   importLegacy();
    const sales=read(SALES_KEY)||{};
    return Object.entries(sales).map(([saleId,x])=>({id:saleId,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
   },
@@ -85,7 +112,7 @@ function create(options={}){
    return {ok:true};
   },
 
-  async listVoyages(){migrateLegacy();return index();},
+  async listVoyages(){importLegacy();return index();},
   async loadVoyage(voyageId){
    const meta=entry(voyageId);
    if(!meta)return null;
@@ -138,6 +165,6 @@ function create(options={}){
  };
 }
 
-const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY};
+const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY,LEGACY_SEEN};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageLocal=api;
 })(globalThis);

@@ -42,6 +42,7 @@ jobs:
           node platform/map-browser-check.cjs
           node platform/planner-browser-check.cjs
           node platform/sales-browser-check.cjs
+          node platform/calculations-browser-check.cjs
 
   browser-stale:
     runs-on: ubuntu-latest

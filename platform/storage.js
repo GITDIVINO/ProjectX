@@ -19,6 +19,7 @@ function create(options={}){
  if(options.client)return Supabase.create({client:options.client,orgId:options.orgId||config?.orgId||null});
  if(configured(config)){
   const factory=options.createClient||root.supabase?.createClient;
+  // A page that names a backend but cannot load its client must say so, not fall back quietly.
   if(!factory)return {...Local.create(options),degraded:'The Supabase client library did not load; working in this browser only.'};
   const client=factory(config.supabaseUrl,config.supabaseAnonKey);
   return Supabase.create({client,orgId:options.orgId||config.orgId||null});

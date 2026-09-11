@@ -169,7 +169,15 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   // intended behaviour, held by app.test.js. Seed a note, then check the text survives.
   await reveal('[data-path="notes"]');await page.locator('[data-path="notes"]').fill('User text: Груз клиента');await page.locator('[data-path="notes"]').dispatchEvent('change');await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),'User text: Груз клиента');
   assert.deepEqual(errors,[]);
-  await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
+  // The prototype's single key is now an import channel, not the store. Unreadable contents
+  // there cost nothing, because the calculation itself lives in the split layout: there is no
+  // backup to restore because nothing was lost. What must hold is that the open work survives
+  // and the unreadable original is left exactly as the user left it.
+  const beforeDamage=await page.evaluate(()=>ProjectXApp.getState().notes);
+  await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),beforeDamage,'the open calculation is untouched');
+  assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken','the unreadable original is preserved');
+  assert.doesNotMatch(await page.locator('#status').innerText(),/not been saved|could not be opened/,'nothing was lost, so nothing is reported as lost');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
   console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, one-cargo multi-hold stowage, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}

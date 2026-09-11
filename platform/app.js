@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',tabKey='projectx-current-tab',tabs=['planner','sale','cargo','ports','vessel','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','sale','cargo','ports','vessel','market','guide'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -17,19 +17,37 @@ let currentTab='planner',startupMessage='';
 const P=window.ProjectXPlanning;
 const plannerUI=window.ProjectXPlannerUI.create({M,P,getState:()=>state,changed,openTab:tab=>{currentTab=tab;syncWorkspace();render();}});
 try{const savedTab=sessionStorage.getItem(tabKey);if(tabs.includes(savedTab))currentTab=savedTab;}catch{}
-function readSave(text){
- const saved=JSON.parse(text);
+function readSave(text){return validateSave(JSON.parse(text));}
+function validateSave(saved){
  if(!saved||saved.version!==2||!['lots','ports','holds','legs','allocations','costs'].every(k=>Array.isArray(saved[k]))||!['deductions','prices','ballast'].every(k=>saved[k]&&typeof saved[k]==='object'))throw Error('Invalid saved calculation');
  M.ensureCatalogs(saved);M.syncRoute(saved);M.compute(saved);
  return saved;
 }
-let state=M.initial();
+// The application works with one state; the session turns that into the stored documents and
+// hides which adapter is behind them. A synchronous adapter answers at once and the saved
+// calculation is on screen at first paint; anything else is awaited in start().
+// The store, the configuration and the client factory are handed in rather than picked up
+// from whatever global the storage module happens to see. That is what the page has, and it
+// keeps the dependency visible instead of ambient.
+const storage=window.ProjectXStorage.create({
+ store:typeof localStorage!=='undefined'?localStorage:null,
+ config:window.PROJECTX_CONFIG||null,
+ createClient:window.supabase&&window.supabase.createClient
+});
+const session=window.ProjectXSession.create(storage,{fresh:()=>M.initial(),firstName:'Calculation 1'});
+let state=M.initial(),voyage=null,pendingOpen=null;
+const recall=()=>{try{return localStorage.getItem(currentKey);}catch{return null;}};
+const remember=id=>{try{localStorage.setItem(currentKey,id);}catch{}};
+function adopt(loaded){
+ if(!loaded||!loaded.state)return false;
+ try{validateSave(loaded.state);}catch{return false;}
+ state=loaded.state;voyage=loaded.voyage||null;
+ if(voyage)remember(voyage.id);
+ return true;
+}
 try{
- const saved=localStorage.getItem(key);
- if(saved)try{state=readSave(saved);}catch{
-  startupMessage='The saved calculation could not be opened. The original save has been preserved.';
-  try{const backup=localStorage.getItem(backupKey);if(backup){state=readSave(backup);startupMessage='The last valid backup was restored. The unreadable save has been preserved.';}}catch{}
- }
+ if(!adopt(session.openSync(recall())))pendingOpen=session.open(recall());
+ if(storage.degraded)startupMessage=storage.degraded;
 }catch{startupMessage='Browser storage is unavailable. Changes cannot be saved in this browser.';}
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));// toLocaleString builds a fresh Intl.NumberFormat on every call; one per option pair is the same output.
 const numberFormats=new Map();
@@ -371,16 +389,24 @@ $('app').addEventListener('pointerdown',e=>{
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
  case'map-zoom':zoomMap(Number(el.dataset.factor));return;
  case'map-reset':resetMap();return;case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;case'new-cargo':showCargoDialog();return;case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'add-lot':showLotDialog();return;case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;case'calc-intake':state.intakeShownFor=intakeKey();break;case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();});
+// Saving is asynchronous now, and the session serialises the writes: the newest state
+// replaces any older one still waiting, so typing cannot queue a hundred writes.
 function saveCalculation(clearStatus=true){
- try{
-  const previous=localStorage.getItem(key);
-  if(previous){try{readSave(previous);localStorage.setItem(backupKey,previous);}catch{}}
-  localStorage.setItem(key,JSON.stringify(state));if(clearStatus)$('status').textContent='';return true;
- }catch{$('status').textContent='Storage is unavailable. Your changes have not been saved.';return false;}
+ if(clearStatus)$('status').textContent='';
+ session.save(state).then(result=>{
+  if(result.ok)return;
+  if(result.reason==='conflict')
+   $('status').textContent='This calculation was changed elsewhere. Your edit was not saved. Reload to see the other version.';
+  else if(result.reason==='no-calculation')
+   $('status').textContent='No calculation is open. Your changes have not been saved.';
+  else
+   $('status').textContent='Your changes have not been saved. '+(result.error||'Storage is unavailable.');
+ }).catch(()=>{$('status').textContent='Your changes have not been saved. Storage is unavailable.';});
+ return true;
 }
 $('save').onclick=()=>saveCalculation(true);
 
-$('reset').onclick=()=>{if(!confirm('Clear the current calculation and its local save?'))return;const catalogs={cargoTypes:state.cargoTypes,vesselProfiles:state.vesselProfiles,sales:state.sales,portRecords:state.portRecords};state=M.initial();Object.assign(state,catalogs);ensureLegs();try{localStorage.setItem(key,JSON.stringify(state));}catch{}$('status').textContent='';render();};
+$('reset').onclick=()=>{if(!confirm('Clear the current calculation and its local save?'))return;const catalogs={cargoTypes:state.cargoTypes,vesselProfiles:state.vesselProfiles,sales:state.sales,portRecords:state.portRecords};state=M.initial();Object.assign(state,catalogs);ensureLegs();saveCalculation(true);render();};
 $('pdf').onclick=()=>{window.print();};
 function shipmentWindow(sale){
  const date=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&Number.isFinite(Date.parse(value))
@@ -478,5 +504,70 @@ $('app').addEventListener('change',e=>{if(e.target.id==='cargo-family')filterCar
 if(window.addEventListener)window.addEventListener('beforeprint',()=>document.querySelectorAll('.cargo-fill').forEach(el=>el.getAnimations?.().forEach(a=>a.finish())));
 if(window.addEventListener)window.addEventListener('resize',fitMapFrame);
 if(document.addEventListener){document.addEventListener('invalid',e=>{const el=e.target;if(el.setCustomValidity)el.setCustomValidity(el.validity.valueMissing?'Complete this field.':'Enter a valid value for this field.');},true);document.addEventListener('input',e=>{if(e.target.setCustomValidity)e.target.setCustomValidity('');},true);}
-window.ProjectXApp={getState:()=>JSON.parse(JSON.stringify(state)),getResult:()=>M.compute(state),getPlanningResult:()=>P.check(state)};ensureLegs();setupChrome();syncWorkspace();render();if(startupMessage)$('status').textContent=startupMessage;
+// The list of calculations. Names are the user's text, so every one is escaped.
+async function refreshCalculations(){
+ const select=$('calculation');
+ if(!select)return;
+ let list=[];
+ try{list=await session.list();}catch{list=[];}
+ const open=voyage&&voyage.id;
+ select.innerHTML=list.map(item=>`<option value="${esc(item.id)}" ${item.id===open?'selected':''}>${esc(item.name)}</option>`).join('')
+  ||'<option value="">No calculations</option>';
+}
+async function openCalculation(id){
+ if(!id||(voyage&&voyage.id===id))return;
+ const result=await session.switchTo(id);
+ if(!result.ok||!adopt(result)){$('status').textContent='That calculation could not be opened.';return;}
+ ensureLegs();syncWorkspace();render();await refreshCalculations();
+}
+function setupCalculations(){
+ const select=$('calculation');
+ if(select)select.onchange=()=>{openCalculation(select.value);};
+ if($('new-calculation'))$('new-calculation').onclick=async()=>{
+  const name=prompt('Name for the new calculation','Calculation');
+  if(!name||!name.trim())return;
+  // The registers stay shared; only the voyage starts empty.
+  const blank=M.initial();
+  for(const shared of ['cargoTypes','vesselProfiles','portRecords','sales'])blank[shared]=JSON.parse(JSON.stringify(state[shared]));
+  const created=await session.createNamed(name.trim(),blank);
+  if(created.ok===false){$('status').textContent='The calculation could not be created.';return;}
+  state=blank;voyage={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision};
+  remember(voyage.id);ensureLegs();saveCalculation(true);syncWorkspace();render();await refreshCalculations();
+ };
+ if($('rename-calculation'))$('rename-calculation').onclick=async()=>{
+  if(!voyage)return;
+  const name=prompt('Rename this calculation',voyage.name);
+  if(!name||!name.trim())return;
+  const result=await session.rename(voyage.id,name.trim());
+  if(!result.ok){$('status').textContent='The calculation could not be renamed.';return;}
+  voyage={...voyage,name:name.trim()};await refreshCalculations();
+ };
+ if($('delete-calculation'))$('delete-calculation').onclick=async()=>{
+  if(!voyage)return;
+  const list=await session.list();
+  if(list.length<2){$('status').textContent='This is the only calculation. Use Clear calculation to empty it.';return;}
+  if(!confirm('Delete the calculation "'+voyage.name+'"? This cannot be undone.'))return;
+  const removed=await session.remove(voyage.id);
+  if(!removed.ok){$('status').textContent='The calculation could not be deleted.';return;}
+  const next=list.find(item=>item.id!==voyage.id);
+  voyage=null;await openCalculation(next.id);await refreshCalculations();
+ };
+}
+
+window.ProjectXApp={
+ getState:()=>JSON.parse(JSON.stringify(state)),
+ getResult:()=>M.compute(state),
+ getPlanningResult:()=>P.check(state),
+ getCalculation:()=>voyage&&{...voyage},
+ listCalculations:()=>session.list(),
+ storageKind:storage.kind
+};
+ensureLegs();setupChrome();setupCalculations();syncWorkspace();render();if(startupMessage)$('status').textContent=startupMessage;
+
+// An adapter that had to be awaited finishes here and the page is drawn again with the
+// workspace it found. A failure says so rather than leaving a blank calculation on screen.
+window.ProjectXApp.ready=Promise.resolve(pendingOpen).then(loaded=>{
+ if(loaded&&loaded.error){$('status').textContent=loaded.error;return;}
+ if(loaded&&adopt(loaded)){ensureLegs();syncWorkspace();render();}
+}).then(refreshCalculations).catch(()=>{$('status').textContent='The workspace could not be opened.';});
 })();

@@ -157,6 +157,35 @@ test('Damaged legacy data is left alone instead of producing a half-migrated wor
  assert.equal(store.getItem(Local.CATALOG_KEY),null);
 });
 
+test('A calculation saved by an older build is taken in again when it changes',async()=>{
+ const first=M.demo();first.hire=100;
+ const store=fakeStore({[Local.LEGACY_KEY]:JSON.stringify(first)});
+ const storage=Local.create({store});
+
+ const [initial]=await storage.listVoyages();
+ assert.equal((await storage.loadVoyage(initial.id)).document.hire,100);
+
+ // The same browser opens the offline page, saves there, and comes back.
+ const second=M.demo();second.hire=200;
+ store.setItem(Local.LEGACY_KEY,JSON.stringify(second));
+ const list=await storage.listVoyages();
+ assert.equal(list.length,1,'the import updates the calculation rather than adding another');
+ assert.equal((await storage.loadVoyage(list[0].id)).document.hire,200);
+
+ // Unchanged contents are not re-imported, so local edits are not undone on every read.
+ await storage.saveVoyage(list[0].id,{...(await storage.loadVoyage(list[0].id)).document,hire:300},list[0].revision);
+ await storage.listVoyages();
+ const after=await storage.listVoyages();
+ assert.equal((await storage.loadVoyage(after[0].id)).document.hire,300,'a local edit survives a later read');
+});
+
+test('Unreadable contents in the old key are noted once and never retried',async()=>{
+ const store=fakeStore({[Local.LEGACY_KEY]:'{not json'});
+ const storage=Local.create({store});
+ assert.deepEqual(await storage.listVoyages(),[]);
+ assert.equal(store.getItem(Local.LEGACY_KEY),'{not json','the original is left exactly as it was');
+});
+
 test('Several named calculations live side by side',async()=>{
  const storage=Local.create({store:fakeStore()});
  const first=await storage.createVoyage('Ust-Luga → Santos',{lots:[{id:'A'}]});
