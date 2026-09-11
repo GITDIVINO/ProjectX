@@ -4,7 +4,6 @@ test('PLANNER displays SF as text and preserves stored cargo properties',()=>{
  const s=M.demo();s.lots[0].sf=0.98765;
  const {app,elements}=boot(JSON.stringify(s));const html=elements.get('app').innerHTML;
  assert.match(html,/<td>0\.99<\/td>/,'the register column is uniform to two decimals');
- assert.ok(html.includes('24,000 × 0.98765'),'the calculation line keeps the exact stored value');
  assert.ok(!html.includes('data-path="lots.0.sf"'));assert.ok(html.includes('data-path="lots.0.selected"'));
  assert.equal(app.getState().lots[0].sf,0.98765);
  elements.get('tab-cargo').onclick();assert.match(elements.get('app').innerHTML,/data-path="cargoTypes\.\d+\.sf"/);
@@ -244,6 +243,17 @@ test('Section 4 hides routine prompts without accepting an incomplete voyage',()
  const result=boot(JSON.stringify(incomplete)).app.getResult();
  assert.ok(result.errors.includes('Hire rate'),'validation still identifies the missing input');
 });
+test('Section 1 ends with its table, and the empty state still points at SALE',()=>{
+ const s=M.demo();P.ensure(s);
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ const section=html.slice(html.indexOf('1. Sales in voyage'),html.indexOf('2. Vessel and rotation'));
+ assert.ok(!section.includes('Commercial data from SALE'),'the note under the table is gone');
+ assert.ok(!section.includes('class="form-note"'),'and no other note took its place');
+ assert.ok(section.includes('voyage-sales-table')&&section.includes('data-action="add-lot"'),'the table and the way to add a sale are untouched');
+ // An empty planner still says where sales come from, in its own placeholder.
+ const blank=boot(null).elements.get('app').innerHTML;
+ assert.ok(blank.includes('Add a sale from SALE to start planning this voyage.'),'the empty state keeps that sentence');
+});
 test('Section 4 is a stack of folds, each carrying its own result on the summary line',()=>{
  const s=M.demo();P.ensure(s);s.ballastEnabled=true;s.deliveryPort='Murmansk';Object.assign(s.ballast,{eca:0,aux:0});
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
@@ -352,13 +362,13 @@ test('Corrupt or obsolete saved state falls back to blank',()=>{for(const value 
 test('CARGO retains catalog records while rendering the simplified register',()=>{const {app,elements}=boot(null);elements.get('tab-cargo').onclick();const html=elements.get('app').innerHTML;assert.equal((html.match(/data-catalog-name=/g)||[]).length,25);assert.ok(app.getState().cargoTypes.length>=97);assert.ok(html.includes('Planning SF, m³/t'));assert.ok(html.includes('IMSBC Group'));for(const removed of ['Hold restriction','Properties / source','Apply to parcels','UN number','Transport hazard class','SDS / declaration required','Reference estimate','N/A to this carriage mode','cargo-meta'])assert.ok(!html.includes(removed));});
 test('SALE and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('Ust-Luga'));assert.ok(ports.includes('European Sulphur Terminal'));assert.ok(!ports.includes('DA, USD'));assert.match(ports,/<div class="heading"><div><h2>PORT<\/h2><p class="section-intro">Port and berth register with published size limits\.<\/p><\/div>/,'PORT is headed like the other registers');assert.ok(!ports.includes('Charterer port and terminal register'),'not the intro line the user removed earlier');assert.match(ports,/<th scope="col">Country<\/th><th scope="col">Port<\/th><th scope="col">Terminal<\/th><th scope="col">Berth<\/th><th scope="col">Water density, t\/m³<\/th><th scope="col">Max draft, m<\/th><th scope="col">Max beam, m<\/th><th scope="col">Max LOA, m<\/th><th scope="col">Max air draft, m<\/th><th scope="col">Max DWT<\/th>/,'columns follow the source table: draft, beam, LOA');assert.ok(ports.includes('value="Russia"')&&ports.includes('value="Brazil"'));assert.ok(!ports.includes('>Notes<'),'the Notes column is not rendered');assert.ok(!ports.includes('Compared with'),'no comparison line above the register');assert.ok(ports.includes('Berth 13'),'Murmansk berths are separate rows');assert.ok(!ports.includes('limit-exceeded')&&!ports.includes('limit-flag'),'PORT is a register only: breaches are shown in PLANNER');});
 
-test('Restricted intake DWT appears only after Calculate intake and never outlives its inputs',()=>{
+test('The DWT limit appears only after Calculate intake and never outlives its inputs',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  for(const gone of ['Lubricants, t','Slops, t','deductions.lubes','deductions.slops'])assert.ok(!blank.includes(gone),gone+' is still in PLANNER');
  for(const kept of ['Fuel, t','Fresh water, t','Ballast, t','Constant, t','Loss due to draft, t'])assert.ok(blank.includes(kept),kept);
  assert.match(blank,/data-action="calc-intake" disabled/,'no deductions entered yet, so the button is disabled');
  const s=M.demo();
- assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/Restricted intake DWT: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
+ assert.match(boot(JSON.stringify(s)).elements.get('app').innerHTML,/DWT limit: <strong>—<\/strong><button data-action="calc-intake" >/,'a complete voyage offers the button but shows no figure yet');
  s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.ok(shown.includes('− draft loss 0 = <strong>35,692.00 t</strong>'),'the calculated figure is shown');
@@ -367,14 +377,14 @@ test('Restricted intake DWT appears only after Calculate intake and never outliv
  assert.ok(!shown.includes('calc-intake'),'the button steps aside once the figure is shown');
  s.deductions.fuel=951;
  const stale=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(stale.includes('Restricted intake DWT: <strong>—</strong>'),'an edited deduction withdraws the figure');
+ assert.ok(stale.includes('DWT limit: <strong>—</strong>'),'an edited deduction withdraws the figure');
  assert.ok(stale.includes('calc-intake'),'and brings the button back');
  assert.ok(!blank.includes('does not verify draft'),'the caveat line is replaced by the calculation');
  assert.ok(!blank.includes('− draft loss'),'no calculation before the figure is asked for');
- assert.ok(shown.includes('Restricted intake DWT: DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = <strong>35,692.00 t</strong>'),'the result carries its own substitution on one line');
+ assert.ok(shown.includes('DWT limit: DWT 37,667 − fuel 950 − fresh water 200 − ballast 300 − constant 525 − draft loss 0 = <strong>35,692.00 t</strong>'),'the result carries its own substitution on one line');
  const restricted=M.demo();restricted.deductions.draftLoss=1200;restricted.intakeShownFor=JSON.stringify([37667,950,200,300,525,1200]);
  const less=boot(JSON.stringify(restricted)).elements.get('app').innerHTML;
- assert.ok(less.includes('Restricted intake DWT: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
+ assert.ok(less.includes('DWT limit: <strong>—</strong>'),'old manual draft loss invalidates the displayed intake');assert.match(less,/aria-label="Loss due to draft, t" readonly value="0.0"/);assert.ok(!less.includes('data-action="draft-estimate"'));assert.ok(!less.includes('data-action="intake-basis"'));});
 
 test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const html=boot(null).elements.get('app').innerHTML;
  // Upper case in the text, not in a style rule, so a copy of the line carries it too.
@@ -386,25 +396,38 @@ test('Vessel particulars sit on the DWT line and drop bale capacity',()=>{const 
  assert.match(html,/<h3>Deductions<\/h3>.*<div class="grid">/,'the block is a permanent heading, not a disclosure');
  assert.ok(!html.includes('id="vessel"'),'nothing left to collapse');});
 
-test('Cargo volume sits under Holds and is the tonnage times SF of the selected sales',()=>{
- const blank=boot(null).elements.get('app').innerHTML;
- assert.ok(blank.includes('Cargo volume: — · needs a selected sale with a quantity and an SF.'),'an empty voyage says why it cannot be computed');
- assert.ok(blank.includes('Grain capacity: 7,781.4 + 9,489.1 + 9,484.5 + 9,487.6 + 9,274.2 = 45,516.80 m³'),'the hold volumes are summed even before any sale exists');
- assert.ok(blank.indexOf('grain-capacity')<blank.indexOf('cargo-volume'),'grain capacity comes first');
- const missing=M.demo();missing.holds[2].volume=null;
- assert.ok(boot(JSON.stringify(missing)).elements.get('app').innerHTML.includes('Grain capacity: — · enter every hold volume.'),'one empty hold makes the total unknown, not partial');
- const s=M.demo();
+test('The plates read in upper case, and section 2 lets the vessel name itself',()=>{
+ const s=M.demo();P.ensure(s);s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0].map(Number));
+ const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ // The selector carries the vessel's name, so the caption above it said nothing the list did not.
+ assert.ok(!html.includes('class="field">Vessel<select'),'the caption is gone');
+ assert.match(html,/<label class="field"><select aria-label="Vessel" data-path="vesselId"/,'the selector and its label for a reader stay');
+ // Both plates are upper case in the text itself, so a copy of them carries it.
+ const intake=html.match(/<summary><strong>Intake Calculator<\/strong><span>([^<]*)<\/span>/)[1];
+ assert.equal(intake,intake.toUpperCase(),'the intake summary: '+intake);
+ const onBoard=html.match(/<span data-stage-total>([^<]*)<\/span>/)[1];
+ assert.equal(onBoard,onBoard.toUpperCase(),'the cargo on board: '+onBoard);
+ assert.match(onBoard,/T ON BOARD$/);
+ // The scope note under the stowage section is gone with them.
+ for(const gone of ['Trim, stability, hull strength and ballast compensation','Intermediate loading/unloading steps are not modelled','loading-pattern-scope'])
+  assert.ok(!html.includes(gone),gone+' is still printed under section 3');
+});
+test('The intake calculator states its limits and nothing else',()=>{
+ const s=M.demo();P.ensure(s);s.intakeShownFor=null;
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(html.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 0.9 = 27,000.00 m³</small>'),html.slice(html.indexOf('Cargo volume'),html.indexOf('Cargo volume')+220));
- for(const gone of ['weighted SF','free of','hold volumes incomplete'])assert.ok(!html.includes(gone),gone+' should not be in the line');
- assert.ok(html.indexOf('intake-line')<html.indexOf('holds-grid'),'intake sits with the deductions it comes from');
- assert.ok(html.indexOf('holds-grid')<html.indexOf('cargo-volume'),'cargo volume follows the hold volumes it is compared against');
- const mixed=M.demo();mixed.lots[1].sf=1.2;
- const weighted=boot(JSON.stringify(mixed)).elements.get('app').innerHTML;
- assert.ok(weighted.includes('Cargo volume: 24,000 × 0.9 + 6,000 × 1.2 = 28,800.00 m³'),'each parcel keeps its own SF in the sum');
- const unselected=M.demo();unselected.lots.forEach(l=>l.selected=false);
- assert.ok(boot(JSON.stringify(unselected)).elements.get('app').innerHTML.includes('Cargo volume: —'),'nothing selected, nothing claimed');});
-
+ const block=html.slice(html.indexOf('<details id="intake-calculator"'),html.indexOf('rotation-grid'));
+ for(const gone of ['Cargo volume:','class="cargo-volume"','Average-vessel estimate','Hold allocation and nominated-vessel checks remain separate'])
+  assert.ok(!block.includes(gone),gone+' is still printed in the calculator');
+ assert.ok(!fs.readFileSync(__dirname+'/app.js','utf8').includes('cargoVolumeLine'),'the builder behind the line is gone, not left unused');
+ // What the block is for stays: the deductions, the holds, the draft loss and the limits themselves.
+ for(const kept of ['data-path="deductions.fuel"','data-path="holds.0.volume"','draft-formula','grain-capacity','DWT limit:'])
+  assert.ok(block.includes(kept),kept+' left the calculator');
+ // The mix SF the removed line showed is still stated where the cubic limit is worked out.
+ const calculated=M.demo();P.ensure(calculated);
+ const {app,elements}=boot(JSON.stringify(calculated));
+ elements.get('app').innerHTML.includes('Cubics limit');
+ assert.ok(M.cargoVolume(app.getState()).volume>0,'and the model still measures the cargo volume for it');
+});
 test('The draft loss calculation is printed and the field is not editable',()=>{
  const plain=M.demo();M.applyVessel(plain,'tbn-3');
  const html=boot(JSON.stringify(plain)).elements.get('app').innerHTML;
@@ -498,17 +521,17 @@ test('Calculation evidence escapes labels and updates when selected stage change
 test('Deductions and holds fold into one Intake Calculator that keeps its result on the summary',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
  const block=blank.slice(blank.indexOf('<details id="intake-calculator"'),blank.indexOf('rotation-grid'));
- for(const inside of ['<h3>Deductions</h3>','<h3>Holds</h3>','holds-grid','data-path="deductions.fuel"','data-path="holds.0.volume"','draft-formula','intake-line','grain-capacity','cargo-volume'])
+ for(const inside of ['<h3>Deductions</h3>','<h3>Holds</h3>','holds-grid','data-path="deductions.fuel"','data-path="holds.0.volume"','draft-formula','intake-line','grain-capacity'])
   assert.ok(block.includes(inside),inside+' left the calculator');
  assert.ok(blank.indexOf('vessel-choice')<blank.indexOf('id="intake-calculator"'),'the vessel line stays above it');
  assert.ok(blank.indexOf('id="intake-calculator"')<blank.indexOf('rotation-grid'),'the rotation stays below it');
  assert.ok(block.includes('<summary><strong>Intake Calculator</strong>'),'the block names itself on the summary');
  assert.match(block,/<details id="intake-calculator" class="fold">/,'the calculator is folded on open even before intake is calculated');
- assert.ok(block.includes('Intake not calculated'),'the summary says so rather than showing a stale figure');
+ assert.ok(block.includes('INTAKE NOT CALCULATED'),'the summary says so rather than showing a stale figure, and reads as a plate');
  const s=M.demo();s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);
  const shown=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  assert.match(shown,/<details id="intake-calculator" class="fold">/,'a settled intake remains folded by default');
- assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span>35,692\.00 t estimated restricted intake<\/span>/,'the result stays readable while collapsed');
+ assert.match(shown,/<summary><strong>Intake Calculator<\/strong><span>35,692\.00 T ESTIMATED RESTRICTED INTAKE<\/span>/,'the result stays readable while collapsed, in the case the plates use');
 });
 
 test('Drafts stay hidden by default and the summary still names the binding state',()=>{
@@ -581,8 +604,8 @@ test('A hold on the stowage diagram is a picture, not a button',()=>{
 test('Estimated intake never labels missing cubics as a combined limit and retires legacy results',()=>{
  const s=M.demo();s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);s.holds[0].volume=null;
  let html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(html.includes('35,692.00 t DWT only · cubics not checked'));assert.ok(!html.includes('35,692.00 t estimated restricted intake'));
- s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);html=boot(JSON.stringify(s)).elements.get('app').innerHTML;assert.ok(html.includes('Intake not calculated'));
+ assert.ok(html.includes('35,692.00 T DWT ONLY · CUBICS NOT CHECKED'));assert.ok(!html.includes('35,692.00 T ESTIMATED RESTRICTED INTAKE'));
+ s.intakeShownFor=JSON.stringify([37667,950,200,300,525,0]);html=boot(JSON.stringify(s)).elements.get('app').innerHTML;assert.ok(html.includes('INTAKE NOT CALCULATED'));
  s.intakeShownFor=JSON.stringify([P.INTAKE_METHOD,37667,950,200,300,525,0]);s.portRecords.find(p=>p.name==='Santos').waterDensity=null;
  html=boot(JSON.stringify(s)).elements.get('app').innerHTML;assert.match(html,/Select water density.*Santos/);assert.match(html,/data-action="calc-intake" disabled/);
 });
