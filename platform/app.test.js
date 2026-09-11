@@ -64,6 +64,8 @@ test('Values stand in the middle of their column, and the first column reads fro
  assert.match(css,/td:first-child\{text-align:left\}/,'the first column of every table is the exception');
  assert.match(css,/td input,td input\[type=number\],td select\{text-align:center\}/,'a field follows its column, outranking the number input rule');
  assert.ok(!/(?:^|[,}])[^,{}]*td:nth-child\([^)]*\)[^{]*\{[^}]*text-align:(left|right)/m.test(css),'no column is pinned aside any more');
+ // The sale and its cargo name in section 1 are read from the left, beside the first column.
+ assert.match(css,/\.voyage-sales-table td\.name\{text-align:left\}/);
  // Wrapped prose is read rather than compared, so it keeps its left edge.
  assert.match(css,/\.calculation-expression,\.calculation-expression code,\.state-check-text,\.snapshot-data\{text-align:left\}/);
  assert.match(css,/\.loading-pattern-text\{[^}]*text-align:left/);
