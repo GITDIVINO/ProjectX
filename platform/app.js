@@ -581,23 +581,37 @@ function showChrome(visible){
 function showSignIn(message){
  showChrome(false);
  $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
-  `<p class="section-intro">Calculations are shared with your organisation. Enter your work address and we will send you a sign-in code.</p>`+
+  `<p class="section-intro">Calculations are shared with your organisation.</p>`+
   `<form id="sign-in-form"><div class="grid">`+
   `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
-  `<label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Sent by email"></label>`+
-  `</div><div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
-  `<button id="sign-in-verify" type="submit">Sign in</button></div></form>`+
+  `<label>Password<input id="sign-in-password" type="password" autocomplete="current-password"></label>`+
+  `</div><div class="button-row"><button id="sign-in-submit" type="submit">Sign in</button></div></form>`+
+  `<details class="sign-in-alternative"><summary>Sign in with a code instead</summary>`+
+  `<p class="muted">A code is sent to your address. Delivery depends on the mail service configured for this project.</p>`+
+  `<div class="grid"><label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code"></label></div>`+
+  `<div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
+  `<button id="sign-in-verify" type="button">Use code</button></div></details>`+
   `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
  const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
  const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
+ // The password is read at the moment it is sent and is never stored, echoed or kept in state.
+ const secret=()=>(($('sign-in-password')||{}).value||'');
+
+ $('sign-in-form').onsubmit=async event=>{
+  event.preventDefault();
+  if(!address()||!secret()){say('Enter your work email and password.');return;}
+  say('Signing in…');
+  const signedIn=await storage.signInWithPassword(address(),secret());
+  if(!signedIn.ok){say(signedIn.error||'That email and password were not accepted.');return;}
+  await startShared();
+ };
  $('sign-in-send').onclick=async()=>{
   if(!address()){say('Enter your work email address.');return;}
   say('Sending…');
   const sent=await storage.signIn(address());
-  say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it above.':(sent.error||'The code could not be sent.'));
+  say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it below.':(sent.error||'The code could not be sent.'));
  };
- $('sign-in-form').onsubmit=async event=>{
-  event.preventDefault();
+ $('sign-in-verify').onclick=async()=>{
   const code=(($('sign-in-code')||{}).value||'').trim();
   if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
   say('Signing in…');

@@ -48,8 +48,15 @@ function create(options={}){
    return data?.user?{id:data.user.id,email:data.user.email}:null;
   },
 
-  // Sign-in is a link or a code sent to the address the person typed. No password is stored
-  // by this application and none is asked for.
+  // A password goes straight to Supabase and is never held by this application: not in its
+  // state, not in storage, not in a log. Supabase's built-in mail is rate-limited and meant
+  // for trying things out, so the code route is the fallback rather than the main way in.
+  async signInWithPassword(email,password){
+   const {data,error}=await client.auth.signInWithPassword({email,password});
+   if(error)return fail(error,'sign-in');
+   return {ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
+  },
+
   async signIn(email){
    const {error}=await client.auth.signInWithOtp({email});
    return error?fail(error,'sign-in'):{ok:true,sent:email};

@@ -54,6 +54,11 @@ function installStandIn(){
   from:builder,
   auth:{
    getUser:async()=>({data:{user},error:null}),
+   signInWithPassword:async({email,password})=>{
+    if(password!=='correct-horse')return {data:null,error:{message:'Invalid login credentials'}};
+    user={id:'user-1',email};
+    return {data:{user},error:null};
+   },
    signInWithOtp:async({email})=>{sent.push(email);return {error:null};},
    verifyOtp:async({email,token})=>{
     if(token!=='123456')return {data:null,error:{message:'Token has expired or is invalid'}};
@@ -86,24 +91,33 @@ function installStandIn(){
   assert.equal(await page.evaluate(()=>ProjectXApp.getAccount()),null);
   assert.ok(!(await page.locator('#app').textContent()).includes('PLANNER'),'no planner chrome over data that was never read');
 
-  // A password is never asked for.
-  assert.equal(await page.locator('input[type="password"]').count(),0,'no password field anywhere on the sign-in screen');
+  // The password is masked and offered as the browser's current password, never as plain text.
+  const passwordField=page.locator('#sign-in-password');
+  assert.equal(await passwordField.getAttribute('type'),'password','the password is masked');
+  assert.equal(await passwordField.getAttribute('autocomplete'),'current-password');
 
-  // A wrong code is refused and changes nothing.
+  // A wrong password is refused and changes nothing.
   await page.locator('#sign-in-email').fill('planner@example.com');
-  await page.locator('#sign-in-send').click();
-  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('sent to'));
-  assert.deepEqual(await page.evaluate(()=>window.__standIn.sentTo()),['planner@example.com']);
-
-  await page.locator('#sign-in-code').fill('000000');
-  await page.locator('#sign-in-verify').click();
-  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('expired or is invalid'));
+  await passwordField.fill('wrong-password');
+  await page.locator('#sign-in-submit').click();
+  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('Invalid login credentials'));
   assert.equal(await page.locator('#sign-in-form').count(),1,'still on the sign-in screen');
   assert.equal(await page.evaluate(()=>ProjectXApp.getAccount()),null);
 
-  // The right code opens the organisation's workspace.
-  await page.locator('#sign-in-code').fill('123456');
+  // The code route is still there for a project whose mail is configured. It is folded away,
+  // because Supabase's built-in mail is rate-limited and not the way most people will get in.
+  assert.equal(await page.locator('details.sign-in-alternative').evaluate(el=>el.open),false,'the code route starts folded');
+  await page.locator('details.sign-in-alternative summary').click();
+  await page.locator('#sign-in-send').click();
+  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('sent to'));
+  assert.deepEqual(await page.evaluate(()=>window.__standIn.sentTo()),['planner@example.com']);
+  await page.locator('#sign-in-code').fill('000000');
   await page.locator('#sign-in-verify').click();
+  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('expired or is invalid'));
+
+  // The right password opens the organisation's workspace.
+  await passwordField.fill('correct-horse');
+  await page.locator('#sign-in-submit').click();
   await page.waitForSelector('#planner-actions:not([hidden])',{timeout:10000});
   const account=await page.evaluate(()=>ProjectXApp.getAccount());
   assert.deepEqual(account,{email:'planner@example.com',organisation:'Exporter'},'the organisation came from membership');
@@ -140,6 +154,15 @@ function installStandIn(){
   assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),null,
    'the shared deployment does not write the prototype key');
 
+  // The password went to the client and nowhere else: not into storage, not into app state.
+  const leaked=await page.evaluate(()=>{
+   const haystack=[...Object.keys(localStorage).map(k=>localStorage.getItem(k)),
+                   ...Object.keys(sessionStorage).map(k=>sessionStorage.getItem(k)),
+                   JSON.stringify(ProjectXApp.getState()),JSON.stringify(ProjectXApp.getAccount())].join('|');
+   return haystack.includes('correct-horse');
+  });
+  assert.equal(leaked,false,'the password is not written to storage or held in the application state');
+
   // Signing out puts the form back and takes the workspace off screen.
   await page.evaluate(()=>ProjectXApp.signOut());
   await page.waitForSelector('#sign-in-form');
@@ -147,6 +170,6 @@ function installStandIn(){
   assert.equal(await page.locator('.workspace-tabs').evaluate(el=>el.hidden),true);
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: shared browser — sign-in gate with no password field, code refused and accepted, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one catalog, and sign-out.');
+  console.log('PASS: shared browser — sign-in gate, wrong password refused, wrong code refused, password accepted and never stored, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one catalog, and sign-out.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

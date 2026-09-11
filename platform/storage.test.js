@@ -60,8 +60,14 @@ function fakeClient(tables={},initialUser={id:'user-1',email:'planner@example.co
   return {data:state.single?(hit[0]||null):hit,error:null};
  }
  const auth={
-  sent:[],verified:[],signedOut:0,
+  sent:[],verified:[],passwordAttempts:[],signedOut:0,
   getUser:async()=>({data:{user},error:null}),
+  signInWithPassword:async({email,password})=>{
+   auth.passwordAttempts.push(email);
+   if(password!=='correct-horse')return {data:null,error:{message:'Invalid login credentials'}};
+   user={id:'user-1',email};
+   return {data:{user},error:null};
+  },
   signInWithOtp:async({email})=>{auth.sent.push(email);return {error:null};},
   verifyOtp:async({email,token})=>{
    auth.verified.push([email,token]);
@@ -372,6 +378,26 @@ test('Signing in sends a code and never asks for a password',async()=>{
  assert.equal(right.ok,true);
  assert.equal(right.user.email,'planner@example.com');
  assert.equal((await storage.ready()).ok,true);
+});
+
+test('A password is checked by Supabase and never held by the adapter',async()=>{
+ const client=fakeClient({},null);
+ const storage=Supabase.create({client});
+
+ const wrong=await storage.signInWithPassword('planner@example.com','hunter2');
+ assert.equal(wrong.ok,false);
+ assert.match(wrong.error,/Invalid login credentials/);
+ assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'},'a wrong password signs nobody in');
+
+ const right=await storage.signInWithPassword('planner@example.com','correct-horse');
+ assert.equal(right.ok,true);
+ assert.equal(right.user.email,'planner@example.com');
+ assert.equal((await storage.ready()).ok,true);
+
+ // The adapter passes the password through and keeps nothing: it is not on the returned
+ // object and not on the adapter itself.
+ assert.ok(!JSON.stringify(right).includes('correct-horse'));
+ assert.ok(!Object.keys(storage).some(k=>String(storage[k]).includes('correct-horse')));
 });
 
 test('Signing out ends the session',async()=>{
