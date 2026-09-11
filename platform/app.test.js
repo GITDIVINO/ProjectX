@@ -244,21 +244,61 @@ test('Section 4 hides routine prompts without accepting an incomplete voyage',()
  const result=boot(JSON.stringify(incomplete)).app.getResult();
  assert.ok(result.errors.includes('Hire rate'),'validation still identifies the missing input');
 });
-test('One quiet line names what the voyage is still waiting for',()=>{
- const s=M.demo();P.ensure(s);s.hire=null;
+test('Section 5 ends with the allocation itself',()=>{
+ const s=M.demo();P.ensure(s);
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
- assert.ok(html.includes('<p class="chain-missing">Voyage not calculated · Hire rate</p>'),'the missing input is named where the result would be');
- assert.ok(!html.includes('Complete the following')&&!html.includes('id="missing"'),'the list that was removed does not come back');
- assert.ok(!html.includes('class="voyage-chain"'),'and it stands in place of the chain, not beside it');
- // Field keys are internal; the line says what the form says.
- const ports=M.demo();P.ensure(ports);ports.ports[1].da=null;ports.ports[1].rate=null;
- const line=boot(JSON.stringify(ports)).elements.get('app').innerHTML.match(/<p class="chain-missing">([^<]*)<\/p>/);
- assert.ok(line,'a port with no DA is named too');
- assert.match(line[1],/Santos: handling rate/);assert.match(line[1],/Santos: DA/);
- assert.ok(!/: da\b/.test(line[1]),'no raw field key reaches the page: '+line[1]);
- // Nothing to say when the voyage computes, or when there is no voyage yet.
- assert.ok(!boot(JSON.stringify(M.demo())).elements.get('app').innerHTML.includes('chain-missing'),'a complete voyage says nothing');
- assert.ok(!boot(null).elements.get('app').innerHTML.includes('chain-missing'),'nor does an empty planner, which already invites a sale');
+ for(const gone of ['Proposed method: leg costs','not the incremental cost of adding a sale','id="calc-allocation"','Calculation sources and notes','data-path="notes"'])
+  assert.ok(!html.includes(gone),gone+' is still printed under the allocation');
+ assert.ok(html.includes('5. Cost by sale')&&html.includes('Allocation method'),'the section and its table are untouched');
+ assert.ok(!fs.readFileSync(__dirname+'/app.js','utf8').includes('allocationCalculation'),'and the builder behind the block is gone, not left unused');
+ // Notes already written stay reachable: the sources of a saved calculation are not swallowed.
+ const written=M.demo();P.ensure(written);written.notes='Pub. 151 distances checked 10.09.2026';
+ const kept=boot(JSON.stringify(written)).elements.get('app').innerHTML;
+ assert.ok(kept.includes('Calculation sources and notes')&&kept.includes('Pub. 151 distances checked'),'the note and its editor are still there');
+});
+test('Additional costs appear with the first item, and nothing is folded around a count of none',()=>{
+ const none=M.demo();P.ensure(none);
+ const html=boot(JSON.stringify(none)).elements.get('app').innerHTML;
+ for(const gone of ['Additional costs and stops (','id="costs"','id="calc-extras"','Canals, additional insurance','Additional total = entered amount'])
+  assert.ok(!html.includes(gone),gone+' is still printed for a voyage with no additional items');
+ // The way to enter the first one is still there, and it is the whole block.
+ assert.match(html,/<button class="inline-action" data-action="add-cost">\+ Add cost or stop<\/button>/);
+ assert.ok(!html.includes('data-path="costs.0.name"'),'no empty row is drawn');
+ // With an item, the table itself is drawn - the money in the budget is visible and editable.
+ const some=M.demo();P.ensure(some);some.costs=[{name:'Kiel Canal',amount:42000,days:.5,burn:2,fuel:'main'}];
+ const {app,elements}=boot(JSON.stringify(some)),withItem=elements.get('app').innerHTML;
+ assert.ok(withItem.includes('<h3>Additional costs and stops</h3>'),'the heading names what the table is');
+ assert.match(withItem,/data-path="costs\.0\.name"[^>]*value="Kiel Canal"/);
+ assert.ok(withItem.includes('data-action="remove-cost"')&&withItem.includes('data-action="add-cost"'),'with its own add and remove');
+ assert.ok(!withItem.includes('id="calc-extras"'),'and still no How calculated');
+ assert.ok(app.getResult().budget.rows.some(r=>r.name.includes('Kiel Canal')),'the item reaches the budget as before');
+});
+test('The calendar column is only there for a call that is handled on a manual calendar',()=>{
+ const shinc=M.demo();P.ensure(shinc);
+ const plain=boot(JSON.stringify(shinc)).elements.get('app').innerHTML;
+ const ports=plain.slice(plain.indexOf('<h3>Ports</h3>'),plain.indexOf('id="portfuel"'));
+ assert.ok(!ports.includes('Calendar, days'),'nothing is headed for a period no call keeps');
+ assert.ok(!ports.includes('.calendar'),'and no field is drawn for it');
+ assert.ok(ports.includes('Handling terms')&&ports.includes('Turn time, h'),'the columns beside it are untouched');
+ assert.equal((ports.match(/<th scope="col">/g)||[]).length,8,'eight columns, one fewer than before');
+ // Choosing the manual calendar brings the field back where it is needed.
+ const manual=M.demo();P.ensure(manual);manual.ports[1].terms='manual';manual.ports[1].calendar=6;
+ const html=boot(JSON.stringify(manual)).elements.get('app').innerHTML;
+ const withCalendar=html.slice(html.indexOf('<h3>Ports</h3>'),html.indexOf('id="portfuel"'));
+ assert.ok(withCalendar.includes('Calendar, days'),'the column is back');
+ assert.match(withCalendar,/data-path="ports\.1\.calendar"[^>]*value="6"/,'with the period of that call');
+ assert.match(withCalendar,/data-path="ports\.0\.calendar"[^>]*disabled/,'while a call on SHINC keeps its cell closed');
+});
+test('Section 4 says nothing where the result would be until the voyage is calculated',()=>{
+ const s=M.demo();P.ensure(s);s.hire=null;s.ports[1].da=null;s.ports[1].rate=null;
+ const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
+ assert.equal(app.getResult().budget,null,'the budget is still refused');
+ for(const gone of ['chain-missing','Voyage not calculated','Complete the following','id="missing"','class="voyage-chain"'])
+  assert.ok(!html.includes(gone),gone+' is still printed in section 4');
+ assert.ok(!fs.readFileSync(__dirname+'/styles.css','utf8').includes('.chain-missing'),'and its style is gone with it');
+ // What each row can measure on its own is still stated.
+ assert.ok(html.includes('<td>25.200</td>'),'the leg still states its days');
+ assert.ok(app.getResult().errors.includes('Hire rate'),'validation still identifies the missing input');
 });
 test('Voyage map folds like Intake Calculator, while distance inputs stay outside',()=>{
  for(const s of [M.initial(),M.demo()]){
@@ -415,9 +455,10 @@ test('ProjectX footer is shared across tabs; calculation controls remain in PLAN
 test('Calculated blocks expose formulas, live values and cent reconciliation',()=>{
  const s=M.demo();s.costs=[{name:'Extra stop',amount:100,days:1,burn:2,fuel:'main'}];
  const {elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
- for(const id of ['extras','totals','allocation'])assert.ok(html.includes('id="calc-'+id+'"'),id);
- for(const gone of ['id="calc-vessel"','id="calc-legs"','id="calc-ports"'])assert.ok(!html.includes(gone),gone+' has no How calculated block');
- for(const text of ['Model cost per tonne','Exact share in cents','Reconciliation:','Remainder correction','24000'])assert.ok(html.includes(text),text);
+ assert.ok(html.includes('id="calc-totals"'),'the totals keep their substitutions');
+ for(const gone of ['id="calc-vessel"','id="calc-legs"','id="calc-ports"','id="calc-extras"','id="calc-allocation"'])assert.ok(!html.includes(gone),gone+' has no How calculated block');
+ for(const text of ['Model cost per tonne','24000'])assert.ok(html.includes(text),text);
+ for(const gone of ['Exact share in cents','Reconciliation:','Remainder correction','Proposed method: leg costs'])assert.ok(!html.includes(gone),gone+' belonged to the allocation block that was removed');
  assert.ok(!html.includes('Break-even, USD/t'));assert.ok(!html.includes('reserves №4'));assert.ok(!html.includes('Tank top: 22'));
 });
 test('Calculation evidence escapes labels and updates when selected stage changes',()=>{
