@@ -49,6 +49,31 @@ The current release passes 201 automated tests. A targeted sales browser check c
 
 The bundled MARKET archive lives in `platform/market.js`. Only the selected published report content was imported; no source inbox files are included. New reports require an explicit content update and rebuild. The application contacts no server for it.
 
+## Hosting
+
+The page needs no server. Opening `index.html`, or the GitHub Pages site, runs the whole
+planner in one browser with `localStorage` — the same as before.
+
+A hosted deployment is prepared but not wired to the interface yet. `tools/build_vercel.cjs`
+assembles `public/` from an explicit list of application files; `vercel.json` sets the build
+command, the output directory and the response headers. Without `SUPABASE_URL` and
+`SUPABASE_ANON_KEY` the build produces the browser-local page, so the site can be deployed
+before any backend exists.
+
+`supabase/migrations/0001_initial_schema.sql` holds the shared schema: reference catalogs per
+organisation, a row per sale, a row per named calculation, and append-only snapshots that pin
+inputs beside the result. Access is decided by row-level policies in the database rather than
+by the page. No request has been made against a live project; the adapter in
+`platform/storage-supabase.js` is covered by tests against a client double.
+
+`platform/app.js` still reads and writes `localStorage` directly. Until it is moved onto the
+storage layer in `platform/storage.js`, setting the environment variables changes nothing that
+a user can see.
+
+A saved calculation used to carry its own copy of the shared registers: 108 KB of catalogs
+around 3 KB of voyage. `platform/schema.js` splits one state into three documents, so the
+catalogs are stored once and a correction to them is not invisible to work already saved.
+
 ## Calculation scope
 
 This is a preliminary vessel cost model, not a certified loading computer or a contractual exporter budget. It does not calculate approved stability, longitudinal strength, port clearance or cargo compatibility.

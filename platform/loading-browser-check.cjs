@@ -27,7 +27,14 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   const patterns=()=>page.evaluate(()=>ProjectXApp.getPlanningResult().loadingPatterns);
   const allocations=()=>page.evaluate(()=>JSON.stringify(ProjectXApp.getState().allocations));
   const stage=()=>page.locator('[data-path="stage"]');
-  const highlighted=()=>page.locator('.hold-review').evaluateAll(els=>els.map(el=>Number(el.dataset.hold)).sort((a,b)=>a-b));
+  // The plan is drawn as two projections, so a flagged hold is marked twice. The set of
+  // flagged holds is what matters, and both views must agree on it.
+  const flaggedIn=scope=>page.locator(scope+' .hold-review').evaluateAll(els=>[...new Set(els.map(el=>Number(el.dataset.hold)))].sort((a,b)=>a-b));
+  const highlighted=async()=>{
+   const profile=await flaggedIn('.ship-profile'),plan=await flaggedIn('.ship:not(.ship-profile)');
+   assert.deepEqual(profile,plan,'the profile and the plan flag the same holds');
+   return profile;
+  };
   const expectedHolds=row=>[...new Set(row.issues.flatMap(issue=>issue.holds))].sort((a,b)=>a-b);
   async function expandStates(){const details=page.locator('#loading-pattern-states');if(!await details.getAttribute('open').then(x=>x!==null))await details.locator('summary').click();}
   function stateRow(key){return page.locator('#loading-pattern-states tr').filter({has:page.locator('[data-action="loading-state"][data-id='+JSON.stringify(key)+']')});}
@@ -61,9 +68,17 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
 
   // Distribution evidence remains legible in print even if its on-screen details were closed.
   if(await page.locator('#loading-pattern-states').getAttribute('open')!==null)await page.locator('#loading-pattern-states summary').click();
-  await page.emulateMedia({media:'print'});assert.equal(await page.locator('#loading-patterns').isVisible(),true);
-  assert.equal(await page.locator('.print-evidence').isVisible(),true);
-  assert.equal(await stateRow(afterDischarge.key).isVisible(),true,'the state warning table is included in print');
+  await page.emulateMedia({media:'print'});
+  // Playwright reports anything inside a closed <details> as not visible, whatever the print
+  // stylesheet does. What decides whether a block reaches the page is that it is laid out, so
+  // the check measures it. A collapsed section that is omitted from print measures 0 x 0.
+  const printed=async locator=>{
+   assert.equal(await locator.count(),1,'the block being checked for print must exist exactly once');
+   return locator.evaluate(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0;});
+  };
+  assert.equal(await printed(page.locator('#loading-patterns')),true);
+  assert.equal(await printed(page.locator('.print-evidence')),true);
+  assert.equal(await printed(stateRow(afterDischarge.key)),true,'the state warning table is included in print');
   assert.match(await stateRow(afterDischarge.key).innerText(),/Departure · Santos/);assert.match(await stateRow(afterDischarge.key).innerText(),/forward|fore/i);
   await page.pdf({path:path.join(out,'loading-patterns.pdf'),format:'A4',printBackground:true});
   await page.emulateMedia({media:'screen'});

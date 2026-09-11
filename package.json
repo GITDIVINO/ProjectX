@@ -1,13 +1,22 @@
 {
   "name": "projectx-voyage-planner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Multi-parcel fertilizer voyage planning prototype",
   "scripts": {
-    "build": "node build.cjs",
     "test": "node --test platform/*.test.js",
+    "build": "node build.cjs",
+    "build:site": "node tools/build_vercel.cjs",
+    "check:build": "node build.cjs && git diff --exit-code -- index.html",
     "test:browser": "node platform/browser-check.cjs index.html"
   },
-  "engines": {"node": ">=22"},
-  "devDependencies": {"playwright": "1.62.1"}
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "optionalDependencies": {
+    "@supabase/supabase-js": "^2.58.0"
+  }
 }

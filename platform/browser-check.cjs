@@ -6,6 +6,9 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
  try{
   const context=await browser.newContext({locale:'en-GB',viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
+  // PLANNER sections and VESSEL profiles are collapsible. Open the cards above a target
+  // before acting on it, so a layout change does not read as a missing control.
+  const reveal=async selector=>page.evaluate(s=>{for(let n=document.querySelector(s);n;n=n.parentElement)if(n.tagName==='DETAILS')n.open=true;},selector);
   await page.goto(pathToFileURL(artifact).href);
   assert.equal(await page.evaluate(()=>!!window.ProjectXApp),true);
   async function scan(){
@@ -58,10 +61,23 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-vessel').click();
   assert.equal(await page.locator('[data-path$=".direction"]').count(),0);
-  assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 2 · 38K'}).count(),1);
-  assert.equal(await page.locator('h2').filter({hasText:'VESSEL · TBN 3 · 57K'}).count(),1);
+  // Three reference profiles are offered. Names follow the VESSEL register, so the check asks
+  // for the profiles by the id the page acts on and states the names it found.
+  assert.equal(await page.locator('[data-action="apply-vessel"]').count(),3);
+  for(const id of ['tbn-1','tbn-2','tbn-3'])assert.equal(await page.locator(`[data-action="apply-vessel"][data-id="${id}"]`).count(),1,`profile ${id} is offered`);
+  // Each profile sits in a collapsed card; open it before acting on it.
+  const tbn2Card=page.locator('details.vessel-card').filter({has:page.locator('[data-action="apply-vessel"][data-id="tbn-2"]')});
+  await tbn2Card.locator('summary').click();
+  // TBN 2 was an incomplete profile when this check was written, so applying it used to fail
+  // with 'Check vessel parameter'. The reference profiles are complete now, so applying one
+  // succeeds and must pin its particulars into the voyage. A profile that is still incomplete
+  // is refused by applyVessel; that case is held by model.test.js.
   await page.locator('[data-action="apply-vessel"][data-id="tbn-2"]').click();
-  assert.match(await page.locator('#status').textContent(),/Check vessel parameter/);
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().vesselId),'tbn-2');
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().vesselSnapshot?.id),'tbn-2','the applied particulars are pinned into the voyage');
+  const tbn1Card=page.locator('details.vessel-card').filter({has:page.locator('[data-action="apply-vessel"][data-id="tbn-1"]')});
+  await tbn1Card.locator('summary').click();
+  await page.locator('[data-action="apply-vessel"][data-id="tbn-1"]').click();
   assert.equal(await page.evaluate(()=>ProjectXApp.getState().vesselId),'tbn-1');
   await page.evaluate(()=>{
    const s=ProjectXApp.getState();delete s.catalogAdditions;
@@ -72,11 +88,18 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   });
   await page.reload();await tabs();
   const migrated=await page.evaluate(()=>ProjectXApp.getState());
-  assert.equal(migrated.portRecords.length,13);assert.equal(migrated.vesselProfiles.length,3);
+  // The reference registers grow as PORT and CARGO research lands, so the check asks the page
+  // what a fresh register holds instead of pinning a number that goes stale unnoticed.
+  const reference=await page.evaluate(()=>{const M=ProjectXModel,s=M.initial();return {ports:s.portRecords.length,
+   // CARGO offers the entries that can actually be planned: bulk, with a planning SF.
+   cargo:s.cargoTypes.filter(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).length};});
+  assert.ok(reference.ports>3,'the reference port register must hold more than the three that were saved');
+  assert.equal(migrated.portRecords.length,reference.ports,'a save with deleted reference ports is restored to the full register');
+  assert.equal(migrated.vesselProfiles.length,3);
   assert.equal(migrated.portRecords[0].terminal,'Saved terminal');
   await page.locator('#tab-planner').click();await page.locator('#save').click();await page.reload();
-  assert.equal(await page.evaluate(()=>ProjectXApp.getState().portRecords.length),13);
-  await page.locator('#tab-cargo').click();assert.equal(await page.locator('[data-catalog-name]').count(),25);
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().portRecords.length),reference.ports);
+  await page.locator('#tab-cargo').click();assert.equal(await page.locator('[data-catalog-name]').count(),reference.cargo,'CARGO lists the whole reference catalog');
   await page.locator('[data-action="new-cargo"]').click();await scan();
   await page.locator('dialog [name="name"]').fill('Audit bulk cargo');await page.locator('dialog [name="sf"]').fill('1.15');
   await page.locator('dialog button[type="submit"]').click();await page.locator('dialog').waitFor({state:'detached'});
@@ -110,16 +133,23 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.reload();await page.locator('[data-action="allocate"]').click();
   const singleCargoCells=page.locator('[data-lot="S1"][data-hold]:not(:disabled)');
   assert.equal(await singleCargoCells.count(),5);assert.equal(await singleCargoCells.evaluateAll(inputs=>inputs.filter(x=>Number(x.value.replace(/,/g,''))>0).length),5);
-  assert.ok(Math.abs(await singleCargoCells.evaluateAll(inputs=>inputs.reduce((n,x)=>n+Number(x.value.replace(/,/g,'')),0))-10000)<.01);
+  // The parcel is conserved in the model; the table prints each hold to 0.1 t, so the visible
+  // sum may differ by the rounding of five cells. Check the arithmetic where it is exact and
+  // the presentation against what the format can carry.
+  assert.equal(await page.evaluate(()=>ProjectXApp.getState().allocations.reduce((n,a)=>n+a.quantity,0)),10000,'the plan conserves the parcel exactly');
+  const shown=await singleCargoCells.evaluateAll(inputs=>inputs.map(x=>Number(x.value.replace(/,/g,''))));
+  assert.ok(Math.abs(shown.reduce((n,x)=>n+x,0)-10000)<=shown.length*0.05,`printed tonnages sum to ${shown.reduce((n,x)=>n+x,0)}`);
+  const stored=await page.evaluate(()=>ProjectXApp.getState().allocations.map(a=>a.quantity));
+  stored.forEach((q,i)=>assert.equal(shown[i],Math.round(q*10)/10,'each hold is printed as its own rounded tonnage'));
   await page.evaluate(()=>{const s=ProjectXApp.getState();s.allocations=[];localStorage.setItem('projectx-current-v2',JSON.stringify(s));});await page.reload();
   const manualCells=page.locator('[data-lot="S1"][data-hold]:not(:disabled)');await manualCells.nth(0).fill('100');await manualCells.nth(1).fill('200');await page.reload();
   // A reloaded cell is printed in the table's format, not as it was typed.
   assert.equal(await page.locator('[data-lot="S1"][data-hold="1"]').inputValue(),'100.0');assert.equal(await page.locator('[data-lot="S1"][data-hold="2"]').inputValue(),'200.0');
   // Input events persist synchronously, even when the user reloads before blur/change.
-  await page.locator('[data-path="hire"]').fill('14789.25');
+  await reveal('[data-path="hire"]');await page.locator('[data-path="hire"]').fill('14789.25');
   await page.reload();assert.equal(await page.locator('[data-path="hire"]').inputValue(),'14789.25');
-  await page.locator('#costs > summary').click();await page.locator('[data-action="add-cost"]').click();
-  await page.locator('[data-path="costs.0.amount"]').fill('4321.75');
+  await reveal('[data-action="add-cost"]');await page.locator('[data-action="add-cost"]').click();
+  await reveal('[data-path="costs.0.amount"]');await page.locator('[data-path="costs.0.amount"]').fill('4321.75');
   await page.reload();assert.equal(await page.locator('[data-path="costs.0.amount"]').inputValue(),'4321.75');
   const firstAllocation=page.locator('[data-lot][data-hold]:not(:disabled)').first();
   await firstAllocation.fill('123.45');await page.reload();
@@ -130,9 +160,14 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.evaluate(()=>{const input=document.createElement('input');input.dataset.path='lots.0.sf';input.type='number';input.value='99';document.getElementById('app').append(input);input.dispatchEvent(new Event('change',{bubbles:true}));});
   assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),beforePropertyEdit);
   assert.match(await page.locator('#status').textContent(),/read-only/);
-  assert.equal(confirmations.length,2);assert.ok(confirmations.every(x=>!/[А-Яа-яЁё]/.test(x)));
+  // One confirmation, for clearing the calculation. Automatic allocation applies the plan
+  // itself and no longer asks first, which app.test.js holds as the intended behaviour.
+  assert.equal(confirmations.length,1);assert.ok(confirmations.every(x=>!/[А-Яа-яЁё]/.test(x)));
   // User-entered text must be preserved, even if it is not English.
-  await page.locator('#notes > summary').click();await page.locator('[data-path="notes"]').fill('User text: Груз клиента');await page.locator('[data-path="notes"]').dispatchEvent('change');await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),'User text: Груз клиента');
+  await page.evaluate(()=>{const s=ProjectXApp.getState();s.notes='seed';localStorage.setItem('projectx-current-v2',JSON.stringify(s));});await page.reload();
+  // The sources editor is shown for a calculation that already carries notes; that is the
+  // intended behaviour, held by app.test.js. Seed a note, then check the text survives.
+  await reveal('[data-path="notes"]');await page.locator('[data-path="notes"]').fill('User text: Груз клиента');await page.locator('[data-path="notes"]').dispatchEvent('change');await page.locator('#save').click();await page.reload();assert.equal(await page.evaluate(()=>ProjectXApp.getState().notes),'User text: Груз клиента');
   assert.deepEqual(errors,[]);
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2','broken'));await page.reload();assert.match(await page.locator('#status').innerText(),/backup was restored/);assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);

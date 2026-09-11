@@ -17,6 +17,11 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.equal(await page.locator('#missing').count(),0);
   assert.equal(await page.evaluate(()=>ProjectXApp.getResult().budget),null);
   assert.ok(await page.evaluate(()=>ProjectXApp.getResult().errors.includes('Hire rate')));
+  // The distances table sits in a fold that starts closed. Open it the way a reader would,
+  // then check it is on the page: Playwright treats anything inside a closed <details> as
+  // hidden regardless of how the fold is styled.
+  const reveal=async selector=>page.evaluate(s=>{for(let n=document.querySelector(s);n;n=n.parentElement)if(n.tagName==='DETAILS')n.open=true;},selector);
+  await reveal('.sea-distances');
   assert.ok(await page.locator('.sea-distances').isVisible());
   const before=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));
   await summary.focus();await page.keyboard.press('Enter');
@@ -33,7 +38,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   await page.waitForFunction(()=>document.querySelector('#voyage-map').open);
   assert.equal(await svg.getAttribute('viewBox'),zoomedBox);
   assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),before,'folding and zooming do not alter the voyage');
-  await page.locator('[data-path="hire"]').fill('12000');
+  await reveal('[data-path="hire"]');await page.locator('[data-path="hire"]').fill('12000');
   await page.locator('[data-path="hire"]').blur();
   assert.equal(await panel.evaluate(el=>el.open),true,'normal recalculation preserves the open panel');
   assert.ok(await page.locator('.voyage-chain').isVisible());
@@ -41,7 +46,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.getByRole('button',{name:'Fit the voyage',exact:true}).click();await fitted();
   await summary.click();
-  await page.locator('[data-path="hire"]').fill('13000');await page.locator('[data-path="hire"]').blur();
+  await reveal('[data-path="hire"]');await page.locator('[data-path="hire"]').fill('13000');await page.locator('[data-path="hire"]').blur();
   assert.equal(await panel.evaluate(el=>el.open),false,'recalculation also preserves the closed panel');
   await page.reload();assert.equal(await panel.evaluate(el=>el.open),false);
   await page.evaluate(()=>localStorage.setItem('projectx-current-v2',JSON.stringify(ProjectXModel.initial())));

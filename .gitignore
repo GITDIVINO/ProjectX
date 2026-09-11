@@ -1,7 +1,15 @@
 .DS_Store
 node_modules/
+tmp/
+coverage/
+*.log
+
+# A deployment key must never be committed to a public repository.
 .env
 .env.*
-*.log
+
+# Built artefacts: the published page is index.html at the root; platform/ProjectX.html is
+# the intermediate it is copied from, and public/ is assembled on every deploy.
 platform/ProjectX.html
-coverage/
+public/
+package-lock.json

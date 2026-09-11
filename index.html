@@ -79,7 +79,7 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 @media(max-width:600px){.market-filters{flex-direction:column;gap:12px}.market-filters .field{max-width:none}.market-report-title h3{font-size:21px}.market-basins{gap:16px}.site-header .workspace-tabs button{flex:1 0 auto;padding:12px 7px;font-size:10px;letter-spacing:.06em}}
 @media screen{body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}body>main{flex:1 0 auto;width:100%;margin:0 auto}body>.site-header,body>.projectx-footer{flex-shrink:0}}
 @media(max-width:480px){dialog .grid{grid-template-columns:minmax(0,1fr)}.planner-actions{flex-wrap:wrap}.heading{flex-wrap:wrap}.vessel-choice .field{min-width:0}}
-@media print{.site-header .workspace-tabs,.planner-actions,.projectx-footer{display:none!important}.site-header{position:static;padding-bottom:8px;background:#fff;color:#000;break-after:avoid}section{break-inside:avoid-page}.table-wrap{overflow:visible}details:not([open])>*:not(summary){display:block}}
+@media print{.site-header .workspace-tabs,.planner-actions,.projectx-footer{display:none!important}.site-header{position:static;padding-bottom:8px;background:#fff;color:#000;break-after:avoid}section{break-inside:avoid-page}.table-wrap{overflow:visible}details:not([open])>*:not(summary){display:block;content-visibility:visible}}
 
 
 
@@ -14296,6 +14296,400 @@ function create(env){
  return {draw,section3,printEvidence,motionSnapshot,animate,refresh,action};
 }
 const api={create};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlannerUI=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// One in-memory state, three stored documents.
+//
+// Audit finding P-03: a saved calculation is 96 % a private copy of the shared reference
+// catalogs (108 KB of catalogs around 4 KB of voyage). Storing that shape in a shared
+// database would duplicate the catalog per calculation and would leave a catalog correction
+// invisible to every calculation already saved.
+//
+// split() and merge() are the single place that decides which key belongs to which document.
+// Every key the model adds later falls to the voyage unless it is named below, so a new field
+// is never silently published into shared organisation data.
+
+// Shared across the organisation. Slowly changing, edited in CARGO / PORT / VESSEL.
+const CATALOG_KEYS=[
+ 'cargoTypes',            // reference cargo register with planning SF and IMSBC group
+ 'portRecords',           // port and berth register with published size limits
+ 'vesselProfiles',        // editable vessel particulars
+ 'importedCargoSeeds',    // one-off import markers, kept with the catalog they seeded
+ 'catalogAdditions',
+ 'portProfileRevision',
+ 'portBerthRevision',
+ 'tbnSourceRevision'
+];
+
+// Concluded deals. Organisation-wide, but their own register: a sale outlives any one voyage.
+const SALES_KEYS=['sales'];
+
+// Everything else is the voyage document, including vesselSnapshot: the particulars pinned
+// into this calculation stay with the calculation and are not re-read from the catalog.
+const copy=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
+
+function split(state){
+ const catalogs={},sales={},voyage={};
+ for(const key of Object.keys(state)){
+  const target=CATALOG_KEYS.includes(key)?catalogs:SALES_KEYS.includes(key)?sales:voyage;
+  target[key]=copy(state[key]);
+ }
+ return {catalogs,sales,voyage};
+}
+
+function merge(parts){
+ const {catalogs={},sales={},voyage={}}=parts||{};
+ return {...copy(voyage),...copy(catalogs),...copy(sales)};
+}
+
+// Bytes each document contributes, so the split stays measurable instead of asserted.
+function sizes(state){
+ const parts=split(state),measure=x=>JSON.stringify(x).length;
+ return {
+  catalogs:measure(parts.catalogs),
+  sales:measure(parts.sales),
+  voyage:measure(parts.voyage),
+  total:measure(state)
+ };
+}
+
+// A voyage is planned against one revision of the catalogs. Storing the revision with the
+// voyage is what lets a later catalog correction be detected rather than applied silently.
+function stamp(voyage,catalogRevision){return {...copy(voyage),catalogRevision};}
+
+const api={CATALOG_KEYS,SALES_KEYS,split,merge,sizes,stamp};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSchema=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// Browser-local adapter. Same durability as the current prototype — one browser, one origin —
+// but in the split layout, behind the shared asynchronous contract so that swapping in the
+// Supabase adapter is a configuration change and not a rewrite.
+
+const Schema=typeof module!=='undefined'&&module.exports?require('./schema'):root.ProjectXSchema;
+
+const CATALOG_KEY='projectx-catalogs-v3';
+const SALES_KEY='projectx-sales-v3';
+const INDEX_KEY='projectx-voyages-v3';
+const VOYAGE_PREFIX='projectx-voyage-v3:';
+const LEGACY_KEY='projectx-current-v2';   // the prototype's single save; never deleted here
+
+const now=()=>new Date().toISOString();
+const id=()=>'v-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+
+function create(options={}){
+ const store=options.store||(typeof localStorage!=='undefined'?localStorage:null);
+ if(!store)throw Error('No storage backend available');
+
+ const read=key=>{const raw=store.getItem(key);if(raw===null||raw===undefined)return null;return JSON.parse(raw);};
+ const write=(key,value)=>store.setItem(key,JSON.stringify(value));
+
+ // The prototype's single save carries catalogs and voyage together. Move it into the split
+ // layout once, keeping the original key so an older build still opens the same calculation.
+ function migrateLegacy(){
+  if(read(INDEX_KEY))return false;
+  const legacy=store.getItem(LEGACY_KEY);
+  if(!legacy)return false;
+  let state;
+  try{state=JSON.parse(legacy);}catch{return false;}
+  if(!state||typeof state!=='object')return false;
+  const parts=Schema.split(state);
+  write(CATALOG_KEY,{document:parts.catalogs,revision:1,updatedAt:now()});
+  const sales={};
+  for(const sale of parts.sales.sales||[])if(sale&&sale.id)sales[sale.id]={document:sale,revision:1,updatedAt:now()};
+  write(SALES_KEY,sales);
+  const voyageId=id();
+  write(VOYAGE_PREFIX+voyageId,Schema.stamp(parts.voyage,1));
+  write(INDEX_KEY,[{id:voyageId,name:'Imported calculation',revision:1,catalogRevision:1,updatedAt:now()}]);
+  return true;
+ }
+
+ const index=()=>read(INDEX_KEY)||[];
+ const entry=voyageId=>index().find(x=>x.id===voyageId)||null;
+
+ return {
+  kind:'local',
+  shared:false,
+  async ready(){migrateLegacy();return {kind:'local',user:null};},
+  async user(){return null;},
+
+  async loadCatalogs(){
+   migrateLegacy();
+   return read(CATALOG_KEY)||{document:{},revision:0,updatedAt:null};
+  },
+  async saveCatalogs(document,revision){
+   const current=read(CATALOG_KEY)||{document:{},revision:0};
+   if(revision!==undefined&&revision!==current.revision)return {ok:false,reason:'conflict',current};
+   const next={document,revision:current.revision+1,updatedAt:now()};
+   write(CATALOG_KEY,next);
+   return {ok:true,revision:next.revision,updatedAt:next.updatedAt};
+  },
+
+  // Sales are one row per deal, so two traders editing different deals do not collide.
+  async listSales(){
+   migrateLegacy();
+   const sales=read(SALES_KEY)||{};
+   return Object.entries(sales).map(([saleId,x])=>({id:saleId,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
+  },
+  async saveSale(saleId,document,revision){
+   const sales=read(SALES_KEY)||{};
+   const current=sales[saleId];
+   if(current&&revision!==undefined&&revision!==current.revision)return {ok:false,reason:'conflict',current:{id:saleId,...current}};
+   const next={document,revision:(current?.revision||0)+1,updatedAt:now()};
+   write(SALES_KEY,{...sales,[saleId]:next});
+   return {ok:true,id:saleId,revision:next.revision,updatedAt:next.updatedAt};
+  },
+  async deleteSale(saleId){
+   const sales=read(SALES_KEY)||{};
+   if(!sales[saleId])return {ok:false,reason:'missing'};
+   delete sales[saleId];
+   write(SALES_KEY,sales);
+   return {ok:true};
+  },
+
+  async listVoyages(){migrateLegacy();return index();},
+  async loadVoyage(voyageId){
+   const meta=entry(voyageId);
+   if(!meta)return null;
+   const document=read(VOYAGE_PREFIX+voyageId);
+   if(!document)return null;
+   return {...meta,document};
+  },
+  async createVoyage(name,document,catalogRevision=0){
+   const voyageId=id();
+   const meta={id:voyageId,name,revision:1,catalogRevision,updatedAt:now()};
+   write(VOYAGE_PREFIX+voyageId,document);
+   write(INDEX_KEY,[...index(),meta]);
+   return {ok:true,...meta};
+  },
+  async saveVoyage(voyageId,document,revision){
+   const meta=entry(voyageId);
+   if(!meta)return {ok:false,reason:'missing'};
+   if(revision!==undefined&&revision!==meta.revision)return {ok:false,reason:'conflict',current:meta};
+   const next={...meta,revision:meta.revision+1,updatedAt:now()};
+   write(VOYAGE_PREFIX+voyageId,document);
+   write(INDEX_KEY,index().map(x=>x.id===voyageId?next:x));
+   return {ok:true,...next};
+  },
+  async renameVoyage(voyageId,name){
+   const meta=entry(voyageId);
+   if(!meta)return {ok:false,reason:'missing'};
+   write(INDEX_KEY,index().map(x=>x.id===voyageId?{...x,name,updatedAt:now()}:x));
+   return {ok:true,id:voyageId,name};
+  },
+  async deleteVoyage(voyageId){
+   if(!entry(voyageId))return {ok:false,reason:'missing'};
+   store.removeItem(VOYAGE_PREFIX+voyageId);
+   write(INDEX_KEY,index().filter(x=>x.id!==voyageId));
+   return {ok:true};
+  },
+
+  // A snapshot pins inputs so a later engine or catalog version cannot restate an approved
+  // package. Locally this is a copy; the shared adapter writes an append-only row.
+  async snapshot(voyageId,label){
+   const loaded=await this.loadVoyage(voyageId);
+   if(!loaded)return {ok:false,reason:'missing'};
+   const catalogs=await this.loadCatalogs();
+   const key=VOYAGE_PREFIX+voyageId+':snapshots';
+   const list=read(key)||[];
+   const record={label:label||'',revision:loaded.revision,createdAt:now(),document:loaded.document,catalogs:catalogs.document,catalogRevision:catalogs.revision};
+   write(key,[...list,record]);
+   return {ok:true,...record};
+  },
+  async snapshots(voyageId){return read(VOYAGE_PREFIX+voyageId+':snapshots')||[];}
+ };
+}
+
+const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageLocal=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// Shared adapter over Supabase Postgres. The client is injected rather than constructed here,
+// so the query shapes, the concurrency rule and the error handling are testable without a
+// project, a network or a key. See supabase/migrations for the tables and the row-level
+// policies these calls rely on.
+//
+// Access is enforced by the policies in the database, not by this file. Nothing here is a
+// permission check: an adapter that forgot a filter would still be refused by the server.
+
+const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots'};
+
+const fail=(error,reason='error')=>({ok:false,reason,error:error?.message||String(error||'Unknown storage error')});
+
+function create(options={}){
+ const client=options.client;
+ if(!client)throw Error('A Supabase client is required');
+ const orgId=options.orgId||null;
+
+ // Every read and write is scoped to one organisation. The policies repeat this server-side;
+ // the filter here keeps a wrong-org row from being requested in the first place.
+ const scoped=table=>client.from(table);
+ const withOrg=q=>orgId?q.eq('org_id',orgId):q;
+
+ return {
+  kind:'supabase',
+  shared:true,
+  orgId,
+
+  async ready(){
+   const {data,error}=await client.auth.getUser();
+   if(error)return fail(error,'auth');
+   if(!data?.user)return {ok:false,reason:'signed-out'};
+   return {ok:true,kind:'supabase',user:{id:data.user.id,email:data.user.email}};
+  },
+  async user(){
+   const {data}=await client.auth.getUser();
+   return data?.user?{id:data.user.id,email:data.user.email}:null;
+  },
+
+  async loadCatalogs(){
+   const {data,error}=await withOrg(scoped(TABLES.catalogs).select('document,revision,updated_at')).maybeSingle();
+   if(error)return fail(error);
+   if(!data)return {document:{},revision:0,updatedAt:null};
+   return {document:data.document,revision:data.revision,updatedAt:data.updated_at};
+  },
+  // Optimistic concurrency: the update matches on the revision the caller read. No matched row
+  // means somebody else wrote first, and the caller is handed the current record to resolve.
+  async saveCatalogs(document,revision){
+   const {data,error}=await withOrg(
+    scoped(TABLES.catalogs).update({document,revision:revision+1}).eq('revision',revision)
+   ).select('revision,updated_at').maybeSingle();
+   if(error)return fail(error);
+   if(!data){
+    const current=await this.loadCatalogs();
+    return {ok:false,reason:'conflict',current};
+   }
+   return {ok:true,revision:data.revision,updatedAt:data.updated_at};
+  },
+
+  // Sales are one row per deal, so two traders editing different deals do not collide.
+  async listSales(){
+   const {data,error}=await withOrg(scoped(TABLES.sales).select('id,document,revision,updated_at'))
+    .order('updated_at',{ascending:false});
+   if(error)return fail(error);
+   return (data||[]).map(x=>({id:x.id,document:x.document,revision:x.revision,updatedAt:x.updated_at}));
+  },
+  async saveSale(saleId,document,revision){
+   if(revision===undefined||revision===0){
+    const row={id:saleId,document,revision:1};
+    if(orgId)row.org_id=orgId;
+    const {data,error}=await scoped(TABLES.sales).insert(row).select('id,revision,updated_at').maybeSingle();
+    if(error)return fail(error);
+    return {ok:true,id:data.id,revision:data.revision,updatedAt:data.updated_at};
+   }
+   const {data,error}=await withOrg(
+    scoped(TABLES.sales).update({document,revision:revision+1}).eq('id',saleId).eq('revision',revision)
+   ).select('id,revision,updated_at').maybeSingle();
+   if(error)return fail(error);
+   if(!data){
+    const all=await this.listSales();
+    const current=Array.isArray(all)?all.find(x=>x.id===saleId):null;
+    return current?{ok:false,reason:'conflict',current}:{ok:false,reason:'missing'};
+   }
+   return {ok:true,id:data.id,revision:data.revision,updatedAt:data.updated_at};
+  },
+  async deleteSale(saleId){
+   const {error}=await withOrg(scoped(TABLES.sales).delete().eq('id',saleId));
+   return error?fail(error):{ok:true};
+  },
+
+  async listVoyages(){
+   const {data,error}=await withOrg(scoped(TABLES.voyages).select('id,name,revision,catalog_revision,updated_at'))
+    .order('updated_at',{ascending:false});
+   if(error)return fail(error);
+   return (data||[]).map(x=>({id:x.id,name:x.name,revision:x.revision,catalogRevision:x.catalog_revision,updatedAt:x.updated_at}));
+  },
+  async loadVoyage(voyageId){
+   const {data,error}=await withOrg(scoped(TABLES.voyages).select('id,name,document,revision,catalog_revision,updated_at').eq('id',voyageId)).maybeSingle();
+   if(error)return fail(error);
+   if(!data)return null;
+   return {id:data.id,name:data.name,document:data.document,revision:data.revision,catalogRevision:data.catalog_revision,updatedAt:data.updated_at};
+  },
+  async createVoyage(name,document,catalogRevision=0){
+   const row={name,document,revision:1,catalog_revision:catalogRevision};
+   if(orgId)row.org_id=orgId;
+   const {data,error}=await scoped(TABLES.voyages).insert(row).select('id,name,revision,catalog_revision,updated_at').maybeSingle();
+   if(error)return fail(error);
+   return {ok:true,id:data.id,name:data.name,revision:data.revision,catalogRevision:data.catalog_revision,updatedAt:data.updated_at};
+  },
+  async saveVoyage(voyageId,document,revision){
+   const {data,error}=await withOrg(
+    scoped(TABLES.voyages).update({document,revision:revision+1}).eq('id',voyageId).eq('revision',revision)
+   ).select('id,name,revision,catalog_revision,updated_at').maybeSingle();
+   if(error)return fail(error);
+   if(!data){
+    const current=await this.loadVoyage(voyageId);
+    return current?{ok:false,reason:'conflict',current}:{ok:false,reason:'missing'};
+   }
+   return {ok:true,id:data.id,name:data.name,revision:data.revision,catalogRevision:data.catalog_revision,updatedAt:data.updated_at};
+  },
+  async renameVoyage(voyageId,name){
+   const {data,error}=await withOrg(scoped(TABLES.voyages).update({name}).eq('id',voyageId)).select('id,name').maybeSingle();
+   if(error)return fail(error);
+   return data?{ok:true,id:data.id,name:data.name}:{ok:false,reason:'missing'};
+  },
+  async deleteVoyage(voyageId){
+   const {error}=await withOrg(scoped(TABLES.voyages).delete().eq('id',voyageId));
+   return error?fail(error):{ok:true};
+  },
+
+  // Snapshots are append-only by policy: there is no update or delete path for them here,
+  // because an approved package must not be restated by a later engine or catalog version.
+  async snapshot(voyageId,label){
+   const loaded=await this.loadVoyage(voyageId);
+   if(!loaded)return {ok:false,reason:'missing'};
+   const catalogs=await this.loadCatalogs();
+   const row={voyage_id:voyageId,label:label||'',revision:loaded.revision,document:loaded.document,
+    catalogs:catalogs.document,catalog_revision:catalogs.revision};
+   if(orgId)row.org_id=orgId;
+   const {data,error}=await scoped(TABLES.snapshots).insert(row).select('id,label,revision,created_at').maybeSingle();
+   if(error)return fail(error);
+   return {ok:true,id:data.id,label:data.label,revision:data.revision,createdAt:data.created_at};
+  },
+  async snapshots(voyageId){
+   const {data,error}=await withOrg(scoped(TABLES.snapshots).select('id,label,revision,created_at').eq('voyage_id',voyageId))
+    .order('created_at',{ascending:false});
+   if(error)return fail(error);
+   return (data||[]).map(x=>({id:x.id,label:x.label,revision:x.revision,createdAt:x.created_at}));
+  }
+ };
+}
+
+const api={create,TABLES};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageSupabase=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// Chooses the storage adapter. The application asks for storage; it does not know which one
+// it got. Without configuration the browser-local adapter is used and behaviour is the
+// prototype's: one browser, one origin, no account.
+
+const Local=typeof module!=='undefined'&&module.exports?require('./storage-local'):root.ProjectXStorageLocal;
+const Supabase=typeof module!=='undefined'&&module.exports?require('./storage-supabase'):root.ProjectXStorageSupabase;
+
+// Configuration reaches the page as a plain object written by the deployment, not as a build
+// step: window.PROJECTX_CONFIG = {supabaseUrl, supabaseAnonKey, orgId}. The anon key is a
+// public value by design — every row it can reach is decided by the policies in the database.
+function configured(config){
+ return !!(config&&config.supabaseUrl&&config.supabaseAnonKey);
+}
+
+function create(options={}){
+ const config=options.config||(typeof root!=='undefined'?root.PROJECTX_CONFIG:null);
+ if(options.client)return Supabase.create({client:options.client,orgId:options.orgId||config?.orgId||null});
+ if(configured(config)){
+  const factory=options.createClient||root.supabase?.createClient;
+  if(!factory)return {...Local.create(options),degraded:'The Supabase client library did not load; working in this browser only.'};
+  const client=factory(config.supabaseUrl,config.supabaseAnonKey);
+  return Supabase.create({client,orgId:options.orgId||config.orgId||null});
+ }
+ return Local.create(options);
+}
+
+const api={create,configured};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorage=api;
 })(globalThis);
 </script><script>(function(){
 'use strict';
