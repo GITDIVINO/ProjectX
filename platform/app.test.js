@@ -93,7 +93,7 @@ test('Section 4 draws the voyage and proposes a distance for every leg',()=>{
  assert.ok(html.includes('class="voyage-map"'),'the map is drawn');
  assert.equal((html.match(/class="sea-track/g)||[]).length,2,'one track per leg of the demo rotation');
  assert.ok(html.includes('sea-track-doubtful'),'the coastal leg is drawn differently');
- assert.ok(html.indexOf('class="voyage-map"')<html.indexOf('<h3>Legs</h3>'),'the map sits above the legs it measures');
+ assert.ok(html.indexOf('class="voyage-map"')<html.indexOf('id="voyage-legs"'),'the map sits above the legs it measures');
  assert.ok(html.includes('sea-distances'),'the distances are listed with their source');
  assert.ok(html.includes('>Entered<'),'a distance already in the file keeps governing');
  assert.ok(!html.includes('A leg takes the distance')&&!html.includes('Neither is a passage plan'),'the explanatory paragraph below the distance table is removed');
@@ -195,7 +195,7 @@ test('The legs and ports tables stand on their own, without an explanation or a 
   assert.ok(html.includes('<details id="portfuel">'),'the port fuel block is not what was removed');
  }
  const {app,elements}=boot(JSON.stringify(M.demo())),html=elements.get('app').innerHTML;
- assert.ok(html.includes('<h3>Legs</h3>')&&html.includes('data-path="legs.0.distance"'),'the table itself is untouched');
+ assert.ok(html.includes('id="voyage-legs"')&&html.includes('data-path="legs.0.distance"'),'the table itself is untouched');
  assert.ok(app.getResult().budget.trace.legs.length>0&&app.getResult().budget.trace.ports.length>0,'and the evidence stays in the result the audit reads');
 });
 test('A leg and a call state their days before the rest of the voyage is complete',()=>{
@@ -203,14 +203,14 @@ test('A leg and a call state their days before the rest of the voyage is complet
  const s=M.demo();P.ensure(s);s.hire=null;s.prices={main:null,eca:null,aux:null};s.ports[1].da=null;
  const {app,elements}=boot(JSON.stringify(s)),html=elements.get('app').innerHTML;
  assert.equal(app.getResult().budget,null,'the budget is still refused');
- const legs=html.slice(html.indexOf('<h3>Legs</h3>'),html.indexOf('<h3>Ports</h3>'));
+ const legs=html.slice(html.indexOf('id="voyage-legs"'),html.indexOf('id="voyage-ports"'));
  assert.ok(legs.includes('<td>25.200</td>'),'7,200 nm at 12.5 kn with 5 % weather is 25.200 days');
- const ports=html.slice(html.indexOf('<h3>Ports</h3>'));
+ const ports=html.slice(html.indexOf('id="voyage-ports"'));
  assert.ok(ports.includes('<td>3.750</td>'),'and the call with no DA still states its own time');
  // An incomplete row of its own says nothing rather than guessing.
  const partial=M.demo();P.ensure(partial);partial.legs[0].speed=null;partial.ports[0].rate=null;
  const empty=boot(JSON.stringify(partial)).elements.get('app').innerHTML;
- const emptyLegs=empty.slice(empty.indexOf('<h3>Legs</h3>'),empty.indexOf('<h3>Ports</h3>'));
+ const emptyLegs=empty.slice(empty.indexOf('id="voyage-legs"'),empty.indexOf('id="voyage-ports"'));
  assert.ok(emptyLegs.includes('<td>—</td>'),'a leg with no speed has no time');
  assert.equal(M.legDays(partial.legs[0]),null);assert.equal(M.portDays(partial,partial.ports[0]),null);
  // The figure a complete voyage prints is the same one the budget carries.
@@ -223,7 +223,7 @@ test('Section 4 opens with a chain whose parts add up to the result it states',(
  const {app,elements}=boot(JSON.stringify(s));
  const html=elements.get('app').innerHTML,b=app.getResult().budget;
  assert.ok(html.includes('class="voyage-chain"'),'the chain is the first thing in section 4');
- assert.ok(html.indexOf('voyage-chain')<html.indexOf('<h3>Legs</h3>'),'it stands above the tables it summarises');
+ assert.ok(html.indexOf('voyage-chain')<html.indexOf('id="voyage-legs"'),'it stands above the tables it summarises');
  for(const name of ['Voyage time','Model cost','Cost per tonne','Net revenue','Result after hire','TCE before hire','Freight to cover cost'])
   assert.ok(html.includes('>'+name+'<'),name+' is missing from the chain');
  // Every part printed beside a result must be the result: the chain may not merely look like arithmetic.
@@ -243,6 +243,28 @@ test('Section 4 hides routine prompts without accepting an incomplete voyage',()
  }
  const result=boot(JSON.stringify(incomplete)).app.getResult();
  assert.ok(result.errors.includes('Hire rate'),'validation still identifies the missing input');
+});
+test('Section 4 is a stack of folds, each carrying its own result on the summary line',()=>{
+ const s=M.demo();P.ensure(s);s.ballastEnabled=true;s.deliveryPort='Murmansk';Object.assign(s.ballast,{eca:0,aux:0});
+ const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
+ const folds=[...html.matchAll(/<details id="(voyage-[a-z]+)" class="fold"><summary><strong>([^<]*)<\/strong><span>(.*?)<\/span>/g)].map(m=>[m[1],m[2],m[3]]);
+ assert.deepEqual(folds.map(f=>f[0]),['voyage-distances','voyage-legs','voyage-ports','voyage-money'],'four blocks, in the order they are worked');
+ assert.deepEqual(folds.map(f=>f[1]),['Distances','Legs','Ports','Hire, bunkers and freight']);
+ assert.match(folds[1][2],/3 legs · [\d,]+ NM · <strong>[\d.]+ days at sea<\/strong>/,'the legs line counts the ballast approach with them');
+ assert.match(folds[2][2],/3 calls · DA [\d,]+ USD · <strong>[\d.]+ days in port<\/strong>/);
+ assert.match(folds[3][2],/Hire 13,500 USD\/day · Main fuel 540 USD\/t · Freight 50.00 USD\/t/);
+ // The working fields are inside their own fold, not loose in the section.
+ for(const [id,marker] of [['voyage-legs','data-path="legs.0.distance"'],['voyage-ports','data-path="ports.0.rate"'],['voyage-money','data-path="hire"']]){
+  const start=html.indexOf('id="'+id+'"'),end=html.indexOf('</details>',html.indexOf('fold-body',start));
+  assert.ok(html.indexOf(marker)>start&&html.indexOf(marker)<end,marker+' is not inside '+id);
+ }
+ // An incomplete voyage still states what each block knows rather than nothing.
+ const partial=M.demo();P.ensure(partial);partial.hire=null;partial.ports[0].rate=null;
+ const rough=boot(JSON.stringify(partial)).elements.get('app').innerHTML;
+ const lines=[...rough.matchAll(/<details id="voyage-([a-z]+)" class="fold"><summary><strong>[^<]*<\/strong><span>(.*?)<\/span>/g)].map(m=>[m[1],m[2]]);
+ assert.match(lines.find(l=>l[0]==='legs')[1],/days at sea/,'the legs are complete, so their time is stated');
+ assert.match(lines.find(l=>l[0]==='ports')[1],/DA [\d,]+ USD · <strong>—<\/strong>/,'one call without a rate makes the total unknown rather than partial');
+ assert.match(lines.find(l=>l[0]==='money')[1],/Hire —/,'and the missing hire is named as missing, not as zero');
 });
 test('Section 5 ends with the allocation itself',()=>{
  const s=M.demo();P.ensure(s);
@@ -276,7 +298,7 @@ test('Additional costs appear with the first item, and nothing is folded around 
 test('The calendar column is only there for a call that is handled on a manual calendar',()=>{
  const shinc=M.demo();P.ensure(shinc);
  const plain=boot(JSON.stringify(shinc)).elements.get('app').innerHTML;
- const ports=plain.slice(plain.indexOf('<h3>Ports</h3>'),plain.indexOf('id="portfuel"'));
+ const ports=plain.slice(plain.indexOf('id="voyage-ports"'),plain.indexOf('id="portfuel"'));
  assert.ok(!ports.includes('Calendar, days'),'nothing is headed for a period no call keeps');
  assert.ok(!ports.includes('.calendar'),'and no field is drawn for it');
  assert.ok(ports.includes('Handling terms')&&ports.includes('Turn time, h'),'the columns beside it are untouched');
@@ -284,7 +306,7 @@ test('The calendar column is only there for a call that is handled on a manual c
  // Choosing the manual calendar brings the field back where it is needed.
  const manual=M.demo();P.ensure(manual);manual.ports[1].terms='manual';manual.ports[1].calendar=6;
  const html=boot(JSON.stringify(manual)).elements.get('app').innerHTML;
- const withCalendar=html.slice(html.indexOf('<h3>Ports</h3>'),html.indexOf('id="portfuel"'));
+ const withCalendar=html.slice(html.indexOf('id="voyage-ports"'),html.indexOf('id="portfuel"'));
  assert.ok(withCalendar.includes('Calendar, days'),'the column is back');
  assert.match(withCalendar,/data-path="ports\.1\.calendar"[^>]*value="6"/,'with the period of that call');
  assert.match(withCalendar,/data-path="ports\.0\.calendar"[^>]*disabled/,'while a call on SHINC keeps its cell closed');
@@ -305,7 +327,7 @@ test('Voyage map folds like Intake Calculator, while distance inputs stay outsid
   const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
   assert.match(html,/<details id="voyage-map" class="fold"><summary><strong>Voyage map<\/strong><\/summary><div class="fold-body">/);
   const start=html.indexOf('<details id="voyage-map"'),end=html.indexOf('</details>',start);
-  assert.ok(end<html.indexOf('<h3>Legs</h3>'),'working leg fields do not fold with the map');
+  assert.ok(end<html.indexOf('id="voyage-legs"'),'the legs fold stands beside the map, not inside it');
   if(s.lots.length){assert.ok(html.indexOf('class="voyage-map"')<end);assert.ok(html.indexOf('class="sea-distances"')>end);}
  }
 });
