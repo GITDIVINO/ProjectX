@@ -31,11 +31,22 @@ const CLIENT_CANDIDATES=[
 ];
 
 function config(env){
- const url=env.SUPABASE_URL||'';
- const key=env.SUPABASE_ANON_KEY||'';
- const org=env.PROJECTX_ORG_ID||'';
+ // Vercel's own Supabase integration writes NEXT_PUBLIC_SUPABASE_*, and Supabase has two
+ // generations of browser key: the legacy anon JWT and the newer publishable key. Accept
+ // every spelling rather than making the deployment rename what an integration just set.
+ const first=(...names)=>{for(const name of names){const value=env[name];if(value)return String(value).trim();}return '';};
+ const url=first('SUPABASE_URL','NEXT_PUBLIC_SUPABASE_URL','VITE_SUPABASE_URL');
+ const key=first('SUPABASE_ANON_KEY','SUPABASE_PUBLISHABLE_KEY',
+                 'NEXT_PUBLIC_SUPABASE_ANON_KEY','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+                 'VITE_SUPABASE_ANON_KEY');
+ const org=first('PROJECTX_ORG_ID','NEXT_PUBLIC_PROJECTX_ORG_ID');
  if(!url||!key)return null;
- if(/service_role/.test(key))throw Error('SUPABASE_ANON_KEY looks like a service role key. That key must never reach the browser.');
+
+ // The browser key is public by design. The secret one is not, and it must never be built
+ // into a page: both the legacy service_role JWT and the newer sb_secret_ form are refused.
+ if(/service_role/.test(key)||/^sb_secret_/.test(key))
+  throw Error('The Supabase key looks like a secret key. Use the anon or publishable key; a secret key must never reach the browser.');
+ if(!/^https:\/\//.test(url))throw Error('SUPABASE_URL must be an https:// project URL, got: '+url);
  return {supabaseUrl:url,supabaseAnonKey:key,orgId:org||null};
 }
 

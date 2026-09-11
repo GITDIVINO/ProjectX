@@ -315,6 +315,18 @@ test('A database error is returned as a failure instead of an empty workspace',a
  assert.match(result.error,/permission denied/);
 });
 
+test('Keys without a schema say which migration is missing',async()=>{
+ const client=fakeClient();
+ client.from=()=>({select(){return this;},eq(){return this;},order(){return this;},maybeSingle(){return this;},
+  then(resolve){return Promise.resolve({data:null,error:{message:'relation "public.memberships" does not exist'}}).then(resolve);}});
+ const storage=Supabase.create({client});
+ const result=await storage.organisations();
+ assert.equal(result.ok,false);
+ assert.equal(result.reason,'no-schema');
+ assert.match(result.error,/0001_initial_schema\.sql/,'the message names the file to apply');
+ assert.doesNotMatch(result.error,/relation/,'and not the wording only a DBA would read');
+});
+
 test('A signed-out visitor is told so rather than shown a blank calculation',async()=>{
  const client=fakeClient({},null);
  const storage=Supabase.create({client,orgId:'org-1'});

@@ -30,11 +30,35 @@ test('Every deployed asset is listed on purpose, and tests are not among them',(
  assert.ok(!shipped.includes('ProjectX.html'),'the offline bundle is not part of the hosted site');
 });
 
-test('A service role key is refused before anything is written',()=>{
+test('The names an integration sets are accepted as they are',()=>{
+ // Vercel's Supabase integration writes NEXT_PUBLIC_SUPABASE_*. A deployment should not have
+ // to rename what the integration just set.
+ assert.deepEqual(
+  Deploy.config({NEXT_PUBLIC_SUPABASE_URL:'https://demo.supabase.co',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:'sb_publishable_demo'}),
+  {supabaseUrl:'https://demo.supabase.co',supabaseAnonKey:'sb_publishable_demo',orgId:null}
+ );
+ // Both generations of browser key are fine: the legacy anon JWT and the newer publishable one.
+ assert.equal(Deploy.config({SUPABASE_URL:'https://demo.supabase.co',SUPABASE_ANON_KEY:'eyJhbGciOiJIUzI1NiJ9.anon'}).supabaseAnonKey,'eyJhbGciOiJIUzI1NiJ9.anon');
+ // Our own names win when both are present, so an explicit setting overrides an integration.
+ assert.equal(Deploy.config({
+  SUPABASE_URL:'https://chosen.supabase.co',NEXT_PUBLIC_SUPABASE_URL:'https://integration.supabase.co',
+  SUPABASE_ANON_KEY:'sb_publishable_chosen'
+ }).supabaseUrl,'https://chosen.supabase.co');
+ // Surrounding whitespace from a copied value does not become part of the key.
+ assert.equal(Deploy.config({SUPABASE_URL:' https://demo.supabase.co ',SUPABASE_ANON_KEY:' sb_publishable_demo\n'}).supabaseAnonKey,'sb_publishable_demo');
+});
+
+test('A secret key is refused in either generation, and so is an insecure URL',()=>{
+ for(const key of ['eyJ...service_role...','sb_secret_abcdef'])
+  assert.throws(()=>Deploy.config({SUPABASE_URL:'https://demo.supabase.co',SUPABASE_ANON_KEY:key}),/secret key/,key);
+ assert.throws(()=>Deploy.config({SUPABASE_URL:'http://demo.supabase.co',SUPABASE_ANON_KEY:'sb_publishable_demo'}),/https:\/\//);
+});
+
+test('A secret key is refused before anything is written',()=>{
  const before=fs.existsSync(out)?fs.readdirSync(out).length:0;
  assert.throws(
   ()=>Deploy.build({SUPABASE_URL:'https://demo.supabase.co',SUPABASE_ANON_KEY:'eyJ...service_role...'}),
-  /service role key/
+  /secret key/
  );
  // The output directory is untouched: a rejected build leaves nothing half-assembled.
  assert.equal(fs.existsSync(out)?fs.readdirSync(out).length:0,before);

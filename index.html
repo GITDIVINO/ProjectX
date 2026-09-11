@@ -14551,7 +14551,16 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Proj
 
 const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots',memberships:'memberships'};
 
-const fail=(error,reason='error')=>({ok:false,reason,error:error?.message||String(error||'Unknown storage error')});
+// A deployment that has its keys but not its schema is the common first failure, and the
+// raw PostgREST wording ("relation ... does not exist") does not say what to do about it.
+const SCHEMA_MISSING=/does not exist|schema cache|PGRST205/i;
+const fail=(error,reason='error')=>{
+ const message=error?.message||String(error||'Unknown storage error');
+ if(SCHEMA_MISSING.test(message))
+  return {ok:false,reason:'no-schema',
+   error:'The database is reachable but its tables are missing. Apply supabase/migrations/0001_initial_schema.sql to the project, then reload.'};
+ return {ok:false,reason,error:message};
+};
 
 function create(options={}){
  const client=options.client;
