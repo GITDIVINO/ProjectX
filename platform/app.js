@@ -114,11 +114,19 @@ $('app').addEventListener('pointerdown',e=>{
  const stop=()=>{svg.classList.remove('sea-dragging');svg.removeEventListener('pointermove',move);svg.removeEventListener('pointerup',stop);svg.removeEventListener('pointercancel',stop);};
  svg.addEventListener('pointermove',move);svg.addEventListener('pointerup',stop);svg.addEventListener('pointercancel',stop);
 });
+// The register's editor is a real form, so Enter submits it. Nothing is posted anywhere:
+// the page handles it, and form-action in the deployed policy forbids the alternative.
+$('app').addEventListener('submit',e=>{
+ const form=e.target.closest&&e.target.closest('.register-editor');
+ if(!form)return;
+ e.preventDefault();
+ saveCalculationRow(form.dataset.id);
+});
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
  case'open-calculation':openCalculation(el.dataset.id).then(()=>{currentTab='register'===currentTab?'planner':currentTab;syncWorkspace();render();});return;
- case'assign-responsible':assignResponsible(el.dataset.id);return;
+ case'expand-calculation':toggleCalculation(el.dataset.id);return;
+ case'save-calculation-row':saveCalculationRow(el.dataset.id);return;
  case'new-calculation-row':newCalculation().then(refreshRegister);return;
- case'rename-calculation-row':renameCalculation(el.dataset.id).then(refreshRegister);return;
  case'delete-calculation-row':deleteCalculation(el.dataset.id).then(refreshRegister);return;
  case'map-zoom':zoomMap(Number(el.dataset.factor));return;
  case'map-reset':resetMap();return;
@@ -209,16 +217,20 @@ async function openCalculation(id){
 // CALCULATIONS: the register of everything the organisation holds. It is read fresh each time
 // the tab is drawn, because on a shared deployment a colleague may have added one since.
 const registerView=window.ProjectXRegisterView.create({esc,fmt,table});
-let registerRows=null,registerMembers=null;
+let registerRows=null,registerMembers=null,expandedCalculation=null;
 
+const drawRegister=()=>{
+ $('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account,expandedCalculation,registerMembers);
+};
 function renderRegister(){
- $('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+ drawRegister();
  if(registerRows===null)refreshRegister();
 }
 async function refreshRegister(){
  try{registerRows=await storage.listRegister();}
  catch(e){registerRows={ok:false,error:e.message};}
- if(currentTab==='register')$('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+ await membersList();
+ if(currentTab==='register')drawRegister();
 }
 async function membersList(){
  if(registerMembers)return registerMembers;
@@ -227,23 +239,44 @@ async function membersList(){
  return registerMembers;
 }
 
-// Handing a calculation over changes who answers for it, not who may edit it.
-async function assignResponsible(id){
+// Opening a row out is a view state, not a stored one: it belongs to this screen and this
+// person, and closing it changes nothing.
+async function toggleCalculation(id){
+ expandedCalculation=expandedCalculation===id?null:id;
+ if(expandedCalculation)await membersList();
+ drawRegister();
+ const form=document.querySelector?.('.register-editor input[name="name"]');
+ if(form&&form.focus)form.focus();
+}
+
+// The name and who is responsible are what the register owns. Everything else about a
+// calculation is edited in the planner, which is why the form offers these and nothing more.
+async function saveCalculationRow(id){
+ const form=document.querySelector?.('.register-editor[data-id="'+id+'"]');
+ if(!form)return;
  const rows=Array.isArray(registerRows)?registerRows:[];
  const row=rows.find(r=>r.id===id);
  if(!row)return;
- const members=await membersList();
- if(!members.length){$('status').textContent='No colleagues are listed for this organisation yet.';return;}
- const current=Math.max(1,members.findIndex(m=>m.id===row.responsibleId)+1);
- const chosen=prompt('Responsible specialist for "'+row.name+'"\n\n'+
-  members.map((m,i)=>(i+1)+'. '+m.name+(m.title?' · '+m.title:'')).join('\n')+
-  '\n\nEnter the number',String(current));
- if(chosen===null)return;
- const picked=members[Number(chosen)-1];
- if(!picked){$('status').textContent='That is not one of the listed people.';return;}
- const result=await storage.setResponsible(id,picked.id);
- if(!result.ok){$('status').textContent='The calculation could not be handed over.';return;}
- $('status').textContent='"'+row.name+'" is now with '+picked.name+'.';
+ const name=(form.querySelector('[name="name"]')||{}).value||'';
+ const responsible=(form.querySelector('[name="responsible"]')||{}).value||null;
+ if(!name.trim()){$('status').textContent='A calculation needs a name.';return;}
+
+ const changes=[];
+ if(name.trim()!==row.name){
+  const renamed=await session.rename(id,name.trim());
+  if(!renamed.ok){$('status').textContent='The calculation could not be renamed.';return;}
+  if(voyage&&voyage.id===id)voyage={...voyage,name:name.trim()};
+  changes.push('renamed');
+ }
+ if(responsible&&responsible!==row.responsibleId){
+  const handed=await storage.setResponsible(id,responsible);
+  if(!handed.ok){$('status').textContent='The calculation could not be handed over.';return;}
+  const to=(registerMembers||[]).find(m=>m.id===responsible);
+  changes.push('now with '+(to?to.name:'somebody else'));
+ }
+ $('status').textContent=changes.length?'"'+name.trim()+'" '+changes.join(' and ')+'.':'Nothing to change.';
+ expandedCalculation=null;
+ await refreshCalculations();
  await refreshRegister();
 }
 

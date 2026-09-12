@@ -10,6 +10,7 @@ const row=(over={})=>({
  responsibleId:'u-1',responsible:'A. Petrov',responsibleTitle:'Freight',
  createdBy:'A. Petrov',updatedBy:'M. Ivanova',
  vessel:'TBN 34K',parcels:2,ports:'Santos · Ust-Luga',
+ cargoes:'Urea · Sulphur',tonnage:24000,deliveryPort:'Rotterdam',
  ...over
 });
 
@@ -65,10 +66,43 @@ test('A name written by a person cannot become markup',()=>{
  assert.match(html,/&lt;script&gt;bad/);
 });
 
-test('Every row offers the three things a register is for',()=>{
+test('A closed row offers to open, expand or delete, and nothing else',()=>{
  const html=view.render([row()],null,null);
- for(const action of ['open-calculation','assign-responsible','rename-calculation-row','delete-calculation-row'])
+ for(const action of ['open-calculation','expand-calculation','delete-calculation-row'])
   assert.match(html,new RegExp(`data-action="${action}"`),action+' is offered');
+ assert.doesNotMatch(html,/register-editor/,'the editor appears only when the row is opened out');
+});
+
+test('An opened row shows what is in the calculation and offers to change it',()=>{
+ const members=[{id:'u-1',name:'A. Petrov',title:'Freight'},{id:'u-2',name:'M. Ivanova',title:null}];
+ const html=view.render([row()],null,null,'v-1',members);
+
+ // What it contains, from what the row already carried — opening it costs no extra query.
+ assert.match(html,/Urea · Sulphur/,'the cargo is named');
+ assert.match(html,/24,000.0 t/,'and the tonnage totalled');
+ assert.match(html,/Ballast from/,'a ballast approach names where it starts');
+ assert.match(html,/Rotterdam/);
+
+ // And the two things the register owns are editable in place.
+ assert.match(html,/name="name" type="text" value="Ust-Luga → Santos"/);
+ assert.match(html,/<select name="responsible">/);
+ assert.match(html,/value="u-1" selected/,'the current holder is the one selected');
+ assert.match(html,/data-action="save-calculation-row"/);
+ assert.match(html,/aria-expanded="true"/);
+});
+
+test('Only the opened row is opened out',()=>{
+ const html=view.render([row(),row({id:'v-2',name:'Second'})],null,null,'v-2',[]);
+ assert.equal((html.match(/register-detail/g)||[]).length,2,'one detail row, named twice in its markup');
+ assert.match(html,/data-detail="v-2"/);
+ assert.doesNotMatch(html,/data-detail="v-1"/);
+});
+
+test('A calculation cannot be handed over where there is nobody to hand it to',()=>{
+ const html=view.render([row()],null,null,'v-1',[]);
+ assert.doesNotMatch(html,/<select name="responsible">/);
+ assert.match(html,/No colleagues are listed/,'and the reason is stated rather than left blank');
+ assert.match(html,/name="name"/,'renaming still works');
 });
 
 test('The page says what responsibility is, and what it is not',()=>{
@@ -79,10 +113,16 @@ test('The page says what responsibility is, and what it is not',()=>{
 
 test('Handing over offers the organisation and nobody else',()=>{
  const members=[{id:'u-1',name:'A. Petrov',title:'Freight'},{id:'u-2',name:'M. Ivanova',title:null}];
- const html=view.handOver(row(),members,'u-2');
+ const html=view.editor(row({responsibleId:'u-2'}),members);
  assert.match(html,/A\. Petrov · Freight/);
  assert.match(html,/value="u-2" selected/);
  assert.equal((html.match(/<option /g)||[]).length,2,'only the members, and each once');
+});
+
+test('A calculation name written by a person cannot become markup in the editor',()=>{
+ const html=view.editor(row({name:'" onfocus="alert(1)'}),[]);
+ assert.ok(!html.includes('" onfocus="alert(1)"'),'the quotes do not escape the attribute');
+ assert.match(html,/&quot; onfocus=&quot;/);
 });
 
 test('A missing or unreadable date is a dash, not an invalid one',()=>{

@@ -189,6 +189,10 @@ function create(options={}){
    return index().map(meta=>{
     const document=read(VOYAGE_PREFIX+meta.id)||{};
     const ports=[...new Set((document.ports||[]).map(p=>p.name).filter(Boolean))].sort();
+    // Only the parcels actually in the voyage: a deselected one is not part of this calculation.
+    const inVoyage=(document.lots||[]).filter(l=>l.selected);
+    const cargoes=[...new Set(inVoyage.map(l=>l.name).filter(Boolean))].sort();
+    const quantities=inVoyage.map(l=>l.quantity).filter(q=>typeof q==='number'&&Number.isFinite(q));
     return {
      id:meta.id,name:meta.name,revision:meta.revision,catalogRevision:meta.catalogRevision,
      createdAt:meta.createdAt||meta.updatedAt,updatedAt:meta.updatedAt,
@@ -196,8 +200,11 @@ function create(options={}){
      responsible:me.name,responsibleTitle:me.title,
      createdBy:me.name,updatedBy:me.name,
      vessel:document.vesselSnapshot?.name||null,
-     parcels:(document.lots||[]).filter(l=>l.selected).length,
-     ports:ports.join(' · ')
+     parcels:inVoyage.length,
+     ports:ports.join(' · '),
+     cargoes:cargoes.join(' · '),
+     tonnage:quantities.length?quantities.reduce((n,q)=>n+q,0):null,
+     deliveryPort:document.ballastEnabled?(document.deliveryPort||null):null
     };
    }).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   },

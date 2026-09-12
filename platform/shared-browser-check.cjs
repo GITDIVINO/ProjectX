@@ -209,12 +209,25 @@ function installStandIn(){
   assert.doesNotMatch(firstRow,/user-1/,'no bare identifier reaches the screen');
   assert.match(await page.locator('.section-intro').first().innerText(),/2 calculations · 2 yours/);
 
-  // Handing over changes who answers for it; the register then says so.
-  page.removeAllListeners('dialog');
-  page.on('dialog',async d=>{await d.accept(d.type()==='prompt'?'2':undefined);});
-  await page.locator('[data-action="assign-responsible"]').first().click();
-  await page.waitForFunction(()=>document.getElementById('status').textContent.includes('is now with'),{timeout:10000});
-  assert.match(await page.locator('#status').innerText(),/is now with M\. Ivanova/);
+  // Opening a row out answers what is in the calculation, from what the list already carried.
+  assert.equal(await page.locator('.register-detail').count(),0,'nothing is opened out to begin with');
+  await page.locator('[data-action="expand-calculation"]').first().click();
+  await page.waitForSelector('.register-detail');
+  const facts=(await page.locator('.register-fact').allTextContents()).join(' | ');
+  assert.match(facts,/Cargo/);
+  assert.match(facts,/Tonnage/);
+  assert.match(facts,/Created/);
+
+  // Renaming and handing over happen in that row, not through a browser prompt.
+  await page.locator('.register-editor input[name="name"]').fill('Santos option');
+  // The option is labelled with the role beside the name, so select by the account it is for.
+  assert.deepEqual(await page.locator('.register-editor select[name="responsible"] option').allTextContents(),
+   ['A. Petrov · Freight','M. Ivanova · Trading'],'the organisation, and nobody else');
+  await page.locator('.register-editor select[name="responsible"]').selectOption('user-2');
+  await page.locator('[data-action="save-calculation-row"]').click();
+  await page.waitForFunction(()=>document.getElementById('status').textContent.includes('now with'),{timeout:10000});
+  assert.match(await page.locator('#status').innerText(),/"Santos option" renamed and now with M\. Ivanova/);
+  assert.equal(await page.locator('.register-detail').count(),0,'and the row closes once it is saved');
   await page.waitForFunction(()=>[...document.querySelectorAll('.register-table tbody tr')].some(r=>r.innerText.includes('M. Ivanova')),{timeout:10000});
   assert.match(await page.locator('.section-intro').first().innerText(),/2 calculations · 1 yours/,
    'handing one over leaves one of the two');
@@ -230,6 +243,6 @@ function installStandIn(){
   assert.equal(await page.locator('.workspace-tabs').evaluate(el=>el.hidden),true);
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: shared browser — sign-in gate, wrong password refused, wrong code refused, password accepted and never stored, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one register, the register naming who is responsible, handing over, opening from the register, and sign-out.');
+  console.log('PASS: shared browser — sign-in gate, wrong password refused, wrong code refused, password accepted and never stored, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one register, the register naming who is responsible, opening a row out, renaming and handing over in place, opening from the register, and sign-out.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

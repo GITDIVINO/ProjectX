@@ -214,7 +214,7 @@ function create(options={}){
   async listRegister(){
    const {data,error}=await withOrg(scoped(TABLES.register).select(
     'id,name,revision,catalog_revision,created_at,updated_at,responsible_id,responsible_name,responsible_title,'+
-    'created_by_name,updated_by_name,vessel_name,parcels,ports'))
+    'created_by_name,updated_by_name,vessel_name,parcels,ports,cargoes,tonnage,delivery_port'))
     .order('updated_at',{ascending:false});
    if(error)return fail(error);
    return (data||[]).map(x=>({
@@ -222,7 +222,9 @@ function create(options={}){
     createdAt:x.created_at,updatedAt:x.updated_at,
     responsibleId:x.responsible_id,responsible:x.responsible_name,responsibleTitle:x.responsible_title,
     createdBy:x.created_by_name,updatedBy:x.updated_by_name,
-    vessel:x.vessel_name,parcels:Number(x.parcels)||0,ports:x.ports||''
+    vessel:x.vessel_name,parcels:Number(x.parcels)||0,ports:x.ports||'',
+    cargoes:x.cargoes||'',tonnage:x.tonnage===null||x.tonnage===undefined?null:Number(x.tonnage),
+    deliveryPort:x.delivery_port||null
    }));
   },
 
