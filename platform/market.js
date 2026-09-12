@@ -8486,7 +8486,7 @@ const reports=[
   }
 ];
 reports.sort((a,b)=>b.publishedDate.localeCompare(a.publishedDate));
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
 const dateLabel=date=>new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
 const paragraphs=items=>(items||[]).map(p=>'<p>'+esc(p)+'</p>').join('');
 const sourceSections=items=>(items||[]).map(s=>'<section class="market-source-section"><h5>'+esc(s.name)+'</h5>'+paragraphs(s.paragraphs)+'</section>').join('');

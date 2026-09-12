@@ -59,7 +59,10 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   await page.setViewportSize({width:390,height:844});await page.locator('dialog').screenshot({path:path.join(out,'picker-mobile.png')});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.equal(await page.locator('dialog').evaluate(el=>el.scrollWidth<=el.clientWidth),true,'horizontal overflow is inside the table only');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('dialog').count(),0);
+  // Escape closes the dialog and its close handler removes it; those are two turns, so wait
+  // for the removal rather than racing it. Asserting immediately made this check flaky.
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>document.querySelectorAll('dialog').length===0,{timeout:5000});
   assert.equal(await page.locator('[data-action="add-lot"]').evaluate(el=>el===document.activeElement),true,'Escape restores trigger focus');
   await page.emulateMedia({media:'print'});assert.equal(await page.locator('.sale-link').first().isVisible(),true);await page.emulateMedia({media:'screen'});
   await seed('invalid');await open();await page.locator('#sale-select-visible').check();

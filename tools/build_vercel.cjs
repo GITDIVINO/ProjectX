@@ -19,10 +19,10 @@ const out=path.join(root,'public');
 // Everything the page loads at runtime. Tests, browser checks and the offline bundle are not
 // deployed: an explicit list keeps private or unintended files out of a public deployment.
 const ASSETS=[
- 'index.html','styles.css',
+ 'index.html','styles.css','ui-format.js',
  'arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js',
  'sea-data.js','sea-table.js','sea-route.js','planning.js','planner-ui.js',
- 'schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','app.js'
+ 'schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','voyage-map.js','catalog-views.js','dialogs.js','sign-in.js','planner-view.js','app.js'
 ];
 
 const CLIENT_CANDIDATES=[

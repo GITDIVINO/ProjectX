@@ -172,7 +172,28 @@ function portDays(s,p){
  return idle.n<0n?null:work.add(idle).number();
 }
 function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSON.stringify(CARGO_TYPES)),sales:[],portRecords:[...portRecordsFor('P4','Murmansk'),...portRecordsFor('P5','St. Petersburg'),...portRecordsFor('P1','Ust-Luga'),...portRecordsFor('P2','Santos'),...portRecordsFor('P3','Paranaguá')],demo:false,notes:'',lots:[],holds:JSON.parse(JSON.stringify(VESSELS[0].holdData)),allocations:[],stage:'load',deductions:{fuel:null,water:null,ballast:null,constant:null,draftLoss:null},ports:[port('Ust-Luga'),port('Santos'),port('Paranaguá')],legs:[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')],ballastEnabled:false,deliveryPort:'',ballast:leg(DELIVERY_PLACEHOLDER,'Ust-Luga'),prices:{main:null,eca:null,aux:null},hire:null,commission:0,freight:null,extraIncome:0,costs:[],allocation:'route'};ensureCatalogs(s);ensureBusinessData(s);applyVessel(s,'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return s;}
-function demo(){const s=initial();s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});s.demo=true;s.deductions={fuel:950,water:200,ballast:300,constant:525,draftLoss:0};s.hire=13500;s.freight=50;s.commission=1.25;s.prices={main:540,eca:800,aux:800};s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));s.allocations=allocate(s);return s;}
+// The worked example the page opens with: two parcels on one voyage, with figures that are
+// illustrative rather than real. The page says so on screen; the notice is part of the state.
+function demo(){
+ const s=initial();
+ s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];
+ s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];
+ s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};
+ s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));
+ s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];
+ s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];
+ s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});
+ s.demo=true;
+ s.deductions={fuel:950,water:200,ballast:300,constant:525,draftLoss:0};
+ s.hire=13500;
+ s.freight=50;
+ s.commission=1.25;
+ s.prices={main:540,eca:800,aux:800};
+ s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));
+ s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));
+ s.allocations=allocate(s);
+ return s;
+ }
 function active(s){return s.lots.filter(l=>l.selected);}
 function allocate(s,trace=[]){
  const out=[],lots=active(s).filter(l=>isBulkCargo(s.cargoTypes?.find(c=>c.id===l.cargoId))&&ok(l.quantity,true)&&ok(l.sf,true));
@@ -362,7 +383,45 @@ function computeChecked(s){
 }
 function stageAllocations(s){if(s.stage==='load')return s.allocations;const index=s.ports.findIndex(p=>p.name===s.stage);return s.allocations.filter(a=>{const l=s.lots.find(l=>l.id===a.lot);return l&&s.ports.findIndex(p=>p.name===loadOf(s,l))<=index&&s.ports.findIndex(p=>p.name===l.port)>index;});}
 function changeLoadPort(s,name,code=''){if(!name.trim()||s.ports.slice(1).some(p=>p.name===name))throw Error('Select a load port, different from the discharge port');const old=s.ports[0].name;if(old===name&&s.ports[0].code===code)return;s.lots.forEach(l=>l.loadPort=name);s.ports[0]={...port(name),code};s.legs=s.legs.filter(l=>l.from!==old&&l.to!==old);s.ballast=leg(deliveryName(s),name);s.stage='load';}
-function addLot(s,data){if(!data.name?.trim())throw Error('Enter a cargo type');if(!ok(data.quantity,true)||!ok(data.sf,true))throw Error('Enter positive tonnage and SF');if(!['Santos','Paranaguá'].includes(data.port))throw Error('Select a discharge port');if(data.loadPort&&!LOAD_PORT.includes(data.loadPort))throw Error('Select a load port');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});const l={id:'S'+n,name:known?.name||data.name.trim(),selected:true,quantity:data.quantity,cargoId:known?.id,sf:data.sf,sfBasis:known&&data.sf===known.sfDefault?known.sfBasis:'user-entered',propertySource:known?.propertyUrl||'',hazardClass:known?.hazardClass||'',loadPort:data.loadPort||'Ust-Luga',port:data.port,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:known?.group||'',un:known?.un||''};s.lots.push(l);return l;}
+// Adding a parcel directly, outside the sales register. Everything is checked before
+// anything is written, so a rejected parcel leaves no trace in the catalogue or the voyage.
+function addLot(s,data){
+ if(!data.name?.trim())throw Error('Enter a cargo type');
+ if(!ok(data.quantity,true)||!ok(data.sf,true))throw Error('Enter positive tonnage and SF');
+ if(!['Santos','Paranaguá'].includes(data.port))throw Error('Select a discharge port');
+ if(data.loadPort&&!LOAD_PORT.includes(data.loadPort))throw Error('Select a load port');
+
+ const ids=new Set(s.lots.map(l=>l.id));
+ let n=1;while(ids.has('S'+n))n++;
+ s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));
+
+ const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());
+ // Liquids and packaged goods are kept in the catalogue but cannot go in a bulk hold.
+ if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');
+ if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});
+
+ const l={
+  id:'S'+n,
+  name:known?.name||data.name.trim(),
+  selected:true,
+  quantity:data.quantity,
+  cargoId:known?.id,
+  sf:data.sf,
+  // An SF left at the catalogue's own figure keeps the catalogue's basis; a changed one is
+  // the user's, and says so, because the two carry different weight as evidence.
+  sfBasis:known&&data.sf===known.sfDefault?known.sfBasis:'user-entered',
+  propertySource:known?.propertyUrl||'',
+  hazardClass:known?.hazardClass||'',
+  loadPort:data.loadPort||'Ust-Luga',
+  port:data.port,
+  // Golden-angle hue: consecutive parcels stay distinguishable however many there are.
+  color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',
+  group:known?.group||'',
+  un:known?.un||''
+ };
+ s.lots.push(l);
+ return l;
+}
 function ensureBusinessData(s){
  const migratePorts=!Array.isArray(s.portRecords);
  s.sales??=[];s.portRecords??=[];
@@ -439,7 +498,64 @@ function updatePortRecord(s,index,key,value){
  record[key]=value;return record;
 }
 function addSaleToPlanner(s,saleId){ensureCatalogs(s);const sale=s.sales.find(x=>x.id===saleId);if(!sale)throw Error('Sale not found');validateSale(s,sale,{legacy:!!sale.legacyLotId});if(s.lots.some(l=>l.saleId===saleId))throw Error('Sale is already added to PLANNER');const cargo=s.cargoTypes.find(c=>c.id===sale.cargoId);if(!cargo||!isBulkCargo(cargo))throw Error('This cargo is unavailable for bulk planning');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;const l={id:'S'+n,saleId:sale.id,name:cargo.name,selected:true,quantity:sale.quantity,cargoId:cargo.id,sf:cargo.sf,sfBasis:cargo.sf===cargo.sfDefault?cargo.sfBasis:'catalog',propertySource:cargo.propertyUrl||'',hazardClass:cargo.hazardClass||'',loadPort:sale.loadPort,port:sale.dischargePort,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:cargo.group||'',un:cargo.un||''};s.lots.push(l);syncRoute(s);return l;}
-function syncRoute(s){const alias={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};for(const l of s.lots)l.loadPort??=alias[s.ports[0]?.name]||s.ports[0]?.name||'Ust-Luga';const selected=active(s),loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))],dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))],needed=new Set([...loadNames,...dischargeNames]),old=s.ports;s.portCache??={};for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));const ordered=[...old.map(p=>alias[p.name]||p.name).filter(n=>needed.has(n)),...loadNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n)),...dischargeNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n))];const unique=[...new Set(ordered)];unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));s.ports=unique.map(name=>{const found=old.find(p=>(alias[p.name]||p.name)===name)||s.portCache[name],record=s.portRecords?.find(p=>p.name===name&&p.da!==null&&p.da!==undefined)||s.portRecords?.find(p=>p.name===name);return found?{...found,name,da:found.da??record?.da??null}:{...port(name),da:record?.da??null,...(s.vesselSnapshot?{working:s.vesselSnapshot.working,idle:s.vesselSnapshot.idle,aux:s.vesselSnapshot.aux,auxWorking:s.vesselSnapshot.auxWorking,auxIdle:s.vesselSnapshot.auxIdle,boiler:s.vesselSnapshot.boiler,boilerDays:null,boilerFuel:null}:{})};});const calls=callsOf(s);if(calls.length&&s.ballast.to!==calls[0].name)s.ballast={...leg(deliveryName(s),calls[0].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.ballastSpeed,burn:s.vesselSnapshot.ballastBurn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})};s.deliveryPort=String(s.deliveryPort??'');s.ballast.from=deliveryName(s);for(let i=1;i<calls.length;i++)if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))s.legs.push({...leg(calls[i-1].name,calls[i].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.speed,burn:s.vesselSnapshot.burn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})});if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage||[p.callId+':arrival',p.callId+':departure'].includes(s.stage)))s.stage='load';syncBerths(s);}
+// Ports that were renamed in the register but may still be named the old way in a saved
+// voyage. Resolved on the way in so an old save does not grow a duplicate call.
+const PORT_ALIAS={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};
+const resolveName=name=>PORT_ALIAS[name]||name;
+
+// The vessel's own figures follow it into every call and every leg it is applied to, so a
+// port stay and a passage are costed on the ship actually being planned.
+const callDefaults=v=>v?{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,
+ auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:null,boilerFuel:null}:{};
+const legDefaults=v=>v?{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}:{};
+const ballastDefaults=v=>v?{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux}:{};
+
+// The rotation follows the sales: the ports that are needed are the ports the selected
+// parcels load and discharge at, loading first. A call that is dropped is remembered in
+// portCache, so putting the sale back does not lose what was entered for its port.
+function syncRoute(s){
+ for(const l of s.lots)l.loadPort??=resolveName(s.ports[0]?.name)||s.ports[0]?.name||'Ust-Luga';
+ const selected=active(s);
+ const loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))];
+ const dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))];
+ const needed=new Set([...loadNames,...dischargeNames]);
+ const old=s.ports;
+
+ s.portCache??={};
+ for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));
+
+ // Keep the order that was there, then append whatever the sales added.
+ const known=name=>old.some(p=>resolveName(p.name)===name);
+ const ordered=[...old.map(p=>resolveName(p.name)).filter(n=>needed.has(n)),
+  ...loadNames.filter(n=>!known(n)),
+  ...dischargeNames.filter(n=>!known(n))];
+ const unique=[...new Set(ordered)];
+ unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));
+
+ s.ports=unique.map(name=>{
+  const found=old.find(p=>resolveName(p.name)===name)||s.portCache[name];
+  // A disbursement already entered for the port outranks one merely on record for its name.
+  const record=s.portRecords?.find(p=>p.name===name&&p.da!==null&&p.da!==undefined)
+   ||s.portRecords?.find(p=>p.name===name);
+  return found?{...found,name,da:found.da??record?.da??null}
+   :{...port(name),da:record?.da??null,...callDefaults(s.vesselSnapshot)};
+ });
+
+ const calls=callsOf(s);
+ if(calls.length&&s.ballast.to!==calls[0].name)
+  s.ballast={...leg(deliveryName(s),calls[0].name),...ballastDefaults(s.vesselSnapshot)};
+ s.deliveryPort=String(s.deliveryPort??'');
+ s.ballast.from=deliveryName(s);
+
+ for(let i=1;i<calls.length;i++)
+  if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))
+   s.legs.push({...leg(calls[i-1].name,calls[i].name),...legDefaults(s.vesselSnapshot)});
+
+ // A chosen loading state that no longer exists falls back to the editable plan.
+ if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage||[p.callId+':arrival',p.callId+':departure'].includes(s.stage)))
+  s.stage='load';
+ syncBerths(s);
+}
 // SALE owns the berth; the call only carries the choice. Sales that disagree about a call are reported by the planner check.
 function berthsAt(s,call){const out=[];for(const l of active(s)){const sale=s.sales?.find(x=>x.id===l.saleId);if(!sale)continue;if(l.loadPort===call.name&&sale.loadPortId)out.push(sale.loadPortId);if(l.port===call.name&&sale.dischargePortId)out.push(sale.dischargePortId);}return [...new Set(out)];}
 function syncBerths(s){for(const call of s.ports){const ids=berthsAt(s,call);if(!ids.length)continue;call.planning??={berthId:'',arrival:{},departure:{}};call.planning.berthId=ids[0];}}
@@ -451,7 +567,37 @@ function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES)
  }
  mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id&&!l.passport)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
-function applyVessel(s,id){ensureCatalogs(s);const v=s.vesselProfiles.find(v=>v.id===id);if(!v||!v.name.trim())throw Error('Enter a vessel name');for(const k of ['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'])if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);for(const k of ['bale','gt','nrt','tanktop','airDraft','boiler'])if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);for(const k of ['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'])if(!ok(v[k]))throw Error('Check consumption: '+k);if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');if(!v.holdData.length)throw Error('Add holds');v.holds=v.holdData.length;s.vesselId=id;s.vesselSnapshot=JSON.parse(JSON.stringify(v));s.holds=JSON.parse(JSON.stringify(v.holdData));s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});[...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));}
+// A profile has to be complete before a voyage can be planned on it. These are the figures
+// that must be present and positive, those that may be absent but not nonsense if given,
+// and the consumptions, which may be zero but not missing.
+const VESSEL_REQUIRED=['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'];
+const VESSEL_OPTIONAL=['bale','gt','nrt','tanktop','airDraft','boiler'];
+const VESSEL_CONSUMPTION=['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'];
+
+// Applying a vessel pins its particulars into the voyage and pushes its speeds and
+// consumptions into every leg and every call, including the ports held in the cache: a call
+// that comes back must come back costed on the ship now being planned.
+function applyVessel(s,id){
+ ensureCatalogs(s);
+ const v=s.vesselProfiles.find(v=>v.id===id);
+ if(!v||!v.name.trim())throw Error('Enter a vessel name');
+ for(const k of VESSEL_REQUIRED)if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);
+ for(const k of VESSEL_OPTIONAL)if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);
+ for(const k of VESSEL_CONSUMPTION)if(!ok(v[k]))throw Error('Check consumption: '+k);
+ if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');
+ if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');
+ if(!v.holdData.length)throw Error('Add holds');
+
+ v.holds=v.holdData.length;
+ s.vesselId=id;
+ s.vesselSnapshot=JSON.parse(JSON.stringify(v));
+ s.holds=JSON.parse(JSON.stringify(v.holdData));
+ s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));
+ Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});
+ [...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{
+  working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,
+  boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));
+}
 function migrateBaltic(s){ensureCatalogs(s);if(s.tbnSourceRevision===VESSELS[0].revision)return false;s.previousVesselProfile={profile:s.vesselProfiles.find(v=>v.id==='tbn-1'),snapshot:s.vesselSnapshot,holds:JSON.parse(JSON.stringify(s.holds)),constant:s.deductions.constant};for(const standard of VESSELS){const i=s.vesselProfiles.findIndex(v=>v.id===standard.id);const copy=JSON.parse(JSON.stringify(standard));if(i<0)s.vesselProfiles.push(copy);else s.vesselProfiles[i]=copy;}applyVessel(s,s.vesselProfiles.some(v=>v.id===s.vesselId)?s.vesselId:'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return true;}
 function anonymizeProfiles(s){
  const oldDefaults={"\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u0431\u0430\u043b\u043a\u0435\u0440":"Standard bulk carrier","\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c TBN 1":"Standard profile TBN 1","\u0420\u043e\u0441\u0441\u0438\u044f \u2192 \u0411\u0440\u0430\u0437\u0438\u043b\u0438\u044f":"Russia → Brazil"};

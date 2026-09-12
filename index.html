@@ -183,6 +183,54 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 <footer id="planner-footer" class="projectx-footer" aria-label="ProjectX footer"><div class="projectx-footer__inner"><div class="projectx-footer__meta"><span><strong>ProjectX</strong> © 2026 Voyage Planner Prototype</span></div><p class="projectx-footer__credit">A Alexander Pikul production</p></div></footer>
 <script>(function(root){
 'use strict';
+// Formatting and markup helpers that depend on nothing: no state, no document, no model.
+// They were defined four times over across app.js, planner-ui.js, market.js and guide.js,
+// which is how an escaping rule gets fixed in one place and left wrong in three.
+
+// Every value that reaches markup goes through this. Attribute values included: the quote
+// characters are escaped too, so an interpolation inside an attribute cannot break out of it.
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Intl.NumberFormat is expensive to construct and toLocaleString builds a fresh one on every
+// call. One formatter per pair of digit settings produces the same string for far less work.
+const numberFormats=new Map();
+const numberFormat=(min,max)=>{
+ const key=min+':'+max;
+ let f=numberFormats.get(key);
+ if(!f){f=new Intl.NumberFormat('en-GB',{minimumFractionDigits:min,maximumFractionDigits:max});numberFormats.set(key,f);}
+ return f;
+};
+
+// A missing figure prints as a dash rather than as zero: nothing entered is not the same
+// claim as zero, and a budget must not read as complete because a field was left empty.
+const fmt=(x,d=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':numberFormat(d,d).format(x);
+const num=x=>Number.isFinite(x)?numberFormat(0,20).format(x):'—';
+const orDash=(x,d=0,unit='')=>x===null?'—':fmt(x,d)+unit;
+const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
+
+// Tonnage is typed with the thousands separators the table prints, including the narrow and
+// non-breaking spaces a copy-paste brings with it.
+const tonnage=text=>{const clean=String(text).replace(/[\s,  ]/g,'');return clean===''?0:Number(clean);};
+
+// A total is only a total when every part of it is known. One missing part makes the sum
+// unknown, not smaller.
+const sumOf=xs=>xs.every(x=>x!==null&&x!==undefined&&Number.isFinite(x))?xs.reduce((a,x)=>a+x,0):null;
+
+const table=(heads,rows,cls='')=>
+ `<div class="table-wrap"><table class="${cls}"><thead><tr>${heads.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+
+const foldBlock=(id,title,summary,body)=>
+ `<details id="${id}" class="fold"><summary><strong>${esc(title)}</strong><span>${summary}</span></summary><div class="fold-body">${body}</div></details>`;
+
+// Geometry is drawn with the y axis flipped: latitude grows north, SVG grows down.
+const ringPath=ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`;
+const linePath=line=>`<path d="M${line.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}"/>`;
+
+const api={esc,numberFormat,fmt,num,orDash,round,tonnage,sumOf,table,foldBlock,ringPath,linePath};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXFormat=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
 const gcd=(a,b)=>{a=a<0n?-a:a;while(b){const t=a%b;a=b;b=t;}return a||1n;};
 class Rational{
  constructor(n,d=1n){if(d===0n)throw RangeError('Division by zero');if(d<0n){n=-n;d=-d;}const g=gcd(n,d);this.n=n/g;this.d=d/g;}
@@ -3175,7 +3223,28 @@ function portDays(s,p){
  return idle.n<0n?null:work.add(idle).number();
 }
 function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSON.stringify(CARGO_TYPES)),sales:[],portRecords:[...portRecordsFor('P4','Murmansk'),...portRecordsFor('P5','St. Petersburg'),...portRecordsFor('P1','Ust-Luga'),...portRecordsFor('P2','Santos'),...portRecordsFor('P3','Paranaguá')],demo:false,notes:'',lots:[],holds:JSON.parse(JSON.stringify(VESSELS[0].holdData)),allocations:[],stage:'load',deductions:{fuel:null,water:null,ballast:null,constant:null,draftLoss:null},ports:[port('Ust-Luga'),port('Santos'),port('Paranaguá')],legs:[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')],ballastEnabled:false,deliveryPort:'',ballast:leg(DELIVERY_PLACEHOLDER,'Ust-Luga'),prices:{main:null,eca:null,aux:null},hire:null,commission:0,freight:null,extraIncome:0,costs:[],allocation:'route'};ensureCatalogs(s);ensureBusinessData(s);applyVessel(s,'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return s;}
-function demo(){const s=initial();s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});s.demo=true;s.deductions={fuel:950,water:200,ballast:300,constant:525,draftLoss:0};s.hire=13500;s.freight=50;s.commission=1.25;s.prices={main:540,eca:800,aux:800};s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));s.allocations=allocate(s);return s;}
+// The worked example the page opens with: two parcels on one voyage, with figures that are
+// illustrative rather than real. The page says so on screen; the notice is part of the state.
+function demo(){
+ const s=initial();
+ s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];
+ s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];
+ s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};
+ s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));
+ s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];
+ s.legs=[leg('Ust-Luga','Santos'),leg('Santos','Paranaguá')];
+ s.ports.forEach(p=>{delete p.auxWorking;delete p.auxIdle;delete p.boiler;delete p.boilerDays;delete p.boilerFuel;p.working=4.8;p.idle=2.7;});
+ s.demo=true;
+ s.deductions={fuel:950,water:200,ballast:300,constant:525,draftLoss:0};
+ s.hire=13500;
+ s.freight=50;
+ s.commission=1.25;
+ s.prices={main:540,eca:800,aux:800};
+ s.ports.forEach((p,i)=>Object.assign(p,{rate:i?5000:8000,da:[65000,55000,42000][i],aux:0,fuel:i?'main':'eca'}));
+ s.legs.forEach((l,i)=>Object.assign(l,{distance:i?180:7200,speed:12.5,burn:16,eca:i?0:1000,ecaBurn:16,aux:0,margin:5}));
+ s.allocations=allocate(s);
+ return s;
+ }
 function active(s){return s.lots.filter(l=>l.selected);}
 function allocate(s,trace=[]){
  const out=[],lots=active(s).filter(l=>isBulkCargo(s.cargoTypes?.find(c=>c.id===l.cargoId))&&ok(l.quantity,true)&&ok(l.sf,true));
@@ -3365,7 +3434,45 @@ function computeChecked(s){
 }
 function stageAllocations(s){if(s.stage==='load')return s.allocations;const index=s.ports.findIndex(p=>p.name===s.stage);return s.allocations.filter(a=>{const l=s.lots.find(l=>l.id===a.lot);return l&&s.ports.findIndex(p=>p.name===loadOf(s,l))<=index&&s.ports.findIndex(p=>p.name===l.port)>index;});}
 function changeLoadPort(s,name,code=''){if(!name.trim()||s.ports.slice(1).some(p=>p.name===name))throw Error('Select a load port, different from the discharge port');const old=s.ports[0].name;if(old===name&&s.ports[0].code===code)return;s.lots.forEach(l=>l.loadPort=name);s.ports[0]={...port(name),code};s.legs=s.legs.filter(l=>l.from!==old&&l.to!==old);s.ballast=leg(deliveryName(s),name);s.stage='load';}
-function addLot(s,data){if(!data.name?.trim())throw Error('Enter a cargo type');if(!ok(data.quantity,true)||!ok(data.sf,true))throw Error('Enter positive tonnage and SF');if(!['Santos','Paranaguá'].includes(data.port))throw Error('Select a discharge port');if(data.loadPort&&!LOAD_PORT.includes(data.loadPort))throw Error('Select a load port');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});const l={id:'S'+n,name:known?.name||data.name.trim(),selected:true,quantity:data.quantity,cargoId:known?.id,sf:data.sf,sfBasis:known&&data.sf===known.sfDefault?known.sfBasis:'user-entered',propertySource:known?.propertyUrl||'',hazardClass:known?.hazardClass||'',loadPort:data.loadPort||'Ust-Luga',port:data.port,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:known?.group||'',un:known?.un||''};s.lots.push(l);return l;}
+// Adding a parcel directly, outside the sales register. Everything is checked before
+// anything is written, so a rejected parcel leaves no trace in the catalogue or the voyage.
+function addLot(s,data){
+ if(!data.name?.trim())throw Error('Enter a cargo type');
+ if(!ok(data.quantity,true)||!ok(data.sf,true))throw Error('Enter positive tonnage and SF');
+ if(!['Santos','Paranaguá'].includes(data.port))throw Error('Select a discharge port');
+ if(data.loadPort&&!LOAD_PORT.includes(data.loadPort))throw Error('Select a load port');
+
+ const ids=new Set(s.lots.map(l=>l.id));
+ let n=1;while(ids.has('S'+n))n++;
+ s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));
+
+ const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());
+ // Liquids and packaged goods are kept in the catalogue but cannot go in a bulk hold.
+ if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');
+ if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});
+
+ const l={
+  id:'S'+n,
+  name:known?.name||data.name.trim(),
+  selected:true,
+  quantity:data.quantity,
+  cargoId:known?.id,
+  sf:data.sf,
+  // An SF left at the catalogue's own figure keeps the catalogue's basis; a changed one is
+  // the user's, and says so, because the two carry different weight as evidence.
+  sfBasis:known&&data.sf===known.sfDefault?known.sfBasis:'user-entered',
+  propertySource:known?.propertyUrl||'',
+  hazardClass:known?.hazardClass||'',
+  loadPort:data.loadPort||'Ust-Luga',
+  port:data.port,
+  // Golden-angle hue: consecutive parcels stay distinguishable however many there are.
+  color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',
+  group:known?.group||'',
+  un:known?.un||''
+ };
+ s.lots.push(l);
+ return l;
+}
 function ensureBusinessData(s){
  const migratePorts=!Array.isArray(s.portRecords);
  s.sales??=[];s.portRecords??=[];
@@ -3442,7 +3549,64 @@ function updatePortRecord(s,index,key,value){
  record[key]=value;return record;
 }
 function addSaleToPlanner(s,saleId){ensureCatalogs(s);const sale=s.sales.find(x=>x.id===saleId);if(!sale)throw Error('Sale not found');validateSale(s,sale,{legacy:!!sale.legacyLotId});if(s.lots.some(l=>l.saleId===saleId))throw Error('Sale is already added to PLANNER');const cargo=s.cargoTypes.find(c=>c.id===sale.cargoId);if(!cargo||!isBulkCargo(cargo))throw Error('This cargo is unavailable for bulk planning');const ids=new Set(s.lots.map(l=>l.id));let n=1;while(ids.has('S'+n))n++;const l={id:'S'+n,saleId:sale.id,name:cargo.name,selected:true,quantity:sale.quantity,cargoId:cargo.id,sf:cargo.sf,sfBasis:cargo.sf===cargo.sfDefault?cargo.sfBasis:'catalog',propertySource:cargo.propertyUrl||'',hazardClass:cargo.hazardClass||'',loadPort:sale.loadPort,port:sale.dischargePort,color:'hsl('+((n*137.508)%360).toFixed(2)+' 48% 64%)',group:cargo.group||'',un:cargo.un||''};s.lots.push(l);syncRoute(s);return l;}
-function syncRoute(s){const alias={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};for(const l of s.lots)l.loadPort??=alias[s.ports[0]?.name]||s.ports[0]?.name||'Ust-Luga';const selected=active(s),loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))],dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))],needed=new Set([...loadNames,...dischargeNames]),old=s.ports;s.portCache??={};for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));const ordered=[...old.map(p=>alias[p.name]||p.name).filter(n=>needed.has(n)),...loadNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n)),...dischargeNames.filter(n=>!old.some(p=>(alias[p.name]||p.name)===n))];const unique=[...new Set(ordered)];unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));s.ports=unique.map(name=>{const found=old.find(p=>(alias[p.name]||p.name)===name)||s.portCache[name],record=s.portRecords?.find(p=>p.name===name&&p.da!==null&&p.da!==undefined)||s.portRecords?.find(p=>p.name===name);return found?{...found,name,da:found.da??record?.da??null}:{...port(name),da:record?.da??null,...(s.vesselSnapshot?{working:s.vesselSnapshot.working,idle:s.vesselSnapshot.idle,aux:s.vesselSnapshot.aux,auxWorking:s.vesselSnapshot.auxWorking,auxIdle:s.vesselSnapshot.auxIdle,boiler:s.vesselSnapshot.boiler,boilerDays:null,boilerFuel:null}:{})};});const calls=callsOf(s);if(calls.length&&s.ballast.to!==calls[0].name)s.ballast={...leg(deliveryName(s),calls[0].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.ballastSpeed,burn:s.vesselSnapshot.ballastBurn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})};s.deliveryPort=String(s.deliveryPort??'');s.ballast.from=deliveryName(s);for(let i=1;i<calls.length;i++)if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))s.legs.push({...leg(calls[i-1].name,calls[i].name),...(s.vesselSnapshot?{speed:s.vesselSnapshot.speed,burn:s.vesselSnapshot.burn,ecaBurn:s.vesselSnapshot.ecaBurn,aux:s.vesselSnapshot.aux}:{})});if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage||[p.callId+':arrival',p.callId+':departure'].includes(s.stage)))s.stage='load';syncBerths(s);}
+// Ports that were renamed in the register but may still be named the old way in a saved
+// voyage. Resolved on the way in so an old save does not grow a duplicate call.
+const PORT_ALIAS={"Ust'-Luga":'Ust-Luga','Saint Petersburg (ex Leningrad)':'St. Petersburg'};
+const resolveName=name=>PORT_ALIAS[name]||name;
+
+// The vessel's own figures follow it into every call and every leg it is applied to, so a
+// port stay and a passage are costed on the ship actually being planned.
+const callDefaults=v=>v?{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,
+ auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:null,boilerFuel:null}:{};
+const legDefaults=v=>v?{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}:{};
+const ballastDefaults=v=>v?{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux}:{};
+
+// The rotation follows the sales: the ports that are needed are the ports the selected
+// parcels load and discharge at, loading first. A call that is dropped is remembered in
+// portCache, so putting the sale back does not lose what was entered for its port.
+function syncRoute(s){
+ for(const l of s.lots)l.loadPort??=resolveName(s.ports[0]?.name)||s.ports[0]?.name||'Ust-Luga';
+ const selected=active(s);
+ const loadNames=[...new Set(selected.map(l=>l.loadPort).filter(Boolean))];
+ const dischargeNames=[...new Set(selected.map(l=>l.port).filter(Boolean))];
+ const needed=new Set([...loadNames,...dischargeNames]);
+ const old=s.ports;
+
+ s.portCache??={};
+ for(const p of old)s.portCache[p.name]=JSON.parse(JSON.stringify(p));
+
+ // Keep the order that was there, then append whatever the sales added.
+ const known=name=>old.some(p=>resolveName(p.name)===name);
+ const ordered=[...old.map(p=>resolveName(p.name)).filter(n=>needed.has(n)),
+  ...loadNames.filter(n=>!known(n)),
+  ...dischargeNames.filter(n=>!known(n))];
+ const unique=[...new Set(ordered)];
+ unique.sort((a,b)=>(loadNames.includes(a)?0:1)-(loadNames.includes(b)?0:1));
+
+ s.ports=unique.map(name=>{
+  const found=old.find(p=>resolveName(p.name)===name)||s.portCache[name];
+  // A disbursement already entered for the port outranks one merely on record for its name.
+  const record=s.portRecords?.find(p=>p.name===name&&p.da!==null&&p.da!==undefined)
+   ||s.portRecords?.find(p=>p.name===name);
+  return found?{...found,name,da:found.da??record?.da??null}
+   :{...port(name),da:record?.da??null,...callDefaults(s.vesselSnapshot)};
+ });
+
+ const calls=callsOf(s);
+ if(calls.length&&s.ballast.to!==calls[0].name)
+  s.ballast={...leg(deliveryName(s),calls[0].name),...ballastDefaults(s.vesselSnapshot)};
+ s.deliveryPort=String(s.deliveryPort??'');
+ s.ballast.from=deliveryName(s);
+
+ for(let i=1;i<calls.length;i++)
+  if(!s.legs.some(l=>l.from===calls[i-1].name&&l.to===calls[i].name))
+   s.legs.push({...leg(calls[i-1].name,calls[i].name),...legDefaults(s.vesselSnapshot)});
+
+ // A chosen loading state that no longer exists falls back to the editable plan.
+ if(s.stage!=='load'&&!s.ports.some(p=>p.name===s.stage||[p.callId+':arrival',p.callId+':departure'].includes(s.stage)))
+  s.stage='load';
+ syncBerths(s);
+}
 // SALE owns the berth; the call only carries the choice. Sales that disagree about a call are reported by the planner check.
 function berthsAt(s,call){const out=[];for(const l of active(s)){const sale=s.sales?.find(x=>x.id===l.saleId);if(!sale)continue;if(l.loadPort===call.name&&sale.loadPortId)out.push(sale.loadPortId);if(l.port===call.name&&sale.dischargePortId)out.push(sale.dischargePortId);}return [...new Set(out)];}
 function syncBerths(s){for(const call of s.ports){const ids=berthsAt(s,call);if(!ids.length)continue;call.planning??={berthId:'',arrival:{},departure:{}};call.planning.berthId=ids[0];}}
@@ -3454,7 +3618,37 @@ function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES)
  }
  mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id&&!l.passport)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
-function applyVessel(s,id){ensureCatalogs(s);const v=s.vesselProfiles.find(v=>v.id===id);if(!v||!v.name.trim())throw Error('Enter a vessel name');for(const k of ['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'])if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);for(const k of ['bale','gt','nrt','tanktop','airDraft','boiler'])if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);for(const k of ['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'])if(!ok(v[k]))throw Error('Check consumption: '+k);if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');if(!v.holdData.length)throw Error('Add holds');v.holds=v.holdData.length;s.vesselId=id;s.vesselSnapshot=JSON.parse(JSON.stringify(v));s.holds=JSON.parse(JSON.stringify(v.holdData));s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});[...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));}
+// A profile has to be complete before a voyage can be planned on it. These are the figures
+// that must be present and positive, those that may be absent but not nonsense if given,
+// and the consumptions, which may be zero but not missing.
+const VESSEL_REQUIRED=['dwt','draft','tpc','loa','beam','grain','speed','ballastSpeed'];
+const VESSEL_OPTIONAL=['bale','gt','nrt','tanktop','airDraft','boiler'];
+const VESSEL_CONSUMPTION=['burn','ballastBurn','working','idle','aux','auxWorking','auxIdle'];
+
+// Applying a vessel pins its particulars into the voyage and pushes its speeds and
+// consumptions into every leg and every call, including the ports held in the cache: a call
+// that comes back must come back costed on the ship now being planned.
+function applyVessel(s,id){
+ ensureCatalogs(s);
+ const v=s.vesselProfiles.find(v=>v.id===id);
+ if(!v||!v.name.trim())throw Error('Enter a vessel name');
+ for(const k of VESSEL_REQUIRED)if(!ok(v[k],true))throw Error('Check vessel parameter: '+k);
+ for(const k of VESSEL_OPTIONAL)if(v[k]!==null&&v[k]!==undefined&&!ok(v[k]))throw Error('Check vessel parameter: '+k);
+ for(const k of VESSEL_CONSUMPTION)if(!ok(v[k]))throw Error('Check consumption: '+k);
+ if(v.ecaBurn!==null&&!ok(v.ecaBurn))throw Error('Check consumption ECA');
+ if(v.holdData.some(h=>!ok(h.volume,true)||(h.massLimit!==null&&!ok(h.massLimit,true))))throw Error('Check hold parameters');
+ if(!v.holdData.length)throw Error('Add holds');
+
+ v.holds=v.holdData.length;
+ s.vesselId=id;
+ s.vesselSnapshot=JSON.parse(JSON.stringify(v));
+ s.holds=JSON.parse(JSON.stringify(v.holdData));
+ s.legs.forEach(l=>Object.assign(l,{speed:v.speed,burn:v.burn,ecaBurn:v.ecaBurn,aux:v.aux}));
+ Object.assign(s.ballast,{speed:v.ballastSpeed,burn:v.ballastBurn,ecaBurn:v.ecaBurn,aux:v.aux});
+ [...s.ports,...Object.values(s.portCache||{})].forEach(p=>Object.assign(p,{
+  working:v.working,idle:v.idle,aux:v.aux,auxWorking:v.auxWorking,auxIdle:v.auxIdle,
+  boiler:v.boiler,boilerDays:p.boilerDays??null,boilerFuel:p.boilerFuel??null}));
+}
 function migrateBaltic(s){ensureCatalogs(s);if(s.tbnSourceRevision===VESSELS[0].revision)return false;s.previousVesselProfile={profile:s.vesselProfiles.find(v=>v.id==='tbn-1'),snapshot:s.vesselSnapshot,holds:JSON.parse(JSON.stringify(s.holds)),constant:s.deductions.constant};for(const standard of VESSELS){const i=s.vesselProfiles.findIndex(v=>v.id===standard.id);const copy=JSON.parse(JSON.stringify(standard));if(i<0)s.vesselProfiles.push(copy);else s.vesselProfiles[i]=copy;}applyVessel(s,s.vesselProfiles.some(v=>v.id===s.vesselId)?s.vesselId:'tbn-1');s.tbnSourceRevision=VESSELS[0].revision;return true;}
 function anonymizeProfiles(s){
  const oldDefaults={"\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u0431\u0430\u043b\u043a\u0435\u0440":"Standard bulk carrier","\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c TBN 1":"Standard profile TBN 1","\u0420\u043e\u0441\u0441\u0438\u044f \u2192 \u0411\u0440\u0430\u0437\u0438\u043b\u0438\u044f":"Russia → Brazil"};
@@ -11960,7 +12154,7 @@ const reports=[
   }
 ];
 reports.sort((a,b)=>b.publishedDate.localeCompare(a.publishedDate));
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
 const dateLabel=date=>new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
 const paragraphs=items=>(items||[]).map(p=>'<p>'+esc(p)+'</p>').join('');
 const sourceSections=items=>(items||[]).map(s=>'<section class="market-source-section"><h5>'+esc(s.name)+'</h5>'+paragraphs(s.paragraphs)+'</section>').join('');
@@ -11986,7 +12180,7 @@ const api={reports,render,dateLabel};if(typeof module!=='undefined'&&module.expo
 </script><script>(function(root){
 'use strict';
 // Describes what the tabs actually enforce. Keep in step with app.js, not with the intended process.
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
 
 const STEPS=[
  {tab:'CARGO',title:'Register the cargo',
@@ -14186,13 +14380,11 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Proj
 })(globalThis);
 </script><script>(function(root){
 'use strict';
-// toLocaleString builds a fresh Intl.NumberFormat on every call and is the hottest thing in a render.
-// One formatter per digit count produces the same string.
-const numberFormats=new Map();
-const numberFormat=digits=>{let f=numberFormats.get(digits);if(!f){f=new Intl.NumberFormat('en-GB',{minimumFractionDigits:digits,maximumFractionDigits:digits});numberFormats.set(digits,f);}return f;};
+const {esc,numberFormat:sharedFormat}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
+// One formatter per digit count; the shared cache keys on the pair, so both digits match here.
+const numberFormat=digits=>sharedFormat(digits,digits);
 function create(env){
  const {M,P,getState,changed}=env,$=id=>document.getElementById(id);
- const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const n=x=>Number.isFinite(x)?String(x):'—',fmt=(x,d=2)=>Number.isFinite(x)?numberFormat(d).format(x):'—';
  const btn=(action,label,attrs='')=>`<button type="button" data-action="${action}" ${attrs}>${label}</button>`;
  const table=(head,rows)=>`<div class="table-wrap"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
@@ -14280,9 +14472,66 @@ function create(env){
   const alert=attention?`<p class="loading-pattern-alert"><strong>${esc(attention.label)}</strong> · ${esc(patternText(attention))} ${attention.key!==current.key?btn('loading-state','Show state',`data-id="${esc(attention.key)}"`):''}</p>`:`<p class="loading-pattern-neutral">${esc(patternText(current))}</p>`;
   const groups=`<p class="loading-group-mass">Current state · FWD group ${fmt(current.foreMass,1)} t · MID ${fmt(current.middleMass,1)} t · AFT group ${fmt(current.aftMass,1)} t</p>`;
   const rows=[patterns.plan,...patterns.states].map(row=>`<tr class="${row.status==='attention'?'loading-pattern-row':''}" data-loading-state="${esc(row.key)}" aria-current="${row.key===current.key?'true':'false'}"><td class="name">${btn('loading-state',esc(row.label),`class="text-action" data-id="${esc(row.key)}"`)}</td>${row.masses.map(h=>`<td>${fmt(h.mass,1)}</td>`).join('')}<td>${fmt(row.quantity,1)}</td><td class="loading-pattern-text">${esc(patternText(row))}</td></tr>`);
-  return `<div class="loading-pattern-heading"><h3>Cargo distribution</h3><span class="${departures.length?'notice':'muted'}">${esc(heading)}</span></div>${alert}${groups}<details id="loading-pattern-states" class="fold"><summary>All port states and screening rules</summary><div class="fold-body">${table(['State',...s.holds.map(h=>'№'+h.id+', t'),'Cargo, t','Check'],rows)}<p class="form-note">Flags: cargo only forward or aft; a single occupied hold; empty holds between loaded holds; a partial block; more than half of the cargo in one hold (3+ holds). These are review prompts, not allowable loading limits. Groups follow the forward-to-aft hold order; the middle group is the central hold when the count is odd.</p><p class="form-note">Basis: <a href="https://iacs.org.uk/resolutions/recommendations/41-60/rec-46-rev2-cln" target="_blank" rel="noopener noreferrer">IACS Recommendation 46</a> and <a href="https://www.imo.org/en/ourwork/safety/pages/blu-code-and-blu-manual.aspx" target="_blank" rel="noopener noreferrer">IMO BLU Code</a>. Pattern recognition is a ProjectX planning aid, not an IMO or class approval.</p></div></details>`;
+  // What the flags mean, and what they are not. Said on the page because a screening prompt
+  // read as an approval is the expensive mistake here.
+  const FLAG_NOTE='<p class="form-note">Flags: cargo only forward or aft; a single occupied hold; empty holds between loaded holds; a partial block; more than half of the cargo in one hold (3+ holds). These are review prompts, not allowable loading limits. Groups follow the forward-to-aft hold order; the middle group is the central hold when the count is odd.</p>';
+  const BASIS_NOTE='<p class="form-note">Basis: <a href="https://iacs.org.uk/resolutions/recommendations/41-60/rec-46-rev2-cln" target="_blank" rel="noopener noreferrer">IACS Recommendation 46</a> and <a href="https://www.imo.org/en/ourwork/safety/pages/blu-code-and-blu-manual.aspx" target="_blank" rel="noopener noreferrer">IMO BLU Code</a>. Pattern recognition is a ProjectX planning aid, not an IMO or class approval.</p>';
+  return `<div class="loading-pattern-heading"><h3>Cargo distribution</h3>`+
+   `<span class="${departures.length?'notice':'muted'}">${esc(heading)}</span></div>`+
+   alert+groups+
+   `<details id="loading-pattern-states" class="fold"><summary>All port states and screening rules</summary>`+
+   `<div class="fold-body">`+
+   table(['State',...s.holds.map(h=>'№'+h.id+', t'),'Cargo, t','Check'],rows)+
+   FLAG_NOTE+BASIS_NOTE+
+   `</div></details>`;
  }
- function section3(s,budget,report){const summary=P.stageSummary(s);report=report||P.check(s,budget);const editable=s.stage==='load';return `<section id="stowage-section"><div class="heading"><h2>3. Stowage by hold</h2><div class="button-row">${btn('allocate','Allocate by volume',!summary.rows.length?'disabled':'')}${s.planning?.undo?btn('undo-plan','Undo'):''}${btn('planning-checks','Checks')}</div></div><div class="route"><select data-path="stage" aria-label="Cargo plan stage"><option value="load" ${editable?'selected':''}>After all loadings · edit plan</option>${P.events(s).map(e=>`<option value="${esc(e.key)}" ${P.resolveStage(s)?.key===e.key?'selected':''}>${esc(e.label)}</option>`).join('')}</select><span data-stage-total>${(fmt(summary.quantity,1)+' t on board').toUpperCase()}</span>${!editable?btn('edit-plan','Edit loading plan'):''}${report.technical==='not-reviewed'?'':`<span class="planning-status">${esc('Technical review: '+report.technical)}</span>`}</div><div class="ship-wrap">${draw(s,report.loadingPatterns)}</div><div id="loading-patterns">${loadingPatternBody(s,report.loadingPatterns)}</div><div class="table-wrap"><table class="allocation"><thead><tr><th>Sale / cargo</th>${s.holds.map(h=>`<th>№${h.id}</th>`).join('')}<th>Unassigned, t</th><th>On board, t</th></tr></thead><tbody>${summary.rows.map(l=>`<tr><td class="name"><span class="tag" style="background:${esc(l.color)}"></span><small>${esc(l.saleId||l.id)}</small><br>${esc(l.name)}</td>${s.holds.map(h=>{const q=summary.allocations.filter(a=>a.lot===l.id&&a.hold===h.id).reduce((n,a)=>n+(a.quantity??0),0);return `<td>${editable?`<input type="text" inputmode="decimal" data-lot="${esc(l.id)}" data-hold="${h.id}" aria-label="${esc(l.name)} hold ${h.id}" value="${q?fmt(q,1):''}" placeholder="—">`:fmt(q,1)}</td>`;}).join('')}<td data-unassigned="${esc(l.id)}">${fmt(l.unassigned,1)}</td><td>${fmt(l.onBoard,1)}</td></tr>`).join('')}</tbody></table></div>${draftsBlock(s,budget,report.drafts)}<div id="plan-errors">${report.errors.map(x=>`<p class="error">${esc(x)}</p>`).join('')}</div></section>`;}
+ // Section 3: what is in which hold, at the chosen state of the voyage. The table is
+ // editable only while the plan is being built; once a state is chosen it is a reading of
+ // that state, not a place to type.
+ const stageOptions=(s,editable)=>
+  `<option value="load" ${editable?'selected':''}>After all loadings · edit plan</option>`+
+  P.events(s).map(e=>`<option value="${esc(e.key)}" ${P.resolveStage(s)?.key===e.key?'selected':''}>${esc(e.label)}</option>`).join('');
+
+ const holdCell=(s,l,h,summary,editable)=>{
+  const q=summary.allocations.filter(a=>a.lot===l.id&&a.hold===h.id).reduce((n,a)=>n+(a.quantity??0),0);
+  return `<td>${editable
+   ?`<input type="text" inputmode="decimal" data-lot="${esc(l.id)}" data-hold="${h.id}" aria-label="${esc(l.name)} hold ${h.id}" value="${q?fmt(q,1):''}" placeholder="—">`
+   :fmt(q,1)}</td>`;
+ };
+
+ const allocationRow=(s,l,summary,editable)=>
+  `<tr><td class="name"><span class="tag" style="background:${esc(l.color)}"></span>`+
+  `<small>${esc(l.saleId||l.id)}</small><br>${esc(l.name)}</td>`+
+  s.holds.map(h=>holdCell(s,l,h,summary,editable)).join('')+
+  `<td data-unassigned="${esc(l.id)}">${fmt(l.unassigned,1)}</td>`+
+  `<td>${fmt(l.onBoard,1)}</td></tr>`;
+
+ function section3(s,budget,report){
+  const summary=P.stageSummary(s);
+  report=report||P.check(s,budget);
+  const editable=s.stage==='load';
+  return `<section id="stowage-section">`+
+   `<div class="heading"><h2>3. Stowage by hold</h2><div class="button-row">`+
+   btn('allocate','Allocate by volume',!summary.rows.length?'disabled':'')+
+   (s.planning?.undo?btn('undo-plan','Undo'):'')+
+   btn('planning-checks','Checks')+
+   `</div></div>`+
+   `<div class="route"><select data-path="stage" aria-label="Cargo plan stage">${stageOptions(s,editable)}</select>`+
+   `<span data-stage-total>${(fmt(summary.quantity,1)+' t on board').toUpperCase()}</span>`+
+   (!editable?btn('edit-plan','Edit loading plan'):'')+
+   (report.technical==='not-reviewed'?'':`<span class="planning-status">${esc('Technical review: '+report.technical)}</span>`)+
+   `</div>`+
+   `<div class="ship-wrap">${draw(s,report.loadingPatterns)}</div>`+
+   `<div id="loading-patterns">${loadingPatternBody(s,report.loadingPatterns)}</div>`+
+   `<div class="table-wrap"><table class="allocation"><thead><tr><th>Sale / cargo</th>`+
+   s.holds.map(h=>`<th>№${h.id}</th>`).join('')+
+   `<th>Unassigned, t</th><th>On board, t</th></tr></thead><tbody>`+
+   summary.rows.map(l=>allocationRow(s,l,summary,editable)).join('')+
+   `</tbody></table></div>`+
+   draftsBlock(s,budget,report.drafts)+
+   `<div id="plan-errors">${report.errors.map(x=>`<p class="error">${esc(x)}</p>`).join('')}</div>`+
+   `</section>`;
+ }
  function refresh(){const s=state(),wrap=document.querySelector('#stowage-section .ship-wrap');if(!wrap)return;const before=motionSnapshot(),report=P.check(s);wrap.innerHTML=draw(s,report.loadingPatterns);animate(before);const summary=P.stageSummary(s);document.querySelectorAll('[data-unassigned]').forEach(el=>el.textContent=fmt(summary.rows.find(l=>l.id===el.dataset.unassigned)?.unassigned,1));const errors=$('plan-errors');if(errors)errors.innerHTML=report.errors.map(x=>`<p class="error">${esc(x)}</p>`).join('');const panel=$('loading-patterns'),open=$('loading-pattern-states')?.open;if(panel){panel.innerHTML=loadingPatternBody(s,report.loadingPatterns);if(open&&$('loading-pattern-states'))$('loading-pattern-states').open=true;}}
  function modal(title,body,onSave,label='Save'){const d=document.createElement('dialog');d.className='planning-dialog';d.innerHTML=`<form><div class="heading"><h2>${esc(title)}</h2><button type="button" data-close aria-label="Close">×</button></div>${body}<p class="error" role="alert"></p>${onSave?`<button type="submit" class="primary">${esc(label)}</button>`:''}</form>`;document.body.appendChild(d);d.querySelector('[data-close]').onclick=()=>{d.close();d.remove();};d.addEventListener('close',()=>d.remove());d.querySelector('form').onsubmit=e=>{e.preventDefault();if(!onSave)return;try{onSave(new FormData(e.target));d.close();d.remove();changed();}catch(error){d.querySelector('.error').textContent=error.message;}};d.showModal();return d;}
  const field=(key,label,value='',type='text',required=false)=>`<label class="field">${label}<input name="${key}" type="${type}" value="${esc(value??'')}" ${type==='number'?'step="any" min="0"':''} ${required?'required':''}></label>`;
@@ -14290,19 +14539,130 @@ function create(env){
  const val=(f,k)=>String(f.get(k)||'').trim(),number=(f,k)=>val(f,k)===''?null:Number(f.get(k)), grid=x=>`<div class="grid">${x}</div>`;
  function passport(lotId,edit=false){const s=state(),l=s.lots.find(l=>l.id===lotId);if(!l)return;P.ensure(s);const p=l.passport,c=s.cargoTypes.find(c=>c.id===l.cargoId);
   if(!edit){const d=modal(l.name,`<dl class="evidence"><dt>Sale</dt><dd>${esc(l.saleId)}</dd><dt>Shipment SF</dt><dd>${n(l.sf)} m³/t · ${esc(p.basis)}</dd><dt>Source</dt><dd>${esc(p.source||'Not entered')} · ${esc(p.date||'No date')}</dd><dt>BCSN</dt><dd>${esc(p.bcsn||'Not declared')}</dd><dt>Current catalogue SF</dt><dd>${n(c?.sf)} m³/t ${c?.sf!==l.sf?`· volume difference ${fmt((c.sf-l.sf)*l.quantity)} m³`:''}</dd><dt>Volume</dt><dd>${n(l.quantity)} × ${n(l.sf)} = ${fmt(l.quantity*l.sf)} m³</dd><dt>Version</dt><dd>${p.version}</dd></dl>${btn('source-in-sale','Edit shipment source in SALE')}`);d.querySelector('[data-action="source-in-sale"]').onclick=()=>{d.close();d.remove();env.openTab('sale');passport(lotId,true);};return;}
-  modal('Shipment properties · '+l.saleId,grid(field('value','Source SF / bulk density',p.value??l.sf,'number',true)+select('unit','Original unit',p.unit||'m3/t',[['m3/t','m³/t'],['ft3/metric-ton','ft³ / metric ton'],['ft3/long-ton','ft³ / long ton'],['ft3/short-ton','ft³ / short ton'],['kg/m3','Bulk density, kg/m³']])+select('basis','Basis',p.basis,[['reference','Reference'],['declared','Declared shipment'],['density-estimate','Estimated from density']])+field('source','Source document / reference',p.source)+field('date','Source date',p.date,'date')+field('bcsn','BCSN',p.bcsn)+field('specification','Specification / physical form',p.specification)+select('group','IMSBC group',l.group||'',['','A','B','C','A & B'])+field('hazardClass','Hazard class',p.hazardClass??l.hazardClass)+field('un','UN number',p.un??l.un)+field('minSf','Minimum SF, m³/t',p.minSf,'number')+field('maxSf','Maximum SF, m³/t',p.maxSf,'number')+field('codeVersion','IMSBC edition / amendment',p.codeVersion)+field('mc','Moisture certificate reference, if applicable',p.mc)+field('tml','TML certificate reference, if applicable',p.tml)+field('plannedQuantity','Planned quantity, t',l.quantity,'number',true)+field('minQuantity','Permitted minimum, t',p.minQuantity,'number')+field('maxQuantity','Permitted maximum, t',p.maxQuantity,'number')+select('splitAllowed','Quantity variation / split allowed',p.splitAllowed?'yes':'no',[['no','Not established'],['yes','Allowed by referenced source']])+field('quantitySource','Quantity permission source',p.quantitySource))+`<p class="muted">Updates this shipment snapshot. The previous version is retained.</p>`,f=>{P.updatePassport(s,lotId,{value:number(f,'value'),unit:val(f,'unit'),basis:val(f,'basis'),source:val(f,'source'),date:val(f,'date'),bcsn:val(f,'bcsn'),specification:val(f,'specification'),group:val(f,'group'),minSf:number(f,'minSf'),maxSf:number(f,'maxSf'),codeVersion:val(f,'codeVersion'),mc:val(f,'mc'),tml:val(f,'tml'),hazardClass:val(f,'hazardClass'),un:val(f,'un'),plannedQuantity:number(f,'plannedQuantity'),minQuantity:number(f,'minQuantity'),maxQuantity:number(f,'maxQuantity'),splitAllowed:val(f,'splitAllowed')==='yes',quantitySource:val(f,'quantitySource')});});
+  // The shipment passport: what the stowage factor is, where it came from, and what the
+  // referenced source permits. Every field is saved with the snapshot, so the figure in the
+  // plan can be traced to the document it came from.
+  modal('Shipment properties · '+l.saleId,grid(field('value','Source SF / bulk density',p.value??l.sf,'number',true)
+   +select('unit','Original unit',p.unit||'m3/t',[['m3/t','m³/t'],['ft3/metric-ton','ft³ / metric ton'],['ft3/long-ton','ft³ / long ton'],['ft3/short-ton','ft³ / short ton'],['kg/m3','Bulk density, kg/m³']])
+   +select('basis','Basis',p.basis,[['reference','Reference'],['declared','Declared shipment'],['density-estimate','Estimated from density']])
+   +field('source','Source document / reference',p.source)
+   +field('date','Source date',p.date,'date')
+   +field('bcsn','BCSN',p.bcsn)
+   +field('specification','Specification / physical form',p.specification)
+   +select('group','IMSBC group',l.group||'',['','A','B','C','A & B'])
+   +field('hazardClass','Hazard class',p.hazardClass??l.hazardClass)
+   +field('un','UN number',p.un??l.un)
+   +field('minSf','Minimum SF, m³/t',p.minSf,'number')
+   +field('maxSf','Maximum SF, m³/t',p.maxSf,'number')
+   +field('codeVersion','IMSBC edition / amendment',p.codeVersion)
+   +field('mc','Moisture certificate reference, if applicable',p.mc)
+   +field('tml','TML certificate reference, if applicable',p.tml)
+   +field('plannedQuantity','Planned quantity, t',l.quantity,'number',true)
+   +field('minQuantity','Permitted minimum, t',p.minQuantity,'number')
+   +field('maxQuantity','Permitted maximum, t',p.maxQuantity,'number')
+   +select('splitAllowed','Quantity variation / split allowed',p.splitAllowed?'yes':'no',[['no','Not established'],['yes','Allowed by referenced source']])
+   +field('quantitySource','Quantity permission source',p.quantitySource))+`<p class="muted">Updates this shipment snapshot. The previous version is retained.</p>`,f=>{P.updatePassport(s,lotId,{value:number(f,'value'),unit:val(f,'unit'),basis:val(f,'basis'),source:val(f,'source'),date:val(f,'date'),bcsn:val(f,'bcsn'),specification:val(f,'specification'),group:val(f,'group'),minSf:number(f,'minSf'),maxSf:number(f,'maxSf'),codeVersion:val(f,'codeVersion'),mc:val(f,'mc'),tml:val(f,'tml'),hazardClass:val(f,'hazardClass'),un:val(f,'un'),plannedQuantity:number(f,'plannedQuantity'),minQuantity:number(f,'minQuantity'),maxQuantity:number(f,'maxQuantity'),splitAllowed:val(f,'splitAllowed')==='yes',quantitySource:val(f,'quantitySource')});});
  }
- function vesselBasis(){const s=state();P.ensure(s);const b=s.planning.vesselBasis||{},g=P.grain(s);modal('Vessel source and capacity',`<p>Vessel basis: ${esc(P.vesselBasisStatus(s))}</p><p>Hold total ${fmt(g.total)} m³ · declared grain ${fmt(g.declared)} m³ · difference ${fmt(g.difference)} m³</p>`+grid(select('kind','Vessel basis',b.kind||'reference',[['reference','Reference type'],['nominated','Nominated vessel']])+field('imo','IMO',b.imo)+field('source','Particulars source',b.source||M.vesselOf(s)?.source)+field('date','Source date',b.date,'date')+field('dwtBasis','DWT / load-line basis',b.dwtBasis)+field('density','Reference water density, t/m³',b.density,'number')+field('lightship','Lightship, t',b.lightship,'number')+field('tpcRangeCm','TPC valid deviation from reference draft, cm',b.tpcRangeCm,'number')+field('tpcSource','TPC range / hydrostatic source',b.tpcSource)),f=>{const kind=val(f,'kind'),imo=val(f,'imo');if(kind==='nominated'&&(!/^\d{7}$/.test(imo)||!val(f,'source')||!val(f,'date')))throw Error('A nominated vessel needs IMO, particulars source and date');s.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(s)),kind,imo,source:val(f,'source'),date:val(f,'date'),dwtBasis:val(f,'dwtBasis'),density:number(f,'density'),lightship:number(f,'lightship'),tpcRangeCm:number(f,'tpcRangeCm'),tpcSource:val(f,'tpcSource')};});}
+ // Where the vessel's particulars came from. A nominated vessel has to name its IMO, its
+ // source and the date of it; a reference type is allowed to stay a reference type.
+ function vesselBasis(){
+  const s=state();P.ensure(s);
+  const b=s.planning.vesselBasis||{},g=P.grain(s);
+  const capacity=`<p>Vessel basis: ${esc(P.vesselBasisStatus(s))}</p>`+
+   `<p>Hold total ${fmt(g.total)} m³ · declared grain ${fmt(g.declared)} m³ · difference ${fmt(g.difference)} m³</p>`;
+  const form=grid(
+   select('kind','Vessel basis',b.kind||'reference',[['reference','Reference type'],['nominated','Nominated vessel']])+
+   field('imo','IMO',b.imo)+
+   field('source','Particulars source',b.source||M.vesselOf(s)?.source)+
+   field('date','Source date',b.date,'date')+
+   field('dwtBasis','DWT / load-line basis',b.dwtBasis)+
+   field('density','Reference water density, t/m³',b.density,'number')+
+   field('lightship','Lightship, t',b.lightship,'number')+
+   field('tpcRangeCm','TPC valid deviation from reference draft, cm',b.tpcRangeCm,'number')+
+   field('tpcSource','TPC range / hydrostatic source',b.tpcSource));
+  modal('Vessel source and capacity',capacity+form,f=>{
+   const kind=val(f,'kind'),imo=val(f,'imo');
+   if(kind==='nominated'&&(!/^\d{7}$/.test(imo)||!val(f,'source')||!val(f,'date')))
+    throw Error('A nominated vessel needs IMO, particulars source and date');
+   s.planning.vesselBasis={vesselKey:JSON.stringify(M.vesselOf(s)),kind,imo,source:val(f,'source'),date:val(f,'date'),
+    dwtBasis:val(f,'dwtBasis'),density:number(f,'density'),lightship:number(f,'lightship'),
+    tpcRangeCm:number(f,'tpcRangeCm'),tpcSource:val(f,'tpcSource')};
+  });
+ }
  function intakeBasis(){const s=state();P.ensure(s);const b=s.planning.intakeBasis;modal('Intake basis',grid(field('state','Deductions refer to',b.state)+field('source','Deductions source',b.source)+field('date','Source date',b.date,'date')+field('constantIncludes','Constant includes',b.constantIncludes)+field('draftLossSource','Draft loss calculation / source',b.draftLossSource)+field('draftLossCall','Limiting call / state',b.draftLossCall))+(b.legacyDraftLoss?'<p class="muted">Draft loss 0 was inherited from the previous calculation; its source is not confirmed.</p>':''),f=>{s.planning.intakeBasis=Object.fromEntries(['state','source','date','constantIncludes','draftLossSource','draftLossCall'].map(k=>[k,val(f,k)]));});}
  // The solved plan applies straight away; Undo restores the allocation it replaced.
  function allocate(){const s=state(),r=P.solve(s);if(r.status!=='feasible'){modal('Automatic plan',`<p>${r.status==='search-limit'?'Search limit reached. No complete plan found yet.':'No complete plan found under the separate-hold search model.'}</p><p class="muted">${esc(r.scope||'Complete cargo SF, quantities and hold volumes.')} Existing allocations are unchanged.</p>`);return;}
  P.applyPlan(s,r);}
  function compatibility(){const s=state(),lots=s.lots.filter(l=>l.selected);let pairs=[];for(let i=0;i<lots.length;i++)for(let j=i+1;j<lots.length;j++)pairs.push([lots[i],lots[j]]);modal('Cargo compatibility',pairs.map(([a,b],i)=>{const r=s.planning.compatibility.find(r=>[r.a,r.b].includes(a.id)&&[r.a,r.b].includes(b.id))||{};return `<fieldset><legend>${esc(a.name)} / ${esc(b.name)}</legend>`+grid(select('rule'+i,'Relationship',r.rule||'unknown',[['unknown','Not established'],['same-hold','Same hold permitted'],['separate-holds','Separate holds required'],['non-adjacent','Non-adjacent holds required']])+field('source'+i,'Source / conditions',r.source))+'</fieldset>';}).join('')||'<p>Add two selected parcels to define a relationship.</p>',f=>{s.planning.compatibility=pairs.map(([a,b],i)=>{const rule=val(f,'rule'+i),source=val(f,'source'+i);if(rule!=='unknown'&&!source)throw Error('Every established relationship needs a source');return {a:a.id,b:b.id,rule,source};});});}
  function technicalReport(){const s=state();modal('Record external technical review',grid(field('reference','Report document / reference','','text',true)+field('reviewer','Reviewer','','text',true)+field('date','Review date','','date',true)+select('result','Result','conditional',[['conditional','Conditional'],['accepted','Accepted'],['rejected','Rejected']])+field('conditions','Conditions'))+`<fieldset><legend>States covered by this report</legend>${P.events(s).map(e=>`<label class="check-line"><input type="checkbox" name="covered" value="${esc(e.key)}"> ${esc(e.label)}</label>`).join('')}</fieldset>`,f=>P.addReport(s,{reference:val(f,'reference'),reviewer:val(f,'reviewer'),date:val(f,'date'),result:val(f,'result'),conditions:val(f,'conditions'),covered:f.getAll('covered')}),'Record review');}
- function checks(){const s=state(),r=P.check(s),d=modal('Planner checks',`<p>Loading plan: ${esc(r.status)} · technical review: ${esc(r.technical)}</p>${r.errors.map(x=>`<p class="error">${esc(x)}</p>`).join('')}${r.warnings.map(x=>`<p class="muted">${esc(x)}</p>`).join('')}`+table(['State','On board, t','Cargo limit, t','Margin, t','Check'],r.states.map(st=>`<tr><td>${esc(st.label)}</td><td>${fmt(st.quantity,1)}</td><td>${fmt(st.limit,1)}</td><td>${fmt(st.margin,1)}</td><td class="state-check-text">${esc([...st.issues,...st.missing].join('; ')||st.status)}</td></tr>`))+`<div class="button-row">${btn('vessel-basis','Vessel source')}${btn('intake-basis','Intake basis')}${btn('compatibility','Cargo compatibility')}${btn('technical-report','Record technical review')}${btn('freeze-plan','Save plan version')}</div>`+`<h3>Saved plan versions</h3>${(s.planning.snapshots||[]).map((x,i)=>btn('view-snapshot',esc(x.createdAt),`data-index="${i}"`)).join('')||'<p class="muted">None saved yet.</p>'}`);
+ // The checks panel: the plan's status, what is wrong with it, each state against its limit,
+ // and the actions that resolve them. Saved plan versions are listed last.
+ function checks(){
+  const s=state(),r=P.check(s);
+  const problems=r.errors.map(x=>`<p class="error">${esc(x)}</p>`).join('')+
+   r.warnings.map(x=>`<p class="muted">${esc(x)}</p>`).join('');
+  const stateRow=st=>
+   `<tr><td>${esc(st.label)}</td><td>${fmt(st.quantity,1)}</td><td>${fmt(st.limit,1)}</td>`+
+   `<td>${fmt(st.margin,1)}</td>`+
+   `<td class="state-check-text">${esc([...st.issues,...st.missing].join('; ')||st.status)}</td></tr>`;
+  const actions=`<div class="button-row">`+
+   btn('vessel-basis','Vessel source')+btn('intake-basis','Intake basis')+
+   btn('compatibility','Cargo compatibility')+btn('technical-report','Record technical review')+
+   btn('freeze-plan','Save plan version')+`</div>`;
+  const snapshots=(s.planning.snapshots||[])
+   .map((x,i)=>btn('view-snapshot',esc(x.createdAt),`data-index="${i}"`)).join('')
+   ||'<p class="muted">None saved yet.</p>';
+  const d=modal('Planner checks',
+   `<p>Loading plan: ${esc(r.status)} · technical review: ${esc(r.technical)}</p>`+problems+
+   table(['State','On board, t','Cargo limit, t','Margin, t','Check'],r.states.map(stateRow))+
+   actions+`<h3>Saved plan versions</h3>`+snapshots);
  d.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;d.close();d.remove();action(b.dataset.action,b);});}
- function printEvidence(s,budget,report){const r=report||P.check(s,budget);return `<div class="print-evidence"><h3>Planner evidence</h3><p>Vessel basis: ${esc(P.vesselBasisStatus(s))} · ${esc(s.planning?.vesselBasis?.source||M.vesselOf(s)?.source||'No source')} · ${esc(s.planning?.vesselBasis?.date||'No date')}</p><p>Intake state: ${esc(s.planning?.intakeBasis?.state)} · source ${esc(s.planning?.intakeBasis?.source||'Not entered')} · draft loss ${esc(s.planning?.intakeBasis?.draftLossSource||'Not sourced')}</p>${table(['Sale','Shipment basis','SF, m³/t','Source / date'],s.lots.filter(l=>l.selected).map(l=>`<tr><td>${esc(l.saleId)} · ${esc(l.name)}</td><td>${esc(l.passport?.basis)}</td><td>${n(l.sf)}</td><td>${esc(l.passport?.source||'Not entered')} · ${esc(l.passport?.date||'No date')}</td></tr>`))}${table(['State','Cargo, t','Limit, t','Deadweight, t','Draft, m','Draft basis','Check','Cargo distribution'],r.states.map(st=>`<tr><td>${esc(st.label)}</td><td>${fmt(st.quantity,1)}</td><td>${fmt(st.limit,1)}</td><td>${fmt(st.draft?.deadweight,1)}</td><td>${fmt(st.draft?.deepest,2)}</td><td>${esc(st.draft?.basis||'unavailable')}</td><td>${esc([...st.issues,...st.missing].join('; ')||st.status)}</td><td>${esc(patternText(r.loadingPatterns.states.find(x=>x.key===st.key)||r.loadingPatterns.plan))}</td></tr>`))}<p>Cargo distribution screening: ${esc(r.loadingPatterns.method)} · preliminary signals from hold masses only. It is not a stability, trim or strength calculation, and it does not replace the approved loading conditions of the nominated vessel.</p><p>Technical review: ${esc(r.technical)}. Volume allocation is not a stability or strength calculation.</p></div>`;}
- function action(name,el){P.ensure(state());switch(name){case'loading-state':{const key=el.dataset.id;if(key==='load'||P.events(state()).some(e=>e.key===key)){state().stage=key;changed();document.querySelector('[data-path="stage"]')?.focus();}return true;}case'allocate':allocate();changed();return true;case'undo-plan':try{P.undo(state());changed();}catch(e){modal('Previous plan',`<p>${esc(e.message)}</p>`);}return true;case'edit-plan':state().stage='load';changed();return true;case'parcel-passport':passport(el.dataset.id);return true;case'edit-passport':passport(el.dataset.id,true);return true;case'vessel-basis':vesselBasis();return true;case'intake-basis':intakeBasis();return true;case'planning-checks':checks();return true;case'compatibility':compatibility();return true;case'technical-report':technicalReport();return true;case'freeze-plan':P.freeze(state());changed();checks();return true;case'view-snapshot':{const x=state().planning.snapshots[Number(el.dataset.index)];modal('Saved plan · '+x.createdAt,`<p>Read-only snapshot · ${esc(x.check.status)}</p>${table(['Sale','Cargo','Quantity, t','SF, m³/t','Source'],x.input.lots.map(l=>`<tr><td>${esc(l.saleId)}</td><td>${esc(l.name)}</td><td>${fmt(l.quantity,1)}</td><td>${n(l.sf)}</td><td>${esc(l.passport?.source||'Not entered')}</td></tr>`))}${table(['Hold','Cargo','Allocated, t'],x.input.allocations.map(a=>`<tr><td>№${a.hold}</td><td>${esc(x.input.lots.find(l=>l.id===a.lot)?.name)}</td><td>${fmt(a.quantity,1)}</td></tr>`))}`);return true;}default:return false;}}
+ // Printed evidence: what the plan was calculated from, beside what it concluded. A printed
+ // package that states only its result cannot be checked by the person approving it.
+ const evidenceParcel=l=>
+  `<tr><td>${esc(l.saleId)} · ${esc(l.name)}</td><td>${esc(l.passport?.basis)}</td>`+
+  `<td>${n(l.sf)}</td>`+
+  `<td>${esc(l.passport?.source||'Not entered')} · ${esc(l.passport?.date||'No date')}</td></tr>`;
+
+ const evidenceState=(st,r)=>
+  `<tr><td>${esc(st.label)}</td><td>${fmt(st.quantity,1)}</td><td>${fmt(st.limit,1)}</td>`+
+  `<td>${fmt(st.draft?.deadweight,1)}</td><td>${fmt(st.draft?.deepest,2)}</td>`+
+  `<td>${esc(st.draft?.basis||'unavailable')}</td>`+
+  `<td>${esc([...st.issues,...st.missing].join('; ')||st.status)}</td>`+
+  `<td>${esc(patternText(r.loadingPatterns.states.find(x=>x.key===st.key)||r.loadingPatterns.plan))}</td></tr>`;
+
+ // Said on the page itself, not only in the documentation: hold masses are a screening signal.
+ const SCREENING_LIMITS=' · preliminary signals from hold masses only. It is not a stability, trim or strength calculation, and it does not replace the approved loading conditions of the nominated vessel.';
+
+ function printEvidence(s,budget,report){
+  const r=report||P.check(s,budget);
+  const vesselSource=s.planning?.vesselBasis?.source||M.vesselOf(s)?.source||'No source';
+  return `<div class="print-evidence"><h3>Planner evidence</h3>`+
+   `<p>Vessel basis: ${esc(P.vesselBasisStatus(s))} · ${esc(vesselSource)} · ${esc(s.planning?.vesselBasis?.date||'No date')}</p>`+
+   `<p>Intake state: ${esc(s.planning?.intakeBasis?.state)} · source ${esc(s.planning?.intakeBasis?.source||'Not entered')}`+
+   ` · draft loss ${esc(s.planning?.intakeBasis?.draftLossSource||'Not sourced')}</p>`+
+   table(['Sale','Shipment basis','SF, m³/t','Source / date'],s.lots.filter(l=>l.selected).map(evidenceParcel))+
+   table(['State','Cargo, t','Limit, t','Deadweight, t','Draft, m','Draft basis','Check','Cargo distribution'],
+    r.states.map(st=>evidenceState(st,r)))+
+   `<p>Cargo distribution screening: ${esc(r.loadingPatterns.method)}${SCREENING_LIMITS}</p>`+
+   `<p>Technical review: ${esc(r.technical)}. Volume allocation is not a stability or strength calculation.</p>`+
+   `</div>`;
+ }
+ function action(name,el){P.ensure(state());switch(name){
+  case'loading-state':{const key=el.dataset.id;if(key==='load'||P.events(state()).some(e=>e.key===key)){state().stage=key;changed();document.querySelector('[data-path="stage"]')?.focus();}return true;}
+  case'allocate':allocate();changed();return true;
+  case'undo-plan':try{P.undo(state());changed();}catch(e){modal('Previous plan',`<p>${esc(e.message)}</p>`);}return true;
+  case'edit-plan':state().stage='load';changed();return true;
+  case'parcel-passport':passport(el.dataset.id);return true;
+  case'edit-passport':passport(el.dataset.id,true);return true;
+  case'vessel-basis':vesselBasis();return true;
+  case'intake-basis':intakeBasis();return true;
+  case'planning-checks':checks();return true;
+  case'compatibility':compatibility();return true;
+  case'technical-report':technicalReport();return true;
+  case'freeze-plan':P.freeze(state());changed();checks();return true;
+  case'view-snapshot':{const x=state().planning.snapshots[Number(el.dataset.index)];modal('Saved plan · '+x.createdAt,`<p>Read-only snapshot · ${esc(x.check.status)}</p>${table(['Sale','Cargo','Quantity, t','SF, m³/t','Source'],x.input.lots.map(l=>`<tr><td>${esc(l.saleId)}</td><td>${esc(l.name)}</td><td>${fmt(l.quantity,1)}</td><td>${n(l.sf)}</td><td>${esc(l.passport?.source||'Not entered')}</td></tr>`))}${table(['Hold','Cargo','Allocated, t'],x.input.allocations.map(a=>`<tr><td>№${a.hold}</td><td>${esc(x.input.lots.find(l=>l.id===a.lot)?.name)}</td><td>${fmt(a.quantity,1)}</td></tr>`))}`);return true;}
+  default:return false;}}
  return {draw,section3,printEvidence,motionSnapshot,animate,refresh,action};
 }
 const api={create};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlannerUI=api;
@@ -14981,6 +15341,862 @@ function create(storage,options={}){
 const api={create};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSession=api;
 })(globalThis);
+</script><script>(function(root){
+'use strict';
+// The voyage map: the route, the coastline under it, the port marks and the distance line.
+//
+// It is the largest single subject in the planner and it sat mixed in with budget tables and
+// dialogs. Here it stands on its own: the projection, the zoom box, the label placement and
+// the marks are one subject, and the rest of app.js no longer scrolls past them.
+//
+// The document is reached for in three places only — the rendered <svg> is measured to fit
+// the frame and to convert a pointer position — and it arrives through env, so nothing here
+// depends on a global.
+
+function create(env){
+ const {M,getState,document,esc,fmt,round,table,ringPath,linePath,Sea}=env;
+ const state=getState;
+
+ const portAnchor=name=>{const p=state().portRecords.find(p=>p.name===name&&Number.isFinite(p.lat)&&Number.isFinite(p.lon));return p?[p.lon,p.lat]:null;};
+ const legRoute=(fromName,toName,leg,ballast)=>{
+  const a=portAnchor(fromName),b=portAnchor(toName);
+  return {from:fromName,to:toName,a,b,leg,ballast,
+   route:Sea&&a&&b?Sea.route(a,b):null,
+   published:Sea?Sea.published(M.portProfileOf(fromName)?.pub151,M.portProfileOf(toName)?.pub151):null};
+ };
+ function voyageLegs(){
+  const calls=M.callsOf(state()),out=[];
+  // The approach is measured from the delivery port, so it is routed and drawn like the loaded legs.
+  if(state().ballastEnabled&&calls.length)out.push(legRoute(state().ballast.from,calls[0].name,state().ballast,true));
+  for(let i=0;i<calls.length-1;i++){
+   out.push(legRoute(calls[i].name,calls[i+1].name,state().legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null,false));
+  }
+  return out;
+ }
+ function syncRouteDistances(){
+  if(!Sea)return;
+  for(const l of voyageLegs()){
+   const leg=l.leg;if(!leg||leg.distanceSource==='entered')continue;
+   // A printed distance outranks a routed one; both step aside for a figure the user typed.
+   if(l.published){leg.distance=l.published.distance;leg.distanceSource='published';}
+   else if(l.route?.reliable&&Number.isFinite(l.route.distance)){leg.distance=round(l.route.distance,0);leg.distanceSource='estimated';}
+   else if(leg.distanceSource==='published'||leg.distanceSource==='estimated'){leg.distance=null;leg.distanceSource=null;}
+  }
+ }
+ let coastCache=null,depthCache=null,borderCache=null;
+ const coastMarkup=()=>coastCache??=Sea.coastline().map(ringPath).join('');
+ const borderMarkup=()=>borderCache??=Sea.borders().map(linePath).join('');
+ // Shallow water first, each deeper band painted over it, so the shelf reads lighter than the abyss.
+ const depthMarkup=()=>depthCache??=Sea.depths().map(d=>`<g class="sea-depth" data-depth="${d.level}">${d.rings.map(ringPath).join('')}</g>`).join('');
+ // A graticule at a step the fitted view can carry: it gives the eye a scale the coastline alone does not.
+ function graticule(box){
+  const span=Math.max(box[2],box[3]);
+  const step=span>120?30:span>60?15:span>24?10:span>10?5:span>4?2:1;
+  const lines=[];
+  for(let lon=-180;lon<=180;lon+=step)lines.push(`<line x1="${lon}" y1="-90" x2="${lon}" y2="90"/>`);
+  for(let lat=-90;lat<=90;lat+=step)lines.push(`<line x1="-180" y1="${lat}" x2="180" y2="${lat}"/>`);
+  return `<g class="sea-graticule">${lines.join('')}</g>`;
+ }
+ // Pan and zoom live outside the voyage: they belong to this browsing session, not to the saved calculation.
+ let mapZoom=null;
+ const mapKey=box=>box.map(n=>n.toFixed(1)).join(' ');
+ function mapView(fitted){
+  if(!mapZoom||mapZoom.key!==mapKey(fitted))mapZoom={key:mapKey(fitted),fitted:fitted.slice(),box:fitted.slice()};
+  return mapZoom.box;
+ }
+ // Zooming out stops where the world itself fills the frame. Past that the drawing would
+ // shrink into the middle of an empty box, which is not a smaller map but a lost one.
+ function clampView(fitted,box){
+  let [x,y,w,h]=box;
+  const ratio=w/h,min=Math.min(fitted[2],fitted[3])/60;
+  const maxW=Math.min(360,180*ratio);
+  w=Math.min(Math.max(w,min*ratio),maxW);h=w/ratio;
+  // Inside the world the view is free; once it spans the world it is centred on it.
+  x=w>=360?-w/2:Math.min(Math.max(x,-180),180-w);
+  y=h>=180?-h/2:Math.min(Math.max(y,-90),90-h);
+  return [x,y,w,h];
+ }
+ // preserveAspectRatio letterboxes whatever the box and the frame disagree about, and the
+ // frame's shape is only known once the page has laid out. The box is widened or heightened
+ // to match it, which reveals more ocean and never hides the voyage.
+ function fitMapFrame(){
+  const svg=document.querySelector?.('.voyage-map svg');
+  if(!svg?.getBoundingClientRect||!mapZoom)return;
+  const rect=svg.getBoundingClientRect();
+  if(!rect.width||!rect.height)return;
+  const frame=rect.width/rect.height,[x,y,w,h]=mapZoom.box;
+  if(Math.abs(frame-w/h)>.01){
+   const nw=frame>w/h?h*frame:w,nh=frame>w/h?h:w/frame;
+   mapZoom.box=clampView(mapZoom.fitted,[x-(nw-w)/2,y-(nh-h)/2,nw,nh]);
+  }
+  paintMapView();
+ }
+ function zoomMap(factor,at){
+  if(!mapZoom)return;
+  const [x,y,w,h]=mapZoom.box;
+  const cx=at?at.x:x+w/2,cy=at?at.y:y+h/2;
+  mapZoom.box=clampView(mapZoom.fitted,[cx-(cx-x)*factor,cy-(cy-y)*factor,w*factor,h*factor]);
+  paintMapView();
+ }
+ function panMap(dx,dy){
+  if(!mapZoom)return;
+  const [x,y,w,h]=mapZoom.box;
+  mapZoom.box=clampView(mapZoom.fitted,[x-dx,y-dy,w,h]);
+  paintMapView();
+ }
+ function resetMap(){if(mapZoom){mapZoom.box=mapZoom.fitted.slice();fitMapFrame();}}
+ // Screen pixels mean nothing to a viewBox in degrees; the element's own matrix does the conversion.
+ function mapPoint(svg,event){
+  const ctm=svg.getScreenCTM();
+  if(!ctm)return null;
+  const p=svg.createSVGPoint();p.x=event.clientX;p.y=event.clientY;
+  return p.matrixTransform(ctm.inverse());
+ }
+ function paintMapView(){
+  const svg=document.querySelector?.('.voyage-map svg');
+  if(!svg||!mapZoom)return;
+  svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
+  const width=svg.getBoundingClientRect?.().width;
+  if(!width)return;
+  const unit=mapZoom.box[2]/width,marks=svg.querySelector?.('.sea-marks'),places=svg.querySelector?.('.sea-places');
+  if(marks&&mapZoom.anchors)marks.innerHTML=markMarkup(mapZoom.anchors,mapZoom.box,unit);
+  if(places)places.innerHTML=placeMarkup(mapZoom.box,unit);
+ }
+ // A marker is a fixed number of screen pixels, like the strokes beside it: sizing it as a
+ // fraction of the frame made a 44-pixel label on a wide monitor. `unit` is map units per pixel,
+ // so every measurement below reads as the pixels it will occupy.
+ const LABEL_RANK=[[200,2,2],[90,3,2],[40,4,4],[15,5,5],[0,6,6]];
+ function placeMarkup(box,unit){
+  const span=Math.max(box[2],box[3]),[,countryRank,seaRank]=LABEL_RANK.find(([from])=>span>from)||LABEL_RANK[LABEL_RANK.length-1];
+  const inside=p=>p.lon>=box[0]&&p.lon<=box[0]+box[2]&&-p.lat>=box[1]&&-p.lat<=box[1]+box[3];
+  const {countries,seas}=Sea.places();
+  // Two names in the same place read as neither, so the more important one keeps the ground.
+  const taken=[];
+  const draw=(list,rank,cls,size)=>[...list].filter(p=>p.rank<=rank&&inside(p)).sort((a,b)=>a.rank-b.rank)
+   .map(p=>{
+    const height=unit*size,width=p.name.length*height*(cls==='country-name'?.68:.5),x=p.lon,y=-p.lat;
+    if(taken.some(q=>Math.abs(q[0]-x)<(q[2]+width)/2&&Math.abs(q[1]-y)<(q[3]+height)*.7))return '';
+    taken.push([x,y,width,height]);
+    return `<text class="${cls}" x="${x.toFixed(3)}" y="${y.toFixed(3)}" font-size="${height.toFixed(3)}">${esc(p.name)}</text>`;
+   }).join('');
+  return draw(seas,seaRank,'sea-name',12)+draw(countries,countryRank,'country-name',9);
+ }
+ const MARK={ring:4.5,dot:1.6,label:11,gap:8,line:13,crowd:130};
+ function markMarkup(anchors,box,unit){
+  const middle=box[0]+box[2]/2,placed=[];
+  return anchors.map(([name,p])=>{
+   const east=p[0]>middle,gap=unit*MARK.gap*(east?-1:1);
+   let y=-p[1]+unit*MARK.label*.35;
+   while(placed.some(q=>Math.abs(q[1]-y)<unit*MARK.line&&Math.abs(q[0]-p[0])<unit*MARK.crowd))y+=unit*MARK.line;
+   placed.push([p[0],y]);
+   const x=p[0].toFixed(3),cy=(-p[1]).toFixed(3);
+   return `<g class="sea-port"><circle class="sea-port-ring" cx="${x}" cy="${cy}" r="${(unit*MARK.ring).toFixed(3)}"/><circle class="sea-port-dot" cx="${x}" cy="${cy}" r="${(unit*MARK.dot).toFixed(3)}"/><text x="${(p[0]+gap).toFixed(3)}" y="${y.toFixed(3)}" text-anchor="${east?'end':'start'}" font-size="${(unit*MARK.label).toFixed(3)}">${esc(name)}</text></g>`;
+  }).join('');
+ }
+ // Before the page has laid out there is no width to measure; the first draw assumes a common
+ // one and paintMapView corrects it as soon as the real frame is known.
+ const mapUnit=box=>box[2]/(document.querySelector?.('.voyage-map svg')?.getBoundingClientRect?.().width||1100);
+ function voyageMap(){
+  if(!Sea)return '';
+  const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
+  const names=[...new Set([...legs.filter(l=>l.ballast).map(l=>l.from),...M.callsOf(state()).map(c=>c.name)])];
+  const anchors=names.map(name=>[name,portAnchor(name)]).filter(([,p])=>p);
+  if(!anchors.length)return '<div class="voyage-map-empty"><p class="muted">The route is drawn once the voyage calls have coordinates. Enter them in PORT.</p></div>';
+  const all=[...anchors.map(([,p])=>p),...drawn.flatMap(l=>l.route.path)];
+  let minLon=Math.min(...all.map(p=>p[0])),maxLon=Math.max(...all.map(p=>p[0]));
+  let minLat=Math.min(...all.map(p=>p[1])),maxLat=Math.max(...all.map(p=>p[1]));
+  const padLon=Math.max((maxLon-minLon)*.12,4),padLat=Math.max((maxLat-minLat)*.12,4);
+  minLon-=padLon;maxLon+=padLon;minLat-=padLat;maxLat+=padLat;
+  const width=maxLon-minLon,height=maxLat-minLat;
+  // y grows south, so latitude is negated; nothing else about the projection is needed at this scale.
+  const fitted=[minLon,-maxLat,width,height];
+  const box=mapView(fitted);
+  mapZoom.anchors=anchors;
+  const coast=coastMarkup();
+  const tracks=drawn.map(l=>{
+   const points=l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ');
+   const kind=(l.route.reliable?'':' sea-track-doubtful')+(l.ballast?' sea-track-ballast':'');
+   return `<polyline class="sea-glow${kind}" points="${points}"/><polyline class="sea-track${kind}" points="${points}"/>`;
+  }).join('');
+  const marks=markMarkup(anchors,box,mapUnit(box));
+  return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g><g class="sea-borders">${borderMarkup()}</g><g class="sea-places">${placeMarkup(box,mapUnit(box))}</g>${tracks}<g class="sea-marks">${marks}</g></svg></div>`;
+ }
+ function voyageDistanceLine(){
+  if(!Sea)return '';
+  const legs=voyageLegs().filter(l=>l.leg);
+  if(!legs.length)return '';
+  const rows=legs.map(l=>{
+   const source=l.leg.distanceSource==='entered'?'Entered'
+    :l.leg.distanceSource==='published'?'NGA Pub. 151, published'
+    :l.leg.distanceSource==='estimated'?'Estimated over the lane network'
+    :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports and no printed pair; enter it from a distance table'
+    :l.ballast&&!String(state().deliveryPort||'').trim()?'Ballast approach · enter the delivery port to measure it'
+    :l.ballast&&!l.a?'Delivery port is not a registered port with a position; add it in PORT or enter the distance'
+    :'No route · check the port positions in PORT';
+   return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.published?fmt(l.published.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
+  return table(['Leg','In the calculation, nm','Pub. 151, nm','Estimate, nm','Source'],rows,'sea-distances');
+ }
+ return {voyageLegs,syncRouteDistances,fitMapFrame,zoomMap,panMap,resetMap,mapPoint,paintMapView,voyageMap,voyageDistanceLine};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXVoyageMap=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// The three register screens: SALE, PORT and CARGO.
+//
+// They were one function on one 4,627-character line holding all three, which is a line no
+// review can read and no merge can resolve. The markup each screen produces is unchanged;
+// only the shape of the source is. Each screen is a function, and each row of a table is a
+// function of one record, so a column can be found by reading rather than by counting.
+//
+// Nothing here touches the document: each view returns markup and the caller places it.
+
+function create(env){
+ const {M,getState,esc,fmt,input,select,field,table,portNames}=env;
+ const state=()=>getState();
+
+ // ---- shared between the registers ------------------------------------------------------
+
+ const berthOptions=name=>state().portRecords.filter(p=>p.name===name).map(p=>[p.id,p.berth||p.name]);
+ const berthSelect=(path,label,name)=>{
+  const options=berthOptions(name);
+  return options.length?select(path,label,options):'';
+ };
+
+ const heading=(title,intro,action,label)=>
+  `<div class="heading"><div><h2>${title}</h2><p class="section-intro">${intro}</p></div>`+
+  `<button data-action="${action}">${label}</button></div>`;
+
+ // ---- SALE ------------------------------------------------------------------------------
+
+ const SALE_COLUMNS=['Deal','Date','Cargo','Volume, MT','Loading','Discharge','Shipment','FOB, USD/MT',''];
+
+ // A parcel already in the voyage carries its shipment source, so the button sits with the
+ // price it was agreed at rather than in a screen of its own.
+ const shipmentSources=saleId=>state().lots.filter(l=>l.saleId===saleId)
+  .map(l=>`<button class="inline-action" data-action="edit-passport" data-id="${esc(l.id)}">Shipment source</button>`)
+  .join('');
+
+ const portCell=(path,label,berthPath,berthLabel,name)=>
+  `<td><div class="port-cell">${select(path,label,portNames())}${berthSelect(berthPath,berthLabel,name)}</div></td>`;
+
+ const saleRow=(s,i)=>
+  `<tr id="${esc('sale-row-'+s.id)}" class="sale-record" tabindex="-1">`+
+  `<td>${esc(s.id)}</td>`+
+  `<td>${input('sales.'+i+'.dealDate','Deal date',{type:'date'})}</td>`+
+  `<td class="name">${esc(s.cargoName)}</td>`+
+  `<td>${input('sales.'+i+'.quantity','Sale quantity',{tonnage:true})}</td>`+
+  portCell('sales.'+i+'.loadPort','Load port','sales.'+i+'.loadPortId','Load berth',s.loadPort)+
+  portCell('sales.'+i+'.dischargePort','Discharge port','sales.'+i+'.dischargePortId','Discharge berth',s.dischargePort)+
+  `<td><div class="date-range">${input('sales.'+i+'.shipmentFrom','Shipment from',{type:'date'})}${input('sales.'+i+'.shipmentTo','Shipment to',{type:'date'})}</div></td>`+
+  `<td>${input('sales.'+i+'.fob','Price FOB')}${shipmentSources(s.id)}</td>`+
+  `<td><button data-action="remove-sale" data-index="${i}" aria-label="Remove sale ${esc(s.id)}">×</button></td>`+
+  `</tr>`;
+
+ const SALE_EMPTY='<div class="empty-state"><strong>No sales yet</strong><span>Add the first deal. Cargo is selected from CARGO only.</span></div>';
+
+ function saleView(){
+  const sales=state().sales;
+  return `<section>`+
+   heading('SALE','Register of concluded sales for voyage planning.','new-sale','+ Add sale')+
+   (sales.length?table(SALE_COLUMNS,sales.map(saleRow)):SALE_EMPTY)+
+   `<p class="form-note">A sale already added to PLANNER cannot be deleted until it is removed from the voyage.</p>`+
+   `</section>`;
+ }
+
+ // ---- PORT ------------------------------------------------------------------------------
+
+ // Published size limits. Every one is a single figure the register carries per berth; the
+ // differing source terms behind them stay in the port research, not in the column name.
+ const LIMIT_COLUMNS=[
+  ['maxDraft','Max draft, m'],
+  ['maxBeam','Max beam, m'],
+  ['maxLoa','Max LOA, m'],
+  ['maxAirDraft','Max air draft, m'],
+  ['maxDwt','Max DWT']
+ ];
+
+ // Fresh water to sea water in thousandths, the range a berth is ever quoted in. The two
+ // ends are named because those are the values entered when nothing was measured.
+ const densityOptions=()=>[['','Not entered'],...Array.from({length:31},(_,j)=>{
+  const v=(1+j/1000).toFixed(3);
+  return [Number(v),v+(j===0?' · Fresh':j===25?' · Sea':'')];
+ })];
+
+ const portRow=(p,i)=>{
+  const named=p.name||'new port';
+  return `<tr>`+
+   `<td>${input('portRecords.'+i+'.country','Country',{type:'text'})}</td>`+
+   `<td>${input('portRecords.'+i+'.name','Port name',{type:'text'})}</td>`+
+   `<td>${input('portRecords.'+i+'.terminal','Terminal',{type:'text'})}</td>`+
+   `<td>${input('portRecords.'+i+'.berth','Berth',{type:'text'})}</td>`+
+   `<td>${select('portRecords.'+i+'.waterDensity','Water density for '+named,densityOptions())}</td>`+
+   LIMIT_COLUMNS.map(([key,label])=>`<td class="limit-cell">${input('portRecords.'+i+'.'+key,label+' for '+named)}</td>`).join('')+
+   `<td><button data-action="remove-port-record" data-index="${i}" aria-label="Remove port ${esc(p.name)}">×</button></td>`+
+   `</tr>`;
+ };
+
+ function portView(){
+  const columns=['Country','Port','Terminal','Berth','Water density, t/m³',...LIMIT_COLUMNS.map(([,label])=>label),''];
+  return `<section>`+
+   heading('PORT','Port and berth register with published size limits.','new-port','+ Add port')+
+   table(columns,state().portRecords.map(portRow),'port-table')+
+   `</section>`;
+ }
+
+ // ---- CARGO -----------------------------------------------------------------------------
+
+ // Only bulk cargo with a planning SF can be put in a hold, so only that is offered here.
+ // The rest of the catalogue is kept, not deleted: it is simply not plannable yet.
+ const plannable=c=>M.isBulkCargo(c)&&M.ok(c.sf,true);
+ const familyOf=c=>c.family||'Other cargoes';
+
+ // Searched against name, grade, producer and family at once, lower-cased so the filter in
+ // the page can compare without re-reading the record.
+ const searchKey=c=>[c.name,c.aliases,c.producer,c.family].filter(Boolean).join(' ').toLowerCase();
+
+ const cargoToolbar=()=>{
+  const families=[...new Set(state().cargoTypes.filter(plannable).map(familyOf))];
+  return `<div class="catalog-toolbar">`+
+   `<input id="cargo-search" type="search" aria-label="Search cargo" placeholder="Name, grade, manufacturer" class="catalog-search">`+
+   `<select id="cargo-family" aria-label="Cargo category"><option value="">All categories</option>`+
+   families.map(f=>`<option>${esc(f)}</option>`).join('')+
+   `</select></div>`;
+ };
+
+ const cargoRow=({c,i})=>
+  `<tr data-family="${esc(familyOf(c))}" data-catalog-name="${esc(searchKey(c))}">`+
+  `<td class="cargo-name-cell">${input('cargoTypes.'+i+'.name','Cargo name',{type:'text'})}</td>`+
+  `<td class="cargo-sf-cell">${input('cargoTypes.'+i+'.sf','Planning stowage factor',{disabled:!M.isBulkCargo(c)})}</td>`+
+  `<td class="cargo-group-cell">${select('cargoTypes.'+i+'.group','IMSBC group',[['',M.isBulkCargo(c)?'Pending':'N/A'],'A','B','C','A & B'])}</td>`+
+  `</tr>`;
+
+ function cargoView(){
+  const rows=state().cargoTypes.map((c,i)=>({c,i})).filter(({c})=>plannable(c));
+  return `<section>`+
+   heading('CARGO','Cargo register for creating sales.','new-cargo','+ Add cargo type')+
+   cargoToolbar()+
+   table(['Cargo','Planning SF, m³/t','IMSBC Group'],rows.map(cargoRow))+
+   `<p class="form-note">Planning SF is a reference estimate and must be confirmed for the shipment. IMSBC Group must match the exact product.</p>`+
+   `</section>`;
+ }
+
+ // ---- VESSEL ----------------------------------------------------------------------------
+
+ // Particulars, grouped the way a vessel questionnaire presents them. Naming the groups here
+ // rather than inline is what lets a field be found, moved or added by reading one list.
+ const IDENTITY=[['name','Name'],['model','Project / model'],['source','Parameter source']];
+ const PARTICULARS=[
+  ['dwt','DWT, MT'],['draft','Draft SSW, m'],['tpc','TPC, t/cm'],['loa','LOA, m'],['beam','Beam, m'],
+  ['airDraft','Air draft, m'],['grain','Grain capacity, m³'],['bale','Bale capacity, m³'],
+  ['gt','GRT'],['nrt','NRT'],['cranes','Cranes, qty'],['craneSWL','Crane SWL, MT'],['tanktop','Tank top, t/m²']
+ ];
+ const CONSUMPTION=[
+  ['speed','Laden speed, kn'],['burn','Laden main fuel, t/day'],
+  ['ballastSpeed','Ballast speed, kn'],['ballastBurn','Ballast main fuel, t/day'],
+  ['aux','Sea LSMGO, t/day'],['working','Port main working, t/day'],['idle','Port main idle, t/day'],
+  ['auxWorking','Port LSMGO working, t/day'],['auxIdle','Port LSMGO idle, t/day'],
+  ['boiler','Separate boiler, t/day'],['ecaBurn','ECA main fuel, t/day']
+ ];
+
+ const fields=(path,pairs,options)=>pairs.map(([k,l])=>field(path+'.'+k,l,options)).join('');
+
+ const vesselCard=(v,i)=>{
+  const path='vesselProfiles.'+i;
+  return `<details class="vessel-card"><summary><strong>VESSEL · ${esc(v.name)}</strong><span>${esc(v.model)} · ${fmt(v.dwt,0)} DWT</span></summary>`+
+   `<div class="vessel-card-body">`+
+   `<div class="heading vessel-apply"><span></span><button data-action="apply-vessel" data-id="${esc(v.id)}">Apply to voyage</button></div>`+
+   `<div class="grid">${fields(path,IDENTITY,{type:'text'})}${fields(path,PARTICULARS)}</div>`+
+   `<h3>Speed and consumption</h3><div class="grid">${fields(path,CONSUMPTION)}</div>`+
+   `<h3>Holds</h3><div class="grid holds-grid">`+
+   v.holdData.map((h,j)=>field(path+'.holdData.'+j+'.volume','Hold №'+h.id+', m³')).join('')+
+   `</div></div></details>`;
+ };
+
+ function vesselView(){
+  return heading('VESSEL TYPES','Standard vessel types for cargo carriage.','new-vessel','+ Add vessel type')+
+   state().vesselProfiles.map(vesselCard).join('');
+ }
+
+ // VESSEL is what the registers fall back to: it is the remaining tab this module owns.
+ const VIEWS={sale:saleView,ports:portView,cargo:cargoView};
+ const render=tab=>(VIEWS[tab]||vesselView)();
+
+ return {render,saleView,portView,cargoView,vesselView,berthSelect,berthOptions};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXCatalogViews=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// The dialogs: adding sales to the voyage, creating a sale, creating a bulk cargo, and the
+// cargo particulars panel.
+//
+// They are the part of the interface that writes. The sale picker in particular commits a
+// whole selection at once — it builds a candidate state, applies every chosen sale to it, and
+// only then hands it over, so one invalid sale cannot leave the voyage half-changed. That is
+// why this module is given a setter and not just a getter.
+//
+// Navigation belongs to the caller: openSale asks for the register to be opened and then
+// finds its row, rather than knowing how tabs work.
+
+function create(env){
+ const {M,getState,setState,document,esc,fmt,numberFormat,input,select,field,table,changed,openTab,byId}=env;
+ const state=getState;
+ const $=byId;
+
+ function shipmentWindow(sale){
+  const date=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&Number.isFinite(Date.parse(value))
+   ?new Date(value+'T00:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}):'—';
+  if(!sale?.shipmentFrom&&!sale?.shipmentTo)return '—';
+  return esc(date(sale.shipmentFrom)+' – '+date(sale.shipmentTo));
+ }
+ function openSale(saleId){
+  if(!state().sales.some(s=>s.id===saleId))return;
+  openTab('sale');
+  const row=$('sale-row-'+saleId);
+  row?.focus({preventScroll:true});row?.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+ }
+ function showLotDialog(){
+  const dialog=document.createElement('dialog'),selected=new Set(),added=new Set(state().lots.map(l=>l.saleId));
+  dialog.className='sale-picker';dialog.setAttribute('aria-labelledby','sale-picker-title');
+  const portOptions=field=>[...new Set(state().sales.map(s=>s[field]).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  // The picker is a filter over the sales register: search, the two ports and the shipment
+  // window, then the result list. Nothing is added until something is selected.
+  const filterField=(label,control)=>`<label class="field">${label}${control}</label>`;
+  const portFilter=(id,field,all)=>filterField(id==='sale-load'?'Loading':'Discharge',
+   `<select id="${id}"><option value="">${all}</option>${portOptions(field)}</select>`);
+  dialog.innerHTML=`<form id="lot-form">`+
+   `<div class="heading"><h2 id="sale-picker-title">Add sales</h2><button type="button" id="close-lot" aria-label="Close">×</button></div>`+
+   `<div class="sale-picker-filters">`+
+   `<label class="field sale-search-field">Search<input id="sale-search" type="search" placeholder="Sale number or cargo" autocomplete="off"></label>`+
+   portFilter('sale-load','loadPort','All loading ports')+
+   portFilter('sale-discharge','dischargePort','All discharge ports')+
+   filterField('Shipment from','<input id="sale-from" type="date">')+
+   filterField('Shipment to','<input id="sale-to" type="date">')+
+   `</div>`+
+   `<div id="sale-picker-results" class="sale-picker-results"></div>`+
+   `<p id="lot-error" class="error" role="alert"></p>`+
+   `<div class="sale-picker-footer">`+
+   `<button type="button" id="sale-clear-filters">Clear filters</button>`+
+   `<button type="submit" class="primary" id="sale-add-selected" disabled>Add selected</button>`+
+   `</div></form>`;
+  document.body.appendChild(dialog);
+  const find=selector=>dialog.querySelector(selector),search=find('#sale-search'),load=find('#sale-load'),discharge=find('#sale-discharge'),from=find('#sale-from'),to=find('#sale-to'),results=find('#sale-picker-results'),submit=find('#sale-add-selected'),error=find('#lot-error');
+  const updateButton=()=>{submit.disabled=!selected.size||!!(from.value&&to.value&&from.value>to.value);submit.textContent=selected.size?'Add selected ('+selected.size+')':'Add selected';};
+  function filter(){
+   error.textContent='';to.setCustomValidity('');
+   if(from.value&&to.value&&from.value>to.value){error.textContent='Shipment from cannot be later than shipment to.';to.setCustomValidity(error.textContent);results.innerHTML='';updateButton();return;}
+   const words=search.value.toLowerCase().trim().split(/\s+/).filter(Boolean),hasDates=!!(from.value||to.value);
+   const visible=state().sales.filter(s=>words.every(word=>(s.id+' '+s.cargoName).toLowerCase().includes(word))&&(!load.value||s.loadPort===load.value)&&(!discharge.value||s.dischargePort===discharge.value)&&(!hasDates||(s.shipmentFrom&&s.shipmentTo&&(!from.value||s.shipmentTo>=from.value)&&(!to.value||s.shipmentFrom<=to.value))));
+   const selectable=visible.filter(s=>!added.has(s.id));
+   const rows=visible.map(s=>`<tr data-sale-id="${esc(s.id)}" class="${added.has(s.id)?'sale-already-added':selected.has(s.id)?'sale-picked':''}"><td>${added.has(s.id)?'<span class="muted">In voyage</span>':`<input type="checkbox" name="saleId" value="${esc(s.id)}" aria-label="Select ${esc(s.id)}" ${selected.has(s.id)?'checked':''}>`}</td><td class="name"><small>${esc(s.id)}</small><br>${esc(s.cargoName)}</td><td>${fmt(s.quantity,1)}</td><td>${esc(s.loadPort)}</td><td>${esc(s.dischargePort)}</td><td class="shipment-window">${shipmentWindow(s)}</td></tr>`);
+   results.innerHTML=visible.length?table(['<input type="checkbox" id="sale-select-visible" aria-label="Select all available sales shown">','Sale / cargo','Quantity, MT','Loading','Discharge','Shipment'],rows,'sale-picker-table'):`<p class="empty">${state().sales.length?'No sales match these filters.':'No sales yet. Add a sale in SALE first.'}</p>`;
+   const all=find('#sale-select-visible');if(all){const count=selectable.filter(s=>selected.has(s.id)).length;all.disabled=!selectable.length;all.checked=!!count&&count===selectable.length;all.indeterminate=count>0&&count<selectable.length;
+    all.onchange=()=>{for(const s of selectable)all.checked?selected.add(s.id):selected.delete(s.id);filter();find('#sale-select-visible')?.focus();};
+   }
+   updateButton();
+  }
+  results.addEventListener('change',e=>{if(e.target.name!=='saleId')return;const el=e.target;el.checked?selected.add(el.value):selected.delete(el.value);const value=el.value;filter();[...results.querySelectorAll('input[name="saleId"]')].find(x=>x.value===value)?.focus();});
+  search.addEventListener('input',filter);for(const el of [load,discharge,from,to])el.addEventListener('change',filter);
+  find('#sale-clear-filters').onclick=()=>{for(const el of [search,load,discharge,from,to])el.value='';filter();search.focus();};
+  find('#close-lot').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+  find('form').onsubmit=e=>{e.preventDefault();if(!selected.size)return;try{
+   // Commit the complete selection together; an invalid sale must not leave a partial addition.
+   const candidate=JSON.parse(JSON.stringify(state()));for(const s of state().sales.filter(s=>selected.has(s.id)))M.addSaleToPlanner(candidate,s.id);
+   setState(candidate);dialog.close();changed();
+  }catch(err){error.textContent=err.message;}};
+  filter();dialog.showModal();search.focus();
+ }
+ // New sale. Every field is required, because a sale with a hole in it cannot be planned.
+ const labelled=(label,control)=>`<label class="field">${label}${control}</label>`;
+ const date=name=>labelled(name==='shipmentFrom'?'Shipment from':name==='shipmentTo'?'Shipment to':'Deal date',
+  `<input name="${name}" type="date" required>`);
+ const amount=(label,name,min)=>labelled(label,`<input name="${name}" type="number" min="${min}" step="any" required>`);
+ // A berth belongs to its port, so its list stays empty until that port is chosen.
+ const berth=(label,forPort)=>labelled(label,
+  `<select name="${forPort}Id" data-berth-for="${forPort}"><option value="">Select a port first</option></select>`);
+
+ function showSaleDialog(){
+  const ports=[...new Set(state().portRecords.map(p=>p.name?.trim()).filter(Boolean))];
+  const portOptions='<option value="">Select port</option>'+
+   ports.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  // Cargo is chosen from CARGO, and only what can actually be planned is offered.
+  const cargoOptions=state().cargoTypes.filter(c=>M.isBulkCargo(c)&&M.ok(c.sf,true))
+   .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  const dialog=document.createElement('dialog');
+  dialog.innerHTML=`<form id="sale-form">`+
+   `<div class="heading"><h2>New sale</h2><button type="button" id="close-sale" aria-label="Close">×</button></div>`+
+   `<div class="grid">`+
+   date('dealDate')+
+   labelled('Cargo',`<select name="cargoId" required>${cargoOptions}</select>`)+
+   amount('Volume, MT','quantity','0.001')+
+   amount('Price FOB, USD/MT','fob','0')+
+   labelled('Load port',`<select name="loadPort" required>${portOptions}</select>`)+
+   berth('Load berth','loadPort')+
+   labelled('Discharge port',`<select name="dischargePort" required>${portOptions}</select>`)+
+   berth('Discharge berth','dischargePort')+
+   date('shipmentFrom')+
+   date('shipmentTo')+
+   `</div>`+
+   // Without ports there is nowhere to load or discharge, so the form says so and stays shut.
+   `<p id="sale-error" class="error" role="alert">${ports.length?'':'First add ports in PORT.'}</p>`+
+   `<button type="submit" class="primary" ${ports.length?'':'disabled'}>Add sale</button>`+
+   `</form>`;
+  document.body.appendChild(dialog);
+  // The berth list belongs to the chosen port, so it is refilled whenever that port changes.
+  for(const berth of dialog.querySelectorAll('[data-berth-for]')){const port=dialog.querySelector(`[name="${berth.dataset.berthFor}"]`);const fill=()=>{const rows=state().portRecords.filter(p=>p.name===port.value);berth.innerHTML=rows.length?rows.map(p=>`<option value="${esc(p.id)}">${esc(p.berth||p.name)}</option>`).join(''):'<option value="">Select a port first</option>';};port.addEventListener('change',fill);fill();}
+  dialog.querySelector('#close-sale').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);try{M.addSale(state(),{dealDate:f.get('dealDate'),cargoId:f.get('cargoId'),quantity:Number(f.get('quantity')),fob:Number(f.get('fob')),loadPort:f.get('loadPort'),dischargePort:f.get('dischargePort'),loadPortId:f.get('loadPortId'),dischargePortId:f.get('dischargePortId'),shipmentFrom:f.get('shipmentFrom'),shipmentTo:f.get('shipmentTo')});dialog.close();changed();}catch(error){dialog.querySelector('#sale-error').textContent=error.message;}};dialog.showModal();}
+ function showCargoDialog(){
+  const dialog=document.createElement('dialog');
+  dialog.innerHTML='<form><div class="heading"><h2>New bulk cargo</h2><button type="button" data-close aria-label="Close">×</button></div><div class="grid"><label class="field">Cargo name<input name="name" required></label><label class="field">Planning SF, m³/t<input name="sf" type="number" min="0.000001" step="any" required></label><label class="field">IMSBC group<select name="group"><option value="">Pending</option><option>A</option><option>B</option><option>C</option><option>A &amp; B</option></select></label></div><p class="error" role="alert"></p><button type="submit">Add cargo</button></form>';
+  document.body.appendChild(dialog);
+  dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove());
+  dialog.querySelector('form').onsubmit=e=>{
+   e.preventDefault();const data=new FormData(e.target),name=String(data.get('name')).trim(),sf=Number(data.get('sf'));
+   if(!name||!M.ok(sf,true)){dialog.querySelector('.error').textContent='Enter a cargo name and a positive SF';return;}
+   if(state().cargoTypes.some(c=>c.name.toLowerCase()===name.toLowerCase())){dialog.querySelector('.error').textContent='This cargo name already exists';return;}
+   let n=1;while(state().cargoTypes.some(c=>c.id==='cargo-'+n))n++;
+   state().cargoTypes.push({id:'cargo-'+n,name,sf,physicalForm:'solid',group:data.get('group'),sfBasis:'user-entered',source:'User-entered'});
+   dialog.close();changed();
+  };dialog.showModal();
+ }
+ function cargoDetails(c){const range=v=>v?v.map(n=>numberFormat(0,4).format(Number(n))).join('–'):'SDS required';const link=(url,label)=>url&&/^https:\/\//.test(url)?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';return `<details class="cargo-properties"><summary>${esc(c.propertyStatus||'Properties required')}</summary><dl><dt>BCSN</dt><dd>${esc(c.bcsn||'Shipper declaration required')}</dd><dt>Reference SF, m³/t</dt><dd>${esc(range(c.sfRange))}</dd><dt>Bulk density, kg/m³</dt><dd>${esc(range(c.bulkDensityRange))}</dd><dt>Angle of repose</dt><dd>${esc(c.angleOfRepose||'Not established')}</dd><dt>Applicability</dt><dd>${esc(c.propertyNote||'Confirm the exact product and shipping conditions.')}</dd></dl>${link(c.propertyUrl,'Property source')} ${link(c.sdsUrl,'SDS')} ${link(c.catalogUrl,'Product catalogue')}</details>`;}
+
+ return {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,cargoDetails};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXDialogs=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// Who is working, and on behalf of which organisation.
+//
+// The screen and the conversation with the identity provider live here; what happens once
+// somebody is in — opening their workspace, drawing the planner — stays with the caller and
+// arrives as onSignedIn. That boundary is the point: this module can refuse entry without
+// knowing what a voyage is.
+//
+// A password is read at the moment it is sent and kept nowhere. Supabase's built-in mail is
+// rate-limited and meant for trying things out, so the code route is folded away rather than
+// offered first.
+
+function create(env){
+ const {storage,esc,byId,document,onSignedIn}=env;
+ const $=byId;
+
+ let signInAddress='';
+ // The tab strip and the calculation controls are meaningless before anything has been read.
+ function showChrome(visible){
+  const actions=$('planner-actions');
+  if(actions)actions.hidden=!visible;
+  const tabList=typeof document.querySelector==='function'?document.querySelector('.workspace-tabs'):null;
+  if(tabList)tabList.hidden=!visible;
+ }
+ function showSignIn(message){
+  showChrome(false);
+  $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
+   `<p class="section-intro">Calculations are shared with your organisation.</p>`+
+   `<form id="sign-in-form"><div class="grid">`+
+   `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
+   `<label>Password<input id="sign-in-password" type="password" autocomplete="current-password"></label>`+
+   `</div><div class="button-row"><button id="sign-in-submit" type="submit">Sign in</button></div></form>`+
+   `<details class="sign-in-alternative"><summary>Sign in with a code instead</summary>`+
+   `<p class="muted">A code is sent to your address. Delivery depends on the mail service configured for this project.</p>`+
+   `<div class="grid"><label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code"></label></div>`+
+   `<div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
+   `<button id="sign-in-verify" type="button">Use code</button></div></details>`+
+   `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
+  const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
+  const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
+  // The password is read at the moment it is sent and is never stored, echoed or kept in state.
+  const secret=()=>(($('sign-in-password')||{}).value||'');
+
+  $('sign-in-form').onsubmit=async event=>{
+   event.preventDefault();
+   if(!address()||!secret()){say('Enter your work email and password.');return;}
+   say('Signing in…');
+   const signedIn=await storage.signInWithPassword(address(),secret());
+   if(!signedIn.ok){say(signedIn.error||'That email and password were not accepted.');return;}
+   await start();
+  };
+  $('sign-in-send').onclick=async()=>{
+   if(!address()){say('Enter your work email address.');return;}
+   say('Sending…');
+   const sent=await storage.signIn(address());
+   say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it below.':(sent.error||'The code could not be sent.'));
+  };
+  $('sign-in-verify').onclick=async()=>{
+   const code=(($('sign-in-code')||{}).value||'').trim();
+   if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
+   say('Signing in…');
+   const verified=await storage.verifyCode(address(),code);
+   if(!verified.ok){say(verified.error||'That code was not accepted.');return;}
+   await start();
+  };
+ }
+
+ // Identity, then membership, then the caller's workspace. Each step that fails says which
+ // one it was, because "could not sign in" and "not a member yet" need different answers.
+ async function start(){
+  const who=await storage.ready();
+  if(!who.ok){
+   showSignIn(who.reason==='signed-out'?'':(who.error||'The workspace could not be reached.'));
+   return {ok:false,reason:who.reason||'error'};
+  }
+  const organisations=await storage.organisations();
+  if(organisations.ok===false){
+   showSignIn(organisations.error||'Your organisations could not be read.');
+   return {ok:false,reason:'organisations'};
+  }
+  if(!organisations.length){
+   showSignIn('Signed in as '+who.user.email+', but this account is not a member of any organisation yet. Ask an administrator to add it.');
+   return {ok:false,reason:'no-membership'};
+  }
+  // A configured organisation is a preference between several, not a requirement.
+  const preferred=organisations.find(x=>x.id===storage.orgId)||organisations[0];
+  storage.useOrganisation(preferred.id);
+  showChrome(true);
+  await onSignedIn({email:who.user.email,organisation:preferred.name});
+  return {ok:true,user:who.user,organisation:preferred};
+ }
+
+ async function signOut(){
+  if(storage.signOut)await storage.signOut();
+  showSignIn('You have been signed out.');
+ }
+
+ return {start,signOut,showSignIn,showChrome};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSignIn=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// The PLANNER screen: the sales in the voyage, the vessel and rotation, the stowage, the
+// voyage calculation and what it leaves.
+//
+// It is the screen the whole project exists for, and it was the last thing still built inline
+// in app.js — nine of its table definitions were single lines over 500 characters, four of
+// them over a thousand. app.js keeps the dispatch and the document work; what the screen says
+// is here.
+//
+// markup() is handed the computed result rather than computing it, because the caller already
+// needed it for the planner checks and the print evidence: one compute per render, not three.
+
+function create(env){
+ const {M,P,getState,esc,fmt,num,orDash,round,table,foldBlock,sumOf,field,input,select,
+  chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,shipmentWindow,cargoDetails,portNames}=env;
+ const state=getState;
+
+ function vesselSummary(){
+  const v=M.vesselOf(state());
+  const text=`${fmt(v?.dwt,0)} DWT · ${v?.holds??''} holds · ${v?.model??''} · LOA ${fmt(v?.loa)} m · Beam ${fmt(v?.beam)} m · Draft ${fmt(v?.draft,2)} m · TPC ${fmt(v?.tpc)} · Grain ${fmt(v?.grain,0)} m³`;
+  return `<span class="muted vessel-summary">${esc(text.toUpperCase())}</span>`;
+ }
+ function grainCapacityLine(){
+  const total=M.cargoVolume(state()).holdTotal;
+  if(total===null)return '<small class="grain-capacity muted">Grain capacity: — · enter every hold volume.</small>';
+  return `<small class="grain-capacity">Grain capacity: ${state().holds.map(h=>num(h.volume)).join(' + ')} = ${fmt(total,2)} m³</small>`;
+ }
+ function draftLossLine(){
+  const r=state().planning?.autoDraftLoss;
+  if(!r||r.loss===null)return `<small class="draft-formula muted">Draft loss: — · ${esc(r?.reason||'Automatic TPC estimate')}</small>`;
+  const b=r.limiting,head=`${esc(b.call)} ${num(b.maxDraft)} m`;
+  const body=`draft ${num(b.draft)} × 1.025 ÷ ρ ${num(b.density)} = ${num(round(b.permissible,3))} m · max(0, ${num(round(b.permissible,3))} − ${num(b.maxDraft)}) × 100 × TPC ${num(b.tpc)} × ${num(b.density)} ÷ 1.025 = ${fmt(b.portLoss,1)} t`;
+  const share=b.fraction===1?'':` · cargo on board ${fmt(b.fraction*100,2)}% · voyage loss max(0, ${fmt(r.baseIntake,1)} − (${fmt(r.baseIntake,1)} − ${fmt(b.portLoss,1)}) ÷ ${num(round(b.fraction,6))}) = ${fmt(r.loss,1)} t`;
+  return `<small class="draft-formula">Draft loss: ${head} · ${body}${share}</small>`+(r.warnings.length?`<small class="muted">${esc(r.warnings.join('; '))}</small>`:'');
+ }
+ function intakeCalculator(ship){
+  const labels={fuel:'Fuel, t',water:'Fresh water, t',ballast:'Ballast, t',constant:'Constant, t',draftLoss:'Loss due to draft, t'};
+  const limits=M.intakeLimits(state());
+  const deductions=Object.entries(labels).map(([k,l])=>k==='draftLoss'
+   ?`<label class="field">${l}<input aria-label="${l}" readonly value="${fmt(state().deductions.draftLoss,1)}"></label>`
+   :field('deductions.'+k,l)).join('');
+  const body=`<div class="heading compact-heading"><h3>Deductions</h3></div><div class="grid">${deductions}</div>${draftLossLine()}`
+   +`<p class="intake-line">DWT limit: ${intakeShown()?`DWT ${num(M.vesselOf(state())?.dwt)} − fuel ${num(state().deductions.fuel)} − fresh water ${num(state().deductions.water)} − ballast ${num(state().deductions.ballast)} − constant ${num(state().deductions.constant)} − draft loss ${num(state().deductions.draftLoss)} = <strong>${fmt(ship.intake,2)} t</strong>`:`<strong>—</strong><button data-action="calc-intake" ${ship.intake===null||ship.intake<0?'disabled':''}>Calculate intake</button>`}</p>`
+   +`<h3>Holds</h3><div class="grid holds-grid">${state().holds.map((h,i)=>field('holds.'+i+'.volume','Hold №'+h.id+', m³')).join('')}</div>`
+   +grainCapacityLine()
+   +(intakeShown()&&limits.cubic!==null?`<p class="cubic-intake">Cubics limit: ${fmt(limits.holdTotal,2)} m³ ÷ mix SF ${fmt(limits.weightedSf,5)} m³/t = <strong>${fmt(limits.cubic,2)} t</strong></p><p class="restricted-intake">Restricted intake DWT/cubics: min(${fmt(limits.dwt,2)} t, ${fmt(limits.cubic,2)} t) = <strong>${fmt(limits.restricted,2)} t</strong></p>`:intakeShown()?'<p class="restricted-intake muted">Cubics not checked · complete every hold volume and selected shipment SF.</p>':'')
+   ;
+  const intake=(intakeShown()?(limits.restricted!==null?`${fmt(limits.restricted,2)} t estimated restricted intake`:`${fmt(limits.dwt,2)} t DWT only · cubics not checked`):ship.intake!==null&&ship.intake<0?'No feasible intake · deductions exceed DWT':'Intake not calculated').toUpperCase();
+  return `<details id="intake-calculator" class="fold"><summary><strong>Intake Calculator</strong><span>${intake}</span></summary><div class="fold-body">${body}</div></details>`;
+ }
+ // followed without opening a single table.
+ // Section 4 is a stack of folds: each block keeps its own result on the summary line,
+ // so the voyage can be read without opening anything and edited by opening one block.
+ function legsSummary(rows){
+  const days=sumOf(rows.map(({l})=>M.legDays(l))),miles=sumOf(rows.map(({l})=>l.distance));
+  return `${rows.length} ${rows.length===1?'leg':'legs'} · ${orDash(miles,0,' NM')} · <strong>${orDash(days,2,' days at sea')}</strong>`;
+ }
+ function portsSummary(calls){
+  const days=sumOf(calls.map(p=>M.portDays(state(),p))),da=sumOf(calls.map(p=>p.da));
+  return `${calls.length} ${calls.length===1?'call':'calls'} · DA ${orDash(da,0,' USD')} · <strong>${orDash(days,2,' days in port')}</strong>`;
+ }
+ function moneySummary(){
+  const price=state().prices.main,freight=state().freight;
+  return `Hire ${orDash(state().hire,0,' USD/day')} · Main fuel ${orDash(price,0,' USD/t')} · Freight ${freight===null?'not entered':fmt(freight,2)+' USD/t'}`;
+ }
+ function voyageChain(b,ship){
+  if(!b)return '';
+  const usd=x=>fmt(x,2),day=x=>fmt(x,2);
+  const line=(name,result,unit,parts)=>`<div class="chain-line"><span class="chain-name">${name}</span><span class="chain-result">${result} <small>${unit}</small></span><span class="chain-parts">${parts}</span></div>`;
+  const kind=k=>b.rows.filter(r=>r.kind===k).reduce((n,r)=>n+r.cents,0)/100;
+  const bunkers=kind('fuel'),ports=kind('ports'),other=kind('other');
+  const chain=[
+   line('Voyage time',day(b.days),'days',`at sea ${day(b.sea)} + working ${day(b.work)} + waiting and stops ${day(b.idle)}`),
+   line('Model cost',usd(b.total),'USD',`hire ${usd(b.hire)} + bunkers ${usd(bunkers)} + port charges ${usd(ports)} + other ${usd(other)}`),
+   line('Cost per tonne',fmt(b.unit,2),'USD/t',`${usd(b.total)} USD / ${fmt(ship.quantity,0)} t of cargo`)];
+  if(b.gross!==null)chain.push(
+   line('Net revenue',usd(b.net),'USD',`gross freight ${usd(b.gross)} − commission ${usd(b.commission)} + other income ${usd(b.net-b.gross+b.commission)}`),
+   line('Result after hire',usd(b.pnl),'USD',`net revenue ${usd(b.net)} − model cost ${usd(b.total)}`),
+   line('TCE before hire',fmt(b.tce,0),'USD/day',`(net revenue ${usd(b.net)} − cost excluding hire ${usd(b.total-b.hire)}) / ${day(b.days)} days`));
+  else chain.push(line('Freight not entered','—','',`the revenue side stays unstated; ${fmt(b.requiredFreightQuote,2)} USD/t would cover the model cost`));
+  chain.push(line('Freight to cover cost',fmt(b.requiredFreightQuote,2),'USD/t',`(model cost ${usd(b.total)} − other income ${usd(b.net===null?0:b.net-b.gross+b.commission)}) / (1 − commission) / ${fmt(ship.quantity,0)} t, rounded up`));
+  return `<div class="voyage-chain">${chain.join('')}</div>`;
+ }
+ // Allocation cells are printed in the table's own format, so the grouping goes back out before the number is read.
+ const intakeKey=()=>JSON.stringify([P.INTAKE_METHOD,M.vesselOf(state())?.dwt,...M.DEDUCTIONS.map(k=>state().deductions[k])]);
+ const intakeShown=()=>{if(state().intakeShownFor!==intakeKey())return false;const {dwt}=M.intakeLimits(state());return dwt!==null&&dwt>=0;};
+ // The rotation, as an ordered list that can be reordered. A call carries the parcels that
+ // load or discharge there, with their colour tag so the same parcel is recognisable in the
+ // hold plan. The colour is generated by the model, but it travels inside a saved voyage, so
+ // it is escaped like any other stored value before it reaches a style attribute.
+ const parcelTag=l=>`<span class="tag" style="background:${esc(l.color)}" title="${esc(l.name)}"></span>`;
+ const moveButton=(name,direction,label,disabled)=>
+  `<button data-action="move-port" data-port="${esc(name)}" data-direction="${direction}" aria-label="${esc(name)} ${label}" ${disabled?'disabled':''}>${direction<0?'↑':'↓'}</button>`;
+
+ function rotationList(title,isLoad){
+  const loadNames=new Set(chosen().map(l=>l.loadPort));
+  const group=M.callsOf(state()).filter(p=>loadNames.has(p.name)===isLoad);
+  const call=(p,i)=>{
+   const parcels=chosen().filter(l=>(isLoad?l.loadPort:l.port)===p.name);
+   // A total is only a total when every parcel in it has a tonnage.
+   const q=parcels.every(l=>M.ok(l.quantity,true))?parcels.reduce((n,l)=>n+l.quantity,0):null;
+   return `<li><span class="port-number">${i+1}</span>`+
+    `<div class="port-caption"><strong>${esc(p.name)}</strong>`+
+    `<small>${fmt(q,0)} t ${parcels.map(parcelTag).join('')}</small></div>`+
+    `<div class="port-actions">`+
+    moveButton(p.name,-1,'earlier',i===0)+
+    moveButton(p.name,1,'later',i===group.length-1)+
+    `</div></li>`;
+  };
+  return `<div><h3>${title}</h3><ol class="port-order">${group.map(call).join('')}</ol>`+
+   (group.length?'':'<p class="muted">Add sales from SALE to the planner</p>')+
+   `</div>`;
+ }
+
+ // The PLANNER screen, section by section, in the order it is read.
+ function markup(r,b,ship,lots){
+ let html=`${state().demo?'<p class="notice">Demo example. Tonnage, SF, distances and prices are illustrative; replace the inputs before using the calculation.</p>':''}<section><div class="heading"><h2>1. Sales in voyage</h2><button data-action="add-lot">+ Add sale</button></div>`;
+ // Section 1: the parcels in the voyage. Each row links back to the deal it came from and to
+ // the shipment source behind its stowage factor, so a figure can be traced without leaving.
+ const VOYAGE_COLUMNS=['In voyage','Sale / cargo','Quantity, MT','SF, m³/t','Loading','Discharge','Shipment',''];
+ const saleLink=l=>state().sales.some(s=>s.id===l.saleId)
+  ? `<button class="text-action sale-link" data-action="open-sale" data-id="${esc(l.saleId)}" aria-label="Open ${esc(l.saleId)} in SALE">${esc(l.saleId)}</button>`
+  : esc(l.saleId||'Legacy');
+ const voyageRow=(l,i)=>
+  `<tr>`+
+  `<td><input type="checkbox" data-path="lots.${i}.selected" aria-label="Include ${esc(l.name)}" ${l.selected?'checked':''}></td>`+
+  `<td class="name"><span class="tag" style="background:${esc(l.color)}"></span><small>${saleLink(l)}</small><br>`+
+  `<button class="text-action" data-action="parcel-passport" data-id="${esc(l.id)}">${esc(l.name)}</button></td>`+
+  `<td>${fmt(l.quantity,1)}</td>`+
+  `<td>${fmt(l.sf,2)}</td>`+
+  `<td>${esc(l.loadPort)}</td>`+
+  `<td>${esc(l.port)}</td>`+
+  `<td class="shipment-window">${shipmentWindow(state().sales.find(s=>s.id===l.saleId))}</td>`+
+  `<td><button data-action="remove-lot" data-index="${i}" aria-label="Remove sale ${esc(l.saleId||l.id)} from voyage">×</button></td>`+
+  `</tr>`;
+ const VOYAGE_EMPTY='<div class="empty-state planner-empty"><strong>No sales in voyage yet</strong><span>Add a sale from SALE to start planning this voyage.</span></div>';
+ html+=state().lots.length?table(VOYAGE_COLUMNS,state().lots.map(voyageRow),'voyage-sales-table'): VOYAGE_EMPTY;html+='</section>';
+ html+=`<section><div class="heading"><h2>2. Vessel and rotation</h2></div><div class="vessel-choice"><label class="field">${select('vesselId','Vessel',(state().vesselProfiles||M.VESSELS).map(v=>[v.id,v.name]))}</label>${vesselSummary()}</div>${intakeCalculator(ship)}<div class="rotation-grid">${rotationList('Loading',true)}${rotationList('Discharge',false)}</div></section>`;
+ // One planner check per render; both the section and the print evidence read the same result.
+ const report=P.check(state(),b);
+ html+=plannerUI.section3(state(),b,report)+plannerUI.printEvidence(state(),b,report);
+ html+=`<section><div class="heading"><h2>4. Voyage calculation</h2></div>${voyageChain(b,ship)}`;
+ html+=`<details id="voyage-map" class="fold"><summary><strong>Voyage map</strong></summary><div class="fold-body">${voyageMap()}</div></details>`;
+ const distances=voyageDistanceLine(),drawnLegs=voyageLegs().filter(l=>l.leg);
+ if(distances)html+=foldBlock('voyage-distances','Distances',`${drawnLegs.length} ${drawnLegs.length===1?'leg':'legs'} · ${orDash(sumOf(drawnLegs.map(l=>l.leg.distance)),0,' NM')}`,distances);
+ const activePorts=M.callsOf(state());const displayedLegs=[];if(state().ballastEnabled)displayedLegs.push({l:state().ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state().legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state().legs[j],path:'legs.'+j});}
+ const legsHead=`<div class="ballast-line"><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state().ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state())[0]?.name||'the first load port')}</label>${state().ballastEnabled?`<label class="field delivery-port">Delivery port${input('deliveryPort','Delivery port',{type:'text',placeholder:M.DELIVERY_PLACEHOLDER,list:'delivery-ports'})}</label><datalist id="delivery-ports">${portNames().map(([name])=>`<option value="${esc(name)}"></option>`).join('')}</datalist>`:''}</div>`;
+ const legsTable=table(['Leg','Total, NM','Of which ECA, NM','Speed, kn','Weather, % time','Outside ECA, t/day','In ECA, t/day','Aux, t/day','Days'],displayedLegs.map(({l,path})=>`<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td>${['distance','eca','speed','margin','burn','ecaBurn','aux'].map(k=>`<td>${input(path+'.'+k,l.from+' '+k)}</td>`).join('')}<td>${fmt(b?.legs.find(x=>x.from===l.from&&x.to===l.to)?.days??M.legDays(l),3)}</td></tr>`));// The calendar period belongs to manual handling terms only: the column appears with the call that needs it.
+ html+=foldBlock('voyage-legs','Legs',legsSummary(displayedLegs),legsHead+legsTable);
+ const manualTerms=activePorts.some(p=>p.terms==='manual');
+ const portsTable=table(['Port','Cargo, MT','Handling rate, t/day','Handling terms',...(manualTerms?['Calendar, days']:[]),'Turn time, h','Waiting, h','DA, USD','Days'],activePorts.map(p=>{const i=state().ports.indexOf(p),path='ports.'+i;return `<tr><td>${esc(p.name)}</td><td>${fmt(lots.filter(l=>l.loadPort===p.name||l.port===p.name).reduce((n,l)=>n+(l.quantity||0),0),0)}</td><td>${input(path+'.rate',p.name+' handling rate')}</td><td>${select(path+'.terms',p.name+' terms',[['SHINC','24/7 · SHINC'],['manual','Manual calendar']])}</td>${manualTerms?`<td>${input(path+'.calendar',p.name+' calendar days',{disabled:p.terms==='SHINC'})}</td>`:''}<td>${input(path+'.turn',p.name+' turn time')}</td><td>${input(path+'.extra',p.name+' waiting')}</td><td>${input(path+'.da',p.name+' DA')}</td><td>${fmt(b?.ports.find(x=>x.name===p.name)?.days??M.portDays(state(),p),3)}</td></tr>`;}));
+ const portFuel=`<details id="portfuel"><summary>Port fuel consumption</summary>${table(['Port','Main fuel','Main work, t/day','Main idle, t/day','Aux work, t/day','Aux idle, t/day','Boiler, t/day','Boiler operating time, days','Boiler fuel'],activePorts.map(p=>{const path='ports.'+state().ports.indexOf(p);return `<tr><td>${esc(p.name)}</td><td>${select(path+'.fuel',p.name+' fuel',[['main','Outside ECA'],['eca','ECA']])}</td>${['working','idle','auxWorking','auxIdle','boiler','boilerDays'].map(k=>`<td>${input(path+'.'+k,p.name+' '+k)}</td>`).join('')}<td>${select(path+'.boilerFuel','Boiler fuel',[[null,'Select'],['main','Main outside ECA'],['eca','Main ECA'],['aux','Aux']])}</td></tr>`;}))}</details>`;
+ html+=foldBlock('voyage-ports','Ports',portsSummary(activePorts),portsTable+portFuel);
+ // Hire, bunker prices and what the voyage earns. Fuel is priced per zone rather than once,
+ // because a leg inside an ECA burns a different grade from the same leg outside it.
+ const MONEY_FIELDS=[
+  ['hire','Effective hire / target TCE, USD/day'],
+  ['prices.main','Main outside ECA, USD/t'],
+  ['prices.eca','Main ECA, USD/t'],
+  ['prices.aux','Additional Aux, USD/t'],
+  ['freight','Estimated gross freight, USD/t · optional'],
+  ['commission','Commission on gross freight, %'],
+  ['extraIncome','Other income net, USD']
+ ];
+ const FUEL_NOTE='<p class="form-note">Fuel grades and prices are set by voyage phase. Enter prices and consumption explicitly for each zone. Aux is added to main consumption; enter 0 only if it is already included or not used.</p>';
+ // A cost can carry time and consumption of its own: a canal transit is a stop, not just a fee.
+ const COST_COLUMNS=['Item','Amount, USD','Additional time, days','Consumption, t/day','Fuel',''];
+ const costRow=(c,i)=>
+  `<tr><td>${input('costs.'+i+'.name','Item name',{type:'text'})}</td>`+
+  `<td>${input('costs.'+i+'.amount','Item amount')}</td>`+
+  `<td>${input('costs.'+i+'.days','Additional time')}</td>`+
+  `<td>${input('costs.'+i+'.burn','Stop consumption')}</td>`+
+  `<td>${select('costs.'+i+'.fuel','Stop fuel',[['main','Outside ECA'],['eca','ECA']])}</td>`+
+  `<td><button data-action="remove-cost" data-index="${i}" aria-label="Remove item ${i+1}">Remove</button></td></tr>`;
+ const costsBlock=()=>state().costs.length
+  ? `<h3>Additional costs and stops</h3>`+table(COST_COLUMNS,state().costs.map(costRow))+`<button data-action="add-cost">Add item</button>`
+  : `<button class="inline-action" data-action="add-cost">+ Add cost or stop</button>`;
+ const moneyBody=`<div class="grid">`+MONEY_FIELDS.map(([path,label])=>field(path,label)).join('')+`</div>`+
+  FUEL_NOTE+costsBlock();
+ html+=foldBlock('voyage-money','Hire, bunkers and freight',moneySummary(),moneyBody);
+ if(b){const amount=kind=>b.rows.filter(r=>r.kind===kind).reduce((n,r)=>n+r.cents,0)/100;html+=`<div class="split"><div><h3>Costs</h3><table class="totals"><tbody>${[['Hire',b.hire],['Bunkers',amount('fuel')],['Ports',amount('ports')],['Other',amount('other')],['Total',b.total]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)} USD</td></tr>`).join('')}</tbody></table></div><div><h3>Freight estimate</h3><table class="totals"><tbody>${[['Gross freight',b.gross],['Commission',b.commission],['Net income',b.net],['TCE before hire, USD/day',b.tce],['P&L after hire, USD',b.pnl],['Freight required to cover model cost, USD/t',b.requiredFreightQuote]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)}</td></tr>`).join('')}</tbody></table></div></div>`;}
+ // A financial result over an incomplete or over-limit cargo plan is not a feasible voyage,
+ // and says so rather than letting the number stand on its own.
+ const INFEASIBLE='<p class="notice">The cargo plan is incomplete or exceeds limits. The financial result does not confirm voyage feasibility.</p>';
+ const planIncomplete=ship.errors.length||ship.remaining.some(x=>x.quantity===null||Math.abs(x.quantity)>.01);
+
+ // Section 5: what each sale carries of the voyage. The method is the open question Q-005,
+ // so it is a choice on the screen rather than a rule buried in the engine.
+ const allocationRow=a=>{
+  const l=state().lots.find(l=>l.id===a.id);
+  return `<tr><td class="name"><span class="tag" style="background:${esc(l.color)}"></span>${esc(l.name)}</td>`+
+   `<td>${esc(l.port)}</td><td>${fmt(a.quantity,1)}</td>`+
+   `<td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td></tr>`;
+ };
+ const allocationTable=()=>b
+  ? table(['Sale','Port','Tonnage','Allocated, USD','USD/t'],b.allocation.map(allocationRow))
+  : '<p class="empty">Allocation appears after the voyage calculation is complete.</p>';
+ // The sources editor is shown for a calculation that already carries notes, so section 5
+ // ends with the allocation itself for everyone else.
+ const notesBlock=()=>String(state().notes||'').trim()
+  ? `<details id="notes"><summary>Calculation sources and notes</summary><textarea data-path="notes" aria-label="Calculation sources" placeholder="Enter sources and dates for distances, PDA, rates, SF and vessel data">${esc(state().notes)}</textarea></details>`
+  : '';
+
+ html+=(planIncomplete?INFEASIBLE:'')+`</section><section>`+
+  `<div class="heading"><h2>5. Cost by sale</h2>`+
+  select('allocation','Allocation method',[['route','By legs and ports'],['tonnage','Entire budget by tonnage']])+
+  `</div>`+allocationTable()+notesBlock()+`</section>`;
+  return html;
+ }
+
+ // intakeKey is exported because the action that calculates an intake stamps it onto the
+ // state, and the view is what decides when a stamped key is still the current one.
+ return {markup,intakeKey,intakeShown,vesselSummary,intakeCalculator,legsSummary,portsSummary,moneySummary,voyageChain,rotationList};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlannerView=api;
+})(globalThis);
 </script><script>(function(){
 'use strict';
 const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','sale','cargo','ports','vessel','market','guide'];
@@ -14997,6 +16213,7 @@ $('app').addEventListener('change',e=>{
  renderMarket();$(focus)?.focus();
 });
 let currentTab='planner',startupMessage='';
+const {esc,numberFormat,fmt,num,orDash,round,tonnage,sumOf,table,foldBlock,ringPath,linePath}=window.ProjectXFormat;
 const P=window.ProjectXPlanning;
 const plannerUI=window.ProjectXPlannerUI.create({M,P,getState:()=>state,changed,openTab:tab=>{currentTab=tab;syncWorkspace();render();}});
 try{const savedTab=sessionStorage.getItem(tabKey);if(tabs.includes(savedTab))currentTab=savedTab;}catch{}
@@ -15032,10 +16249,6 @@ try{
  if(!adopt(session.openSync(recall())))pendingOpen=session.open(recall());
  if(storage.degraded)startupMessage=storage.degraded;
 }catch{startupMessage='Browser storage is unavailable. Changes cannot be saved in this browser.';}
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));// toLocaleString builds a fresh Intl.NumberFormat on every call; one per option pair is the same output.
-const numberFormats=new Map();
-const numberFormat=(min,max)=>{const key=min+':'+max;let f=numberFormats.get(key);if(!f){f=new Intl.NumberFormat('en-GB',{minimumFractionDigits:min,maximumFractionDigits:max});numberFormats.set(key,f);}return f;};
-const fmt=(x,d=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':numberFormat(d,d).format(x);
 function get(path){return path.split('.').reduce((a,k)=>a[k],state);}function set(path,value){const bits=path.split('.'),last=bits.pop();bits.reduce((a,k)=>a[k],state)[last]=value;}
 function input(path,label,options={}){
  if(options.tonnage)return `<input aria-label="${esc(label)}" data-path="${path}" type="text" inputmode="decimal" data-format="tonnage" value="${esc(fmt(get(path),1))}" placeholder="—" ${options.disabled?'disabled':''}>`;
@@ -15045,299 +16258,30 @@ function field(path,label,options){return `<label class="field">${label}${input(
 const chosen=()=>state.lots.filter(l=>l.selected);
 // The particulars are one plate in upper case. The case is in the text, not in a style rule,
 // so the line carries it wherever it goes: on screen, in print, and in a copy of it.
-function vesselSummary(){
- const v=M.vesselOf(state);
- const text=`${fmt(v?.dwt,0)} DWT · ${v?.holds??''} holds · ${v?.model??''} · LOA ${fmt(v?.loa)} m · Beam ${fmt(v?.beam)} m · Draft ${fmt(v?.draft,2)} m · TPC ${fmt(v?.tpc)} · Grain ${fmt(v?.grain,0)} m³`;
- return `<span class="muted vessel-summary">${esc(text.toUpperCase())}</span>`;
-}
-function grainCapacityLine(){
- const total=M.cargoVolume(state).holdTotal;
- if(total===null)return '<small class="grain-capacity muted">Grain capacity: — · enter every hold volume.</small>';
- return `<small class="grain-capacity">Grain capacity: ${state.holds.map(h=>num(h.volume)).join(' + ')} = ${fmt(total,2)} m³</small>`;
-}
-function draftLossLine(){
- const r=state.planning?.autoDraftLoss;
- if(!r||r.loss===null)return `<small class="draft-formula muted">Draft loss: — · ${esc(r?.reason||'Automatic TPC estimate')}</small>`;
- const b=r.limiting,head=`${esc(b.call)} ${num(b.maxDraft)} m`;
- const body=`draft ${num(b.draft)} × 1.025 ÷ ρ ${num(b.density)} = ${num(round(b.permissible,3))} m · max(0, ${num(round(b.permissible,3))} − ${num(b.maxDraft)}) × 100 × TPC ${num(b.tpc)} × ${num(b.density)} ÷ 1.025 = ${fmt(b.portLoss,1)} t`;
- const share=b.fraction===1?'':` · cargo on board ${fmt(b.fraction*100,2)}% · voyage loss max(0, ${fmt(r.baseIntake,1)} − (${fmt(r.baseIntake,1)} − ${fmt(b.portLoss,1)}) ÷ ${num(round(b.fraction,6))}) = ${fmt(r.loss,1)} t`;
- return `<small class="draft-formula">Draft loss: ${head} · ${body}${share}</small>`+(r.warnings.length?`<small class="muted">${esc(r.warnings.join('; '))}</small>`:'');
-}
-function intakeCalculator(ship){
- const labels={fuel:'Fuel, t',water:'Fresh water, t',ballast:'Ballast, t',constant:'Constant, t',draftLoss:'Loss due to draft, t'};
- const limits=M.intakeLimits(state);
- const deductions=Object.entries(labels).map(([k,l])=>k==='draftLoss'
-  ?`<label class="field">${l}<input aria-label="${l}" readonly value="${fmt(state.deductions.draftLoss,1)}"></label>`
-  :field('deductions.'+k,l)).join('');
- const body=`<div class="heading compact-heading"><h3>Deductions</h3></div><div class="grid">${deductions}</div>${draftLossLine()}`
-  +`<p class="intake-line">DWT limit: ${intakeShown()?`DWT ${num(M.vesselOf(state)?.dwt)} − fuel ${num(state.deductions.fuel)} − fresh water ${num(state.deductions.water)} − ballast ${num(state.deductions.ballast)} − constant ${num(state.deductions.constant)} − draft loss ${num(state.deductions.draftLoss)} = <strong>${fmt(ship.intake,2)} t</strong>`:`<strong>—</strong><button data-action="calc-intake" ${ship.intake===null||ship.intake<0?'disabled':''}>Calculate intake</button>`}</p>`
-  +`<h3>Holds</h3><div class="grid holds-grid">${state.holds.map((h,i)=>field('holds.'+i+'.volume','Hold №'+h.id+', m³')).join('')}</div>`
-  +grainCapacityLine()
-  +(intakeShown()&&limits.cubic!==null?`<p class="cubic-intake">Cubics limit: ${fmt(limits.holdTotal,2)} m³ ÷ mix SF ${fmt(limits.weightedSf,5)} m³/t = <strong>${fmt(limits.cubic,2)} t</strong></p><p class="restricted-intake">Restricted intake DWT/cubics: min(${fmt(limits.dwt,2)} t, ${fmt(limits.cubic,2)} t) = <strong>${fmt(limits.restricted,2)} t</strong></p>`:intakeShown()?'<p class="restricted-intake muted">Cubics not checked · complete every hold volume and selected shipment SF.</p>':'')
-  ;
- const intake=(intakeShown()?(limits.restricted!==null?`${fmt(limits.restricted,2)} t estimated restricted intake`:`${fmt(limits.dwt,2)} t DWT only · cubics not checked`):ship.intake!==null&&ship.intake<0?'No feasible intake · deductions exceed DWT':'Intake not calculated').toUpperCase();
- return `<details id="intake-calculator" class="fold"><summary><strong>Intake Calculator</strong><span>${intake}</span></summary><div class="fold-body">${body}</div></details>`;
-}
 
 // The voyage on an equirectangular world. The drawn track is the check on the distance beside it:
 // a leg that loops out to sea and back is visible long before the number looks wrong.
-const Sea=typeof window!=='undefined'?window.ProjectXSeaRoute:null;
-const portAnchor=name=>{const p=state.portRecords.find(p=>p.name===name&&Number.isFinite(p.lat)&&Number.isFinite(p.lon));return p?[p.lon,p.lat]:null;};
-const legRoute=(fromName,toName,leg,ballast)=>{
- const a=portAnchor(fromName),b=portAnchor(toName);
- return {from:fromName,to:toName,a,b,leg,ballast,
-  route:Sea&&a&&b?Sea.route(a,b):null,
-  published:Sea?Sea.published(M.portProfileOf(fromName)?.pub151,M.portProfileOf(toName)?.pub151):null};
-};
-function voyageLegs(){
- const calls=M.callsOf(state),out=[];
- // The approach is measured from the delivery port, so it is routed and drawn like the loaded legs.
- if(state.ballastEnabled&&calls.length)out.push(legRoute(state.ballast.from,calls[0].name,state.ballast,true));
- for(let i=0;i<calls.length-1;i++){
-  out.push(legRoute(calls[i].name,calls[i+1].name,state.legs.find(l=>l.from===calls[i].name&&l.to===calls[i+1].name)||null,false));
- }
- return out;
-}
-function syncRouteDistances(){
- if(!Sea)return;
- for(const l of voyageLegs()){
-  const leg=l.leg;if(!leg||leg.distanceSource==='entered')continue;
-  // A printed distance outranks a routed one; both step aside for a figure the user typed.
-  if(l.published){leg.distance=l.published.distance;leg.distanceSource='published';}
-  else if(l.route?.reliable&&Number.isFinite(l.route.distance)){leg.distance=round(l.route.distance,0);leg.distanceSource='estimated';}
-  else if(leg.distanceSource==='published'||leg.distanceSource==='estimated'){leg.distance=null;leg.distanceSource=null;}
- }
-}
+// The map is built by voyage-map.js; it needs the document only to measure what it drew.
+const voyageMapView=window.ProjectXVoyageMap.create({M,getState:()=>state,document,esc,fmt,round,table,ringPath,linePath,
+ Sea:typeof window!=='undefined'?window.ProjectXSeaRoute:null});
+const {voyageLegs,syncRouteDistances,fitMapFrame,zoomMap,panMap,resetMap,mapPoint,paintMapView,voyageMap,voyageDistanceLine}=voyageMapView;
 // Typing into a leg distance makes it the user's figure; clearing it hands the leg back to the estimate.
 function noteManualEntry(path,value){
  if(path==='ballast.distance'){state.ballast.distanceSource=value===null?null:'entered';return;}
  const m=/^legs\.(\d+)\.distance$/.exec(path||'');
  if(m&&state.legs[m[1]])state.legs[m[1]].distanceSource=value===null?null:'entered';
 }
-const ringPath=ring=>`<path d="M${ring.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}Z"/>`;
-const linePath=line=>`<path d="M${line.map(p=>p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join('L')}"/>`;
-let coastCache=null,depthCache=null,borderCache=null;
-const coastMarkup=()=>coastCache??=Sea.coastline().map(ringPath).join('');
-const borderMarkup=()=>borderCache??=Sea.borders().map(linePath).join('');
-// Shallow water first, each deeper band painted over it, so the shelf reads lighter than the abyss.
-const depthMarkup=()=>depthCache??=Sea.depths().map(d=>`<g class="sea-depth" data-depth="${d.level}">${d.rings.map(ringPath).join('')}</g>`).join('');
-// A graticule at a step the fitted view can carry: it gives the eye a scale the coastline alone does not.
-function graticule(box){
- const span=Math.max(box[2],box[3]);
- const step=span>120?30:span>60?15:span>24?10:span>10?5:span>4?2:1;
- const lines=[];
- for(let lon=-180;lon<=180;lon+=step)lines.push(`<line x1="${lon}" y1="-90" x2="${lon}" y2="90"/>`);
- for(let lat=-90;lat<=90;lat+=step)lines.push(`<line x1="-180" y1="${lat}" x2="180" y2="${lat}"/>`);
- return `<g class="sea-graticule">${lines.join('')}</g>`;
-}
-// Pan and zoom live outside the voyage: they belong to this browsing session, not to the saved calculation.
-let mapZoom=null;
-const mapKey=box=>box.map(n=>n.toFixed(1)).join(' ');
-function mapView(fitted){
- if(!mapZoom||mapZoom.key!==mapKey(fitted))mapZoom={key:mapKey(fitted),fitted:fitted.slice(),box:fitted.slice()};
- return mapZoom.box;
-}
-// Zooming out stops where the world itself fills the frame. Past that the drawing would
-// shrink into the middle of an empty box, which is not a smaller map but a lost one.
-function clampView(fitted,box){
- let [x,y,w,h]=box;
- const ratio=w/h,min=Math.min(fitted[2],fitted[3])/60;
- const maxW=Math.min(360,180*ratio);
- w=Math.min(Math.max(w,min*ratio),maxW);h=w/ratio;
- // Inside the world the view is free; once it spans the world it is centred on it.
- x=w>=360?-w/2:Math.min(Math.max(x,-180),180-w);
- y=h>=180?-h/2:Math.min(Math.max(y,-90),90-h);
- return [x,y,w,h];
-}
-// preserveAspectRatio letterboxes whatever the box and the frame disagree about, and the
-// frame's shape is only known once the page has laid out. The box is widened or heightened
-// to match it, which reveals more ocean and never hides the voyage.
-function fitMapFrame(){
- const svg=document.querySelector?.('.voyage-map svg');
- if(!svg?.getBoundingClientRect||!mapZoom)return;
- const rect=svg.getBoundingClientRect();
- if(!rect.width||!rect.height)return;
- const frame=rect.width/rect.height,[x,y,w,h]=mapZoom.box;
- if(Math.abs(frame-w/h)>.01){
-  const nw=frame>w/h?h*frame:w,nh=frame>w/h?h:w/frame;
-  mapZoom.box=clampView(mapZoom.fitted,[x-(nw-w)/2,y-(nh-h)/2,nw,nh]);
- }
- paintMapView();
-}
-function zoomMap(factor,at){
- if(!mapZoom)return;
- const [x,y,w,h]=mapZoom.box;
- const cx=at?at.x:x+w/2,cy=at?at.y:y+h/2;
- mapZoom.box=clampView(mapZoom.fitted,[cx-(cx-x)*factor,cy-(cy-y)*factor,w*factor,h*factor]);
- paintMapView();
-}
-function panMap(dx,dy){
- if(!mapZoom)return;
- const [x,y,w,h]=mapZoom.box;
- mapZoom.box=clampView(mapZoom.fitted,[x-dx,y-dy,w,h]);
- paintMapView();
-}
-function resetMap(){if(mapZoom){mapZoom.box=mapZoom.fitted.slice();fitMapFrame();}}
-// Screen pixels mean nothing to a viewBox in degrees; the element's own matrix does the conversion.
-function mapPoint(svg,event){
- const ctm=svg.getScreenCTM();
- if(!ctm)return null;
- const p=svg.createSVGPoint();p.x=event.clientX;p.y=event.clientY;
- return p.matrixTransform(ctm.inverse());
-}
-function paintMapView(){
- const svg=document.querySelector?.('.voyage-map svg');
- if(!svg||!mapZoom)return;
- svg.setAttribute('viewBox',mapZoom.box.map(n=>n.toFixed(3)).join(' '));
- const width=svg.getBoundingClientRect?.().width;
- if(!width)return;
- const unit=mapZoom.box[2]/width,marks=svg.querySelector?.('.sea-marks'),places=svg.querySelector?.('.sea-places');
- if(marks&&mapZoom.anchors)marks.innerHTML=markMarkup(mapZoom.anchors,mapZoom.box,unit);
- if(places)places.innerHTML=placeMarkup(mapZoom.box,unit);
-}
-// A marker is a fixed number of screen pixels, like the strokes beside it: sizing it as a
-// fraction of the frame made a 44-pixel label on a wide monitor. `unit` is map units per pixel,
-// so every measurement below reads as the pixels it will occupy.
-const LABEL_RANK=[[200,2,2],[90,3,2],[40,4,4],[15,5,5],[0,6,6]];
-function placeMarkup(box,unit){
- const span=Math.max(box[2],box[3]),[,countryRank,seaRank]=LABEL_RANK.find(([from])=>span>from)||LABEL_RANK[LABEL_RANK.length-1];
- const inside=p=>p.lon>=box[0]&&p.lon<=box[0]+box[2]&&-p.lat>=box[1]&&-p.lat<=box[1]+box[3];
- const {countries,seas}=Sea.places();
- // Two names in the same place read as neither, so the more important one keeps the ground.
- const taken=[];
- const draw=(list,rank,cls,size)=>[...list].filter(p=>p.rank<=rank&&inside(p)).sort((a,b)=>a.rank-b.rank)
-  .map(p=>{
-   const height=unit*size,width=p.name.length*height*(cls==='country-name'?.68:.5),x=p.lon,y=-p.lat;
-   if(taken.some(q=>Math.abs(q[0]-x)<(q[2]+width)/2&&Math.abs(q[1]-y)<(q[3]+height)*.7))return '';
-   taken.push([x,y,width,height]);
-   return `<text class="${cls}" x="${x.toFixed(3)}" y="${y.toFixed(3)}" font-size="${height.toFixed(3)}">${esc(p.name)}</text>`;
-  }).join('');
- return draw(seas,seaRank,'sea-name',12)+draw(countries,countryRank,'country-name',9);
-}
-const MARK={ring:4.5,dot:1.6,label:11,gap:8,line:13,crowd:130};
-function markMarkup(anchors,box,unit){
- const middle=box[0]+box[2]/2,placed=[];
- return anchors.map(([name,p])=>{
-  const east=p[0]>middle,gap=unit*MARK.gap*(east?-1:1);
-  let y=-p[1]+unit*MARK.label*.35;
-  while(placed.some(q=>Math.abs(q[1]-y)<unit*MARK.line&&Math.abs(q[0]-p[0])<unit*MARK.crowd))y+=unit*MARK.line;
-  placed.push([p[0],y]);
-  const x=p[0].toFixed(3),cy=(-p[1]).toFixed(3);
-  return `<g class="sea-port"><circle class="sea-port-ring" cx="${x}" cy="${cy}" r="${(unit*MARK.ring).toFixed(3)}"/><circle class="sea-port-dot" cx="${x}" cy="${cy}" r="${(unit*MARK.dot).toFixed(3)}"/><text x="${(p[0]+gap).toFixed(3)}" y="${y.toFixed(3)}" text-anchor="${east?'end':'start'}" font-size="${(unit*MARK.label).toFixed(3)}">${esc(name)}</text></g>`;
- }).join('');
-}
-// Before the page has laid out there is no width to measure; the first draw assumes a common
-// one and paintMapView corrects it as soon as the real frame is known.
-const mapUnit=box=>box[2]/(document.querySelector?.('.voyage-map svg')?.getBoundingClientRect?.().width||1100);
-function voyageMap(){
- if(!Sea)return '';
- const legs=voyageLegs(),drawn=legs.filter(l=>l.route?.path);
- const names=[...new Set([...legs.filter(l=>l.ballast).map(l=>l.from),...M.callsOf(state).map(c=>c.name)])];
- const anchors=names.map(name=>[name,portAnchor(name)]).filter(([,p])=>p);
- if(!anchors.length)return '<div class="voyage-map-empty"><p class="muted">The route is drawn once the voyage calls have coordinates. Enter them in PORT.</p></div>';
- const all=[...anchors.map(([,p])=>p),...drawn.flatMap(l=>l.route.path)];
- let minLon=Math.min(...all.map(p=>p[0])),maxLon=Math.max(...all.map(p=>p[0]));
- let minLat=Math.min(...all.map(p=>p[1])),maxLat=Math.max(...all.map(p=>p[1]));
- const padLon=Math.max((maxLon-minLon)*.12,4),padLat=Math.max((maxLat-minLat)*.12,4);
- minLon-=padLon;maxLon+=padLon;minLat-=padLat;maxLat+=padLat;
- const width=maxLon-minLon,height=maxLat-minLat;
- // y grows south, so latitude is negated; nothing else about the projection is needed at this scale.
- const fitted=[minLon,-maxLat,width,height];
- const box=mapView(fitted);
- mapZoom.anchors=anchors;
- const coast=coastMarkup();
- const tracks=drawn.map(l=>{
-  const points=l.route.path.map(p=>p[0].toFixed(2)+','+(-p[1]).toFixed(2)).join(' ');
-  const kind=(l.route.reliable?'':' sea-track-doubtful')+(l.ballast?' sea-track-ballast':'');
-  return `<polyline class="sea-glow${kind}" points="${points}"/><polyline class="sea-track${kind}" points="${points}"/>`;
- }).join('');
- const marks=markMarkup(anchors,box,mapUnit(box));
- return `<div class="voyage-map"><div class="map-controls"><button data-action="map-zoom" data-factor="0.7" aria-label="Zoom in">+</button><button data-action="map-zoom" data-factor="1.45" aria-label="Zoom out">−</button><button data-action="map-reset" aria-label="Fit the voyage">Fit</button></div><svg viewBox="${box.map(n=>n.toFixed(3)).join(' ')}" role="img" aria-label="Voyage route map" preserveAspectRatio="xMidYMid meet">${depthMarkup()}${graticule(fitted)}<g class="sea-land">${coast}</g><g class="sea-borders">${borderMarkup()}</g><g class="sea-places">${placeMarkup(box,mapUnit(box))}</g>${tracks}<g class="sea-marks">${marks}</g></svg></div>`;
-}
-function voyageDistanceLine(){
- if(!Sea)return '';
- const legs=voyageLegs().filter(l=>l.leg);
- if(!legs.length)return '';
- const rows=legs.map(l=>{
-  const source=l.leg.distanceSource==='entered'?'Entered'
-   :l.leg.distanceSource==='published'?'NGA Pub. 151, published'
-   :l.leg.distanceSource==='estimated'?'Estimated over the lane network'
-   :l.route&&!l.route.reliable?'Coastal leg · no lane near these ports and no printed pair; enter it from a distance table'
-   :l.ballast&&!String(state.deliveryPort||'').trim()?'Ballast approach · enter the delivery port to measure it'
-   :l.ballast&&!l.a?'Delivery port is not a registered port with a position; add it in PORT or enter the distance'
-   :'No route · check the port positions in PORT';
-  return `<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td><td>${M.ok(l.leg.distance,true)?fmt(l.leg.distance,0):'—'}</td><td>${l.published?fmt(l.published.distance,0):'—'}</td><td>${l.route?.distance?fmt(l.route.distance,0):'—'}</td><td>${esc(source)}</td></tr>`;});
- return table(['Leg','In the calculation, nm','Pub. 151, nm','Estimate, nm','Source'],rows,'sea-distances');
-}
 // The voyage stated as the chain it is: time, then what it costs, then what it earns,
 // then what is left. Every line is an equation with its own parts, so the total can be
-// followed without opening a single table.
-// Section 4 is a stack of folds: each block keeps its own result on the summary line,
-// so the voyage can be read without opening anything and edited by opening one block.
-const foldBlock=(id,title,summary,body)=>`<details id="${id}" class="fold"><summary><strong>${esc(title)}</strong><span>${summary}</span></summary><div class="fold-body">${body}</div></details>`;
-const sumOf=xs=>xs.every(x=>x!==null&&x!==undefined&&Number.isFinite(x))?xs.reduce((a,x)=>a+x,0):null;
-const orDash=(x,d=0,unit='')=>x===null?'—':fmt(x,d)+unit;
-function legsSummary(rows){
- const days=sumOf(rows.map(({l})=>M.legDays(l))),miles=sumOf(rows.map(({l})=>l.distance));
- return `${rows.length} ${rows.length===1?'leg':'legs'} · ${orDash(miles,0,' NM')} · <strong>${orDash(days,2,' days at sea')}</strong>`;
-}
-function portsSummary(calls){
- const days=sumOf(calls.map(p=>M.portDays(state,p))),da=sumOf(calls.map(p=>p.da));
- return `${calls.length} ${calls.length===1?'call':'calls'} · DA ${orDash(da,0,' USD')} · <strong>${orDash(days,2,' days in port')}</strong>`;
-}
-function moneySummary(){
- const price=state.prices.main,freight=state.freight;
- return `Hire ${orDash(state.hire,0,' USD/day')} · Main fuel ${orDash(price,0,' USD/t')} · Freight ${freight===null?'not entered':fmt(freight,2)+' USD/t'}`;
-}
-function voyageChain(b,ship){
- if(!b)return '';
- const usd=x=>fmt(x,2),day=x=>fmt(x,2);
- const line=(name,result,unit,parts)=>`<div class="chain-line"><span class="chain-name">${name}</span><span class="chain-result">${result} <small>${unit}</small></span><span class="chain-parts">${parts}</span></div>`;
- const kind=k=>b.rows.filter(r=>r.kind===k).reduce((n,r)=>n+r.cents,0)/100;
- const bunkers=kind('fuel'),ports=kind('ports'),other=kind('other');
- const chain=[
-  line('Voyage time',day(b.days),'days',`at sea ${day(b.sea)} + working ${day(b.work)} + waiting and stops ${day(b.idle)}`),
-  line('Model cost',usd(b.total),'USD',`hire ${usd(b.hire)} + bunkers ${usd(bunkers)} + port charges ${usd(ports)} + other ${usd(other)}`),
-  line('Cost per tonne',fmt(b.unit,2),'USD/t',`${usd(b.total)} USD / ${fmt(ship.quantity,0)} t of cargo`)];
- if(b.gross!==null)chain.push(
-  line('Net revenue',usd(b.net),'USD',`gross freight ${usd(b.gross)} − commission ${usd(b.commission)} + other income ${usd(b.net-b.gross+b.commission)}`),
-  line('Result after hire',usd(b.pnl),'USD',`net revenue ${usd(b.net)} − model cost ${usd(b.total)}`),
-  line('TCE before hire',fmt(b.tce,0),'USD/day',`(net revenue ${usd(b.net)} − cost excluding hire ${usd(b.total-b.hire)}) / ${day(b.days)} days`));
- else chain.push(line('Freight not entered','—','',`the revenue side stays unstated; ${fmt(b.requiredFreightQuote,2)} USD/t would cover the model cost`));
- chain.push(line('Freight to cover cost',fmt(b.requiredFreightQuote,2),'USD/t',`(model cost ${usd(b.total)} − other income ${usd(b.net===null?0:b.net-b.gross+b.commission)}) / (1 − commission) / ${fmt(ship.quantity,0)} t, rounded up`));
- return `<div class="voyage-chain">${chain.join('')}</div>`;
-}
-const round=(x,d)=>Number.isFinite(x)?Math.round(x*10**d)/10**d:x;
-// Allocation cells are printed in the table's own format, so the grouping goes back out before the number is read.
-const tonnage=text=>{const clean=String(text).replace(/[\s,\u00a0\u202f]/g,'');return clean===''?0:Number(clean);};
-const num=x=>Number.isFinite(x)?numberFormat(0,20).format(x):'—';
-const intakeKey=()=>JSON.stringify([P.INTAKE_METHOD,M.vesselOf(state)?.dwt,...M.DEDUCTIONS.map(k=>state.deductions[k])]);
-const intakeShown=()=>{if(state.intakeShownFor!==intakeKey())return false;const {dwt}=M.intakeLimits(state);return dwt!==null&&dwt>=0;};
-const table=(heads,rows,cls='')=>`<div class="table-wrap"><table class="${cls}"><thead><tr>${heads.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
-function rotationList(title,isLoad){const loadNames=new Set(chosen().map(l=>l.loadPort)),group=M.callsOf(state).filter(p=>loadNames.has(p.name)===isLoad);return `<div><h3>${title}</h3><ol class="port-order">${group.map((p,i)=>{const parcels=chosen().filter(l=>(isLoad?l.loadPort:l.port)===p.name),q=parcels.every(l=>M.ok(l.quantity,true))?parcels.reduce((n,l)=>n+l.quantity,0):null;return `<li><span class="port-number">${i+1}</span><div class="port-caption"><strong>${esc(p.name)}</strong><small>${fmt(q,0)} t ${parcels.map(l=>`<span class="tag" style="background:${l.color}" title="${esc(l.name)}"></span>`).join('')}</small></div><div class="port-actions"><button data-action="move-port" data-port="${esc(p.name)}" data-direction="-1" aria-label="${esc(p.name)} earlier" ${i===0?'disabled':''}>↑</button><button data-action="move-port" data-port="${esc(p.name)}" data-direction="1" aria-label="${esc(p.name)} later" ${i===group.length-1?'disabled':''}>↓</button></div></li>`;}).join('')}</ol>${group.length?'':'<p class="muted">Add sales from SALE to the planner</p>'}</div>`;}
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();let html=`${state.demo?'<p class="notice">Demo example. Tonnage, SF, distances and prices are illustrative; replace the inputs before using the calculation.</p>':''}<section><div class="heading"><h2>1. Sales in voyage</h2><button data-action="add-lot">+ Add sale</button></div>`;
-html+=state.lots.length?table(['In voyage','Sale / cargo','Quantity, MT','SF, m³/t','Loading','Discharge','Shipment',''],state.lots.map((l,i)=>`<tr><td><input type="checkbox" data-path="lots.${i}.selected" aria-label="Include ${esc(l.name)}" ${l.selected?'checked':''}></td><td class="name"><span class="tag" style="background:${l.color}"></span><small>${state.sales.some(s=>s.id===l.saleId)?`<button class="text-action sale-link" data-action="open-sale" data-id="${esc(l.saleId)}" aria-label="Open ${esc(l.saleId)} in SALE">${esc(l.saleId)}</button>`:esc(l.saleId||'Legacy')}</small><br><button class="text-action" data-action="parcel-passport" data-id="${esc(l.id)}">${esc(l.name)}</button></td><td>${fmt(l.quantity,1)}</td><td>${fmt(l.sf,2)}</td><td>${esc(l.loadPort)}</td><td>${esc(l.port)}</td><td class="shipment-window">${shipmentWindow(state.sales.find(s=>s.id===l.saleId))}</td><td><button data-action="remove-lot" data-index="${i}" aria-label="Remove sale ${l.saleId||l.id} from voyage">×</button></td></tr>`),'voyage-sales-table'): '<div class="empty-state planner-empty"><strong>No sales in voyage yet</strong><span>Add a sale from SALE to start planning this voyage.</span></div>';html+='</section>';
-html+=`<section><div class="heading"><h2>2. Vessel and rotation</h2></div><div class="vessel-choice"><label class="field">${select('vesselId','Vessel',(state.vesselProfiles||M.VESSELS).map(v=>[v.id,v.name]))}</label>${vesselSummary()}</div>${intakeCalculator(ship)}<div class="rotation-grid">${rotationList('Loading',true)}${rotationList('Discharge',false)}</div></section>`;
-// One planner check per render; both the section and the print evidence read the same result.
-const report=P.check(state,b);
-html+=plannerUI.section3(state,b,report)+plannerUI.printEvidence(state,b,report);
-html+=`<section><div class="heading"><h2>4. Voyage calculation</h2></div>${voyageChain(b,ship)}`;
-html+=`<details id="voyage-map" class="fold"><summary><strong>Voyage map</strong></summary><div class="fold-body">${voyageMap()}</div></details>`;
-const distances=voyageDistanceLine(),drawnLegs=voyageLegs().filter(l=>l.leg);
-if(distances)html+=foldBlock('voyage-distances','Distances',`${drawnLegs.length} ${drawnLegs.length===1?'leg':'legs'} · ${orDash(sumOf(drawnLegs.map(l=>l.leg.distance)),0,' NM')}`,distances);
-const activePorts=M.callsOf(state);const displayedLegs=[];if(state.ballastEnabled)displayedLegs.push({l:state.ballast,path:'ballast'});for(let i=1;i<activePorts.length;i++){const j=state.legs.findIndex(l=>l.from===activePorts[i-1].name&&l.to===activePorts[i].name);if(j>=0)displayedLegs.push({l:state.legs[j],path:'legs.'+j});}
-const legsHead=`<div class="ballast-line"><label class="muted"><input type="checkbox" data-path="ballastEnabled" ${state.ballastEnabled?'checked':''}> Include ballast approach to ${esc(M.callsOf(state)[0]?.name||'the first load port')}</label>${state.ballastEnabled?`<label class="field delivery-port">Delivery port${input('deliveryPort','Delivery port',{type:'text',placeholder:M.DELIVERY_PLACEHOLDER,list:'delivery-ports'})}</label><datalist id="delivery-ports">${portNames().map(([name])=>`<option value="${esc(name)}"></option>`).join('')}</datalist>`:''}</div>`;
-const legsTable=table(['Leg','Total, NM','Of which ECA, NM','Speed, kn','Weather, % time','Outside ECA, t/day','In ECA, t/day','Aux, t/day','Days'],displayedLegs.map(({l,path})=>`<tr><td class="name">${esc(l.from)} → ${esc(l.to)}</td>${['distance','eca','speed','margin','burn','ecaBurn','aux'].map(k=>`<td>${input(path+'.'+k,l.from+' '+k)}</td>`).join('')}<td>${fmt(b?.legs.find(x=>x.from===l.from&&x.to===l.to)?.days??M.legDays(l),3)}</td></tr>`));// The calendar period belongs to manual handling terms only: the column appears with the call that needs it.
-html+=foldBlock('voyage-legs','Legs',legsSummary(displayedLegs),legsHead+legsTable);
-const manualTerms=activePorts.some(p=>p.terms==='manual');
-const portsTable=table(['Port','Cargo, MT','Handling rate, t/day','Handling terms',...(manualTerms?['Calendar, days']:[]),'Turn time, h','Waiting, h','DA, USD','Days'],activePorts.map(p=>{const i=state.ports.indexOf(p),path='ports.'+i;return `<tr><td>${esc(p.name)}</td><td>${fmt(lots.filter(l=>l.loadPort===p.name||l.port===p.name).reduce((n,l)=>n+(l.quantity||0),0),0)}</td><td>${input(path+'.rate',p.name+' handling rate')}</td><td>${select(path+'.terms',p.name+' terms',[['SHINC','24/7 · SHINC'],['manual','Manual calendar']])}</td>${manualTerms?`<td>${input(path+'.calendar',p.name+' calendar days',{disabled:p.terms==='SHINC'})}</td>`:''}<td>${input(path+'.turn',p.name+' turn time')}</td><td>${input(path+'.extra',p.name+' waiting')}</td><td>${input(path+'.da',p.name+' DA')}</td><td>${fmt(b?.ports.find(x=>x.name===p.name)?.days??M.portDays(state,p),3)}</td></tr>`;}));
-const portFuel=`<details id="portfuel"><summary>Port fuel consumption</summary>${table(['Port','Main fuel','Main work, t/day','Main idle, t/day','Aux work, t/day','Aux idle, t/day','Boiler, t/day','Boiler operating time, days','Boiler fuel'],activePorts.map(p=>{const path='ports.'+state.ports.indexOf(p);return `<tr><td>${esc(p.name)}</td><td>${select(path+'.fuel',p.name+' fuel',[['main','Outside ECA'],['eca','ECA']])}</td>${['working','idle','auxWorking','auxIdle','boiler','boilerDays'].map(k=>`<td>${input(path+'.'+k,p.name+' '+k)}</td>`).join('')}<td>${select(path+'.boilerFuel','Boiler fuel',[[null,'Select'],['main','Main outside ECA'],['eca','Main ECA'],['aux','Aux']])}</td></tr>`;}))}</details>`;
-html+=foldBlock('voyage-ports','Ports',portsSummary(activePorts),portsTable+portFuel);
-const moneyBody=`<div class="grid">${field('hire','Effective hire / target TCE, USD/day')}${field('prices.main','Main outside ECA, USD/t')}${field('prices.eca','Main ECA, USD/t')}${field('prices.aux','Additional Aux, USD/t')}${field('freight','Estimated gross freight, USD/t · optional')}${field('commission','Commission on gross freight, %')}${field('extraIncome','Other income net, USD')}</div><p class="form-note">Fuel grades and prices are set by voyage phase. Enter prices and consumption explicitly for each zone. Aux is added to main consumption; enter 0 only if it is already included or not used.</p>${state.costs.length?`<h3>Additional costs and stops</h3>`+table(['Item','Amount, USD','Additional time, days','Consumption, t/day','Fuel',''],state.costs.map((c,i)=>`<tr><td>${input('costs.'+i+'.name','Item name',{type:'text'})}</td><td>${input('costs.'+i+'.amount','Item amount')}</td><td>${input('costs.'+i+'.days','Additional time')}</td><td>${input('costs.'+i+'.burn','Stop consumption')}</td><td>${select('costs.'+i+'.fuel','Stop fuel',[['main','Outside ECA'],['eca','ECA']])}</td><td><button data-action="remove-cost" data-index="${i}" aria-label="Remove item ${i+1}">Remove</button></td></tr>`))+`<button data-action="add-cost">Add item</button>`:`<button class="inline-action" data-action="add-cost">+ Add cost or stop</button>`}`;
-html+=foldBlock('voyage-money','Hire, bunkers and freight',moneySummary(),moneyBody);
-if(b){const amount=kind=>b.rows.filter(r=>r.kind===kind).reduce((n,r)=>n+r.cents,0)/100;html+=`<div class="split"><div><h3>Costs</h3><table class="totals"><tbody>${[['Hire',b.hire],['Bunkers',amount('fuel')],['Ports',amount('ports')],['Other',amount('other')],['Total',b.total]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)} USD</td></tr>`).join('')}</tbody></table></div><div><h3>Freight estimate</h3><table class="totals"><tbody>${[['Gross freight',b.gross],['Commission',b.commission],['Net income',b.net],['TCE before hire, USD/day',b.tce],['P&L after hire, USD',b.pnl],['Freight required to cover model cost, USD/t',b.requiredFreightQuote]].map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)}</td></tr>`).join('')}</tbody></table></div></div>`;}
-html+=`${ship.errors.length||ship.remaining.some(x=>x.quantity===null||Math.abs(x.quantity)>.01)?'<p class="notice">The cargo plan is incomplete or exceeds limits. The financial result does not confirm voyage feasibility.</p>':''}</section><section><div class="heading"><h2>5. Cost by sale</h2>${select('allocation','Allocation method',[['route','By legs and ports'],['tonnage','Entire budget by tonnage']])}</div>${b?table(['Sale','Port','Tonnage','Allocated, USD','USD/t'],b.allocation.map(a=>{const l=state.lots.find(l=>l.id===a.id);return `<tr><td class="name"><span class="tag" style="background:${l.color}"></span>${esc(l.name)}</td><td>${esc(l.port)}</td><td>${fmt(a.quantity,1)}</td><td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td></tr>`;})):'<p class="empty">Allocation appears after the voyage calculation is complete.</p>'}${String(state.notes||'').trim()?`<details id="notes"><summary>Calculation sources and notes</summary><textarea data-path="notes" aria-label="Calculation sources" placeholder="Enter sources and dates for distances, PDA, rates, SF and vessel data">${esc(state.notes)}</textarea></details>`:''}</section>`;
-$('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
+// The PLANNER screen is built by planner-view.js; this hands it the computed result and
+// does the document work around it: the animation snapshot, the open folds, the map frame.
+const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,fmt,num,orDash,round,
+ table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
+ shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
+const {intakeKey}=plannerView;
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+ const html=plannerView.markup(r,b,ship,lots);
+ $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
 function changed(){ensureLegs();$('status').textContent='';saveCalculation(false);render();}
 function editableLotField(path){return !path?.startsWith('lots.')||/^lots\.\d+\.selected$/.test(path);}
@@ -15371,7 +16315,20 @@ $('app').addEventListener('pointerdown',e=>{
 });
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
  case'map-zoom':zoomMap(Number(el.dataset.factor));return;
- case'map-reset':resetMap();return;case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;case'new-cargo':showCargoDialog();return;case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;case'add-lot':showLotDialog();return;case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;case'calc-intake':state.intakeShownFor=intakeKey();break;case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();});
+ case'map-reset':resetMap();return;
+ case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;
+ case'remove-sale':{const sale=state.sales[Number(el.dataset.index)];if(state.lots.some(l=>l.saleId===sale.id)){$('status').textContent='First remove the sale from PLANNER';return;}state.sales.splice(Number(el.dataset.index),1);break;}
+ case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;
+ case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;
+ case'new-cargo':showCargoDialog();return;
+ case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
+ case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
+ case'add-lot':showLotDialog();return;
+ case'remove-lot':{const l=state.lots[Number(el.dataset.index)];state.allocations=state.allocations.filter(a=>a.lot!==l.id);state.lots.splice(Number(el.dataset.index),1);break;}
+ case'move-port':M.moveCall(state,el.dataset.port,Number(el.dataset.direction));break;
+ case'calc-intake':state.intakeShownFor=intakeKey();break;
+ case'add-cost':state.costs.push({name:'Additional item',amount:null,days:0,burn:2.7,fuel:'main'});break;
+ case'remove-cost':state.costs.splice(Number(el.dataset.index),1);break;}changed();});
 // Saving is asynchronous now, and the session serialises the writes: the newest state
 // replaces any older one still waiting, so typing cannot queue a hundred writes.
 function saveCalculation(clearStatus=true){
@@ -15391,77 +16348,17 @@ $('save').onclick=()=>saveCalculation(true);
 
 $('reset').onclick=()=>{if(!confirm('Clear the current calculation and its local save?'))return;const catalogs={cargoTypes:state.cargoTypes,vesselProfiles:state.vesselProfiles,sales:state.sales,portRecords:state.portRecords};state=M.initial();Object.assign(state,catalogs);ensureLegs();saveCalculation(true);render();};
 $('pdf').onclick=()=>{window.print();};
-function shipmentWindow(sale){
- const date=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&Number.isFinite(Date.parse(value))
-  ?new Date(value+'T00:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}):'—';
- if(!sale?.shipmentFrom&&!sale?.shipmentTo)return '—';
- return esc(date(sale.shipmentFrom)+' – '+date(sale.shipmentTo));
-}
-function openSale(saleId){
- if(!state.sales.some(s=>s.id===saleId))return;
- currentTab='sale';try{sessionStorage.setItem(tabKey,currentTab);}catch{}
- syncWorkspace();render();
- const row=$('sale-row-'+saleId);
- row?.focus({preventScroll:true});row?.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-}
-function showLotDialog(){
- const dialog=document.createElement('dialog'),selected=new Set(),added=new Set(state.lots.map(l=>l.saleId));
- dialog.className='sale-picker';dialog.setAttribute('aria-labelledby','sale-picker-title');
- const portOptions=field=>[...new Set(state.sales.map(s=>s[field]).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
- dialog.innerHTML=`<form id="lot-form"><div class="heading"><h2 id="sale-picker-title">Add sales</h2><button type="button" id="close-lot" aria-label="Close">×</button></div><div class="sale-picker-filters"><label class="field sale-search-field">Search<input id="sale-search" type="search" placeholder="Sale number or cargo" autocomplete="off"></label><label class="field">Loading<select id="sale-load"><option value="">All loading ports</option>${portOptions('loadPort')}</select></label><label class="field">Discharge<select id="sale-discharge"><option value="">All discharge ports</option>${portOptions('dischargePort')}</select></label><label class="field">Shipment from<input id="sale-from" type="date"></label><label class="field">Shipment to<input id="sale-to" type="date"></label></div><div id="sale-picker-results" class="sale-picker-results"></div><p id="lot-error" class="error" role="alert"></p><div class="sale-picker-footer"><button type="button" id="sale-clear-filters">Clear filters</button><button type="submit" class="primary" id="sale-add-selected" disabled>Add selected</button></div></form>`;
- document.body.appendChild(dialog);
- const find=selector=>dialog.querySelector(selector),search=find('#sale-search'),load=find('#sale-load'),discharge=find('#sale-discharge'),from=find('#sale-from'),to=find('#sale-to'),results=find('#sale-picker-results'),submit=find('#sale-add-selected'),error=find('#lot-error');
- const updateButton=()=>{submit.disabled=!selected.size||!!(from.value&&to.value&&from.value>to.value);submit.textContent=selected.size?'Add selected ('+selected.size+')':'Add selected';};
- function filter(){
-  error.textContent='';to.setCustomValidity('');
-  if(from.value&&to.value&&from.value>to.value){error.textContent='Shipment from cannot be later than shipment to.';to.setCustomValidity(error.textContent);results.innerHTML='';updateButton();return;}
-  const words=search.value.toLowerCase().trim().split(/\s+/).filter(Boolean),hasDates=!!(from.value||to.value);
-  const visible=state.sales.filter(s=>words.every(word=>(s.id+' '+s.cargoName).toLowerCase().includes(word))&&(!load.value||s.loadPort===load.value)&&(!discharge.value||s.dischargePort===discharge.value)&&(!hasDates||(s.shipmentFrom&&s.shipmentTo&&(!from.value||s.shipmentTo>=from.value)&&(!to.value||s.shipmentFrom<=to.value))));
-  const selectable=visible.filter(s=>!added.has(s.id));
-  const rows=visible.map(s=>`<tr data-sale-id="${esc(s.id)}" class="${added.has(s.id)?'sale-already-added':selected.has(s.id)?'sale-picked':''}"><td>${added.has(s.id)?'<span class="muted">In voyage</span>':`<input type="checkbox" name="saleId" value="${esc(s.id)}" aria-label="Select ${esc(s.id)}" ${selected.has(s.id)?'checked':''}>`}</td><td class="name"><small>${esc(s.id)}</small><br>${esc(s.cargoName)}</td><td>${fmt(s.quantity,1)}</td><td>${esc(s.loadPort)}</td><td>${esc(s.dischargePort)}</td><td class="shipment-window">${shipmentWindow(s)}</td></tr>`);
-  results.innerHTML=visible.length?table(['<input type="checkbox" id="sale-select-visible" aria-label="Select all available sales shown">','Sale / cargo','Quantity, MT','Loading','Discharge','Shipment'],rows,'sale-picker-table'):`<p class="empty">${state.sales.length?'No sales match these filters.':'No sales yet. Add a sale in SALE first.'}</p>`;
-  const all=find('#sale-select-visible');if(all){const count=selectable.filter(s=>selected.has(s.id)).length;all.disabled=!selectable.length;all.checked=!!count&&count===selectable.length;all.indeterminate=count>0&&count<selectable.length;
-   all.onchange=()=>{for(const s of selectable)all.checked?selected.add(s.id):selected.delete(s.id);filter();find('#sale-select-visible')?.focus();};
-  }
-  updateButton();
- }
- results.addEventListener('change',e=>{if(e.target.name!=='saleId')return;const el=e.target;el.checked?selected.add(el.value):selected.delete(el.value);const value=el.value;filter();[...results.querySelectorAll('input[name="saleId"]')].find(x=>x.value===value)?.focus();});
- search.addEventListener('input',filter);for(const el of [load,discharge,from,to])el.addEventListener('change',filter);
- find('#sale-clear-filters').onclick=()=>{for(const el of [search,load,discharge,from,to])el.value='';filter();search.focus();};
- find('#close-lot').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
- find('form').onsubmit=e=>{e.preventDefault();if(!selected.size)return;try{
-  // Commit the complete selection together; an invalid sale must not leave a partial addition.
-  const candidate=JSON.parse(JSON.stringify(state));for(const s of state.sales.filter(s=>selected.has(s.id)))M.addSaleToPlanner(candidate,s.id);
-  state=candidate;dialog.close();changed();
- }catch(err){error.textContent=err.message;}};
- filter();dialog.showModal();search.focus();
-}
-function showSaleDialog(){const ports=[...new Set(state.portRecords.map(p=>p.name?.trim()).filter(Boolean))],portOptions='<option value="">Select port</option>'+ports.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join(''),dialog=document.createElement('dialog');dialog.innerHTML=`<form id="sale-form"><div class="heading"><h2>New sale</h2><button type="button" id="close-sale" aria-label="Close">×</button></div><div class="grid"><label class="field">Deal date<input name="dealDate" type="date" required></label><label class="field">Cargo<select name="cargoId" required>${state.cargoTypes.filter(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></label><label class="field">Volume, MT<input name="quantity" type="number" min="0.001" step="any" required></label><label class="field">Price FOB, USD/MT<input name="fob" type="number" min="0" step="any" required></label><label class="field">Load port<select name="loadPort" required>${portOptions}</select></label><label class="field">Load berth<select name="loadPortId" data-berth-for="loadPort"><option value="">Select a port first</option></select></label><label class="field">Discharge port<select name="dischargePort" required>${portOptions}</select></label><label class="field">Discharge berth<select name="dischargePortId" data-berth-for="dischargePort"><option value="">Select a port first</option></select></label><label class="field">Shipment from<input name="shipmentFrom" type="date" required></label><label class="field">Shipment to<input name="shipmentTo" type="date" required></label></div><p id="sale-error" class="error" role="alert">${ports.length?'':'First add ports in PORT.'}</p><button type="submit" class="primary" ${ports.length?'':'disabled'}>Add sale</button></form>`;document.body.appendChild(dialog);
- // The berth list belongs to the chosen port, so it is refilled whenever that port changes.
- for(const berth of dialog.querySelectorAll('[data-berth-for]')){const port=dialog.querySelector(`[name="${berth.dataset.berthFor}"]`);const fill=()=>{const rows=state.portRecords.filter(p=>p.name===port.value);berth.innerHTML=rows.length?rows.map(p=>`<option value="${esc(p.id)}">${esc(p.berth||p.name)}</option>`).join(''):'<option value="">Select a port first</option>';};port.addEventListener('change',fill);fill();}
- dialog.querySelector('#close-sale').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);try{M.addSale(state,{dealDate:f.get('dealDate'),cargoId:f.get('cargoId'),quantity:Number(f.get('quantity')),fob:Number(f.get('fob')),loadPort:f.get('loadPort'),dischargePort:f.get('dischargePort'),loadPortId:f.get('loadPortId'),dischargePortId:f.get('dischargePortId'),shipmentFrom:f.get('shipmentFrom'),shipmentTo:f.get('shipmentTo')});dialog.close();changed();}catch(error){dialog.querySelector('#sale-error').textContent=error.message;}};dialog.showModal();}
-function showCargoDialog(){
- const dialog=document.createElement('dialog');
- dialog.innerHTML='<form><div class="heading"><h2>New bulk cargo</h2><button type="button" data-close aria-label="Close">×</button></div><div class="grid"><label class="field">Cargo name<input name="name" required></label><label class="field">Planning SF, m³/t<input name="sf" type="number" min="0.000001" step="any" required></label><label class="field">IMSBC group<select name="group"><option value="">Pending</option><option>A</option><option>B</option><option>C</option><option>A &amp; B</option></select></label></div><p class="error" role="alert"></p><button type="submit">Add cargo</button></form>';
- document.body.appendChild(dialog);
- dialog.querySelector('[data-close]').onclick=()=>dialog.close();
- dialog.addEventListener('close',()=>dialog.remove());
- dialog.querySelector('form').onsubmit=e=>{
-  e.preventDefault();const data=new FormData(e.target),name=String(data.get('name')).trim(),sf=Number(data.get('sf'));
-  if(!name||!M.ok(sf,true)){dialog.querySelector('.error').textContent='Enter a cargo name and a positive SF';return;}
-  if(state.cargoTypes.some(c=>c.name.toLowerCase()===name.toLowerCase())){dialog.querySelector('.error').textContent='This cargo name already exists';return;}
-  let n=1;while(state.cargoTypes.some(c=>c.id==='cargo-'+n))n++;
-  state.cargoTypes.push({id:'cargo-'+n,name,sf,physicalForm:'solid',group:data.get('group'),sfBasis:'user-entered',source:'User-entered'});
-  dialog.close();changed();
- };dialog.showModal();
-}
-function cargoDetails(c){const range=v=>v?v.map(n=>numberFormat(0,4).format(Number(n))).join('–'):'SDS required';const link=(url,label)=>url&&/^https:\/\//.test(url)?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';return `<details class="cargo-properties"><summary>${esc(c.propertyStatus||'Properties required')}</summary><dl><dt>BCSN</dt><dd>${esc(c.bcsn||'Shipper declaration required')}</dd><dt>Reference SF, m³/t</dt><dd>${esc(range(c.sfRange))}</dd><dt>Bulk density, kg/m³</dt><dd>${esc(range(c.bulkDensityRange))}</dd><dt>Angle of repose</dt><dd>${esc(c.angleOfRepose||'Not established')}</dd><dt>Applicability</dt><dd>${esc(c.propertyNote||'Confirm the exact product and shipping conditions.')}</dd></dl>${link(c.propertyUrl,'Property source')} ${link(c.sdsUrl,'SDS')} ${link(c.catalogUrl,'Product catalogue')}</details>`;}
+// The dialogs are built by dialogs.js. It is handed a setter as well as a getter: the sale
+// picker swaps the whole state at once so a bad sale cannot leave the voyage half-changed.
+const dialogs=window.ProjectXDialogs.create({M,getState:()=>state,setState:next=>{state=next;},
+ document,esc,fmt,numberFormat,input,select,field,table,changed,byId:$,
+ openTab:tab=>{currentTab=tab;try{sessionStorage.setItem(tabKey,currentTab);}catch{}syncWorkspace();render();}});
+const {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,cargoDetails}=dialogs;
 const portNames=()=>[...new Set(state.portRecords.filter(p=>p.name.trim()).map(p=>p.name))].map(name=>[name,name]);
 // A port with one registered row has nothing to choose; the row still carries the terminal and its limits.
-const berthOptions=name=>state.portRecords.filter(p=>p.name===name).map(p=>[p.id,p.berth||p.name]);
-const berthSelect=(path,label,name)=>{const options=berthOptions(name);return options.length?select(path,label,options):'';};
-function renderCatalog(){M.ensureCatalogs(state);if(currentTab==='sale'){$('app').innerHTML=`<section><div class="heading"><div><h2>SALE</h2><p class="section-intro">Register of concluded sales for voyage planning.</p></div><button data-action="new-sale">+ Add sale</button></div>${state.sales.length?table(['Deal','Date','Cargo','Volume, MT','Loading','Discharge','Shipment','FOB, USD/MT',''],state.sales.map((s,i)=>`<tr id="${esc('sale-row-'+s.id)}" class="sale-record" tabindex="-1"><td>${esc(s.id)}</td><td>${input('sales.'+i+'.dealDate','Deal date',{type:'date'})}</td><td class="name">${esc(s.cargoName)}</td><td>${input('sales.'+i+'.quantity','Sale quantity',{tonnage:true})}</td><td><div class="port-cell">${select('sales.'+i+'.loadPort','Load port',portNames())}${berthSelect('sales.'+i+'.loadPortId','Load berth',s.loadPort)}</div></td><td><div class="port-cell">${select('sales.'+i+'.dischargePort','Discharge port',portNames())}${berthSelect('sales.'+i+'.dischargePortId','Discharge berth',s.dischargePort)}</div></td><td><div class="date-range">${input('sales.'+i+'.shipmentFrom','Shipment from',{type:'date'})}${input('sales.'+i+'.shipmentTo','Shipment to',{type:'date'})}</div></td><td>${input('sales.'+i+'.fob','Price FOB')}${state.lots.filter(l=>l.saleId===s.id).map(l=>`<button class="inline-action" data-action="edit-passport" data-id="${esc(l.id)}">Shipment source</button>`).join('')}</td><td><button data-action="remove-sale" data-index="${i}" aria-label="Remove sale ${esc(s.id)}">×</button></td></tr>`)):'<div class="empty-state"><strong>No sales yet</strong><span>Add the first deal. Cargo is selected from CARGO only.</span></div>'}<p class="form-note">A sale already added to PLANNER cannot be deleted until it is removed from the voyage.</p></section>`;return;}if(currentTab==='ports'){const limitCols=[['maxDraft','Max draft, m'],['maxBeam','Max beam, m'],['maxLoa','Max LOA, m'],['maxAirDraft','Max air draft, m'],['maxDwt','Max DWT']];$('app').innerHTML=`<section><div class="heading"><div><h2>PORT</h2><p class="section-intro">Port and berth register with published size limits.</p></div><button data-action="new-port">+ Add port</button></div>${table(['Country','Port','Terminal','Berth','Water density, t/m³',...limitCols.map(([,label])=>label),''],state.portRecords.map((p,i)=>`<tr><td>${input('portRecords.'+i+'.country','Country',{type:'text'})}</td><td>${input('portRecords.'+i+'.name','Port name',{type:'text'})}</td><td>${input('portRecords.'+i+'.terminal','Terminal',{type:'text'})}</td><td>${input('portRecords.'+i+'.berth','Berth',{type:'text'})}</td><td>${select('portRecords.'+i+'.waterDensity','Water density for '+(p.name||'new port'),[['','Not entered'],...Array.from({length:31},(_,j)=>{const v=(1+j/1000).toFixed(3);return [Number(v),v+(j===0?' · Fresh':j===25?' · Sea':'')];})])}</td>${limitCols.map(([key,label])=>`<td class="limit-cell">${input('portRecords.'+i+'.'+key,label+' for '+(p.name||'new port'))}</td>`).join('')}<td><button data-action="remove-port-record" data-index="${i}" aria-label="Remove port ${esc(p.name)}">×</button></td></tr>`),'port-table')}</section>`;return;}if(currentTab==='cargo'){$('app').innerHTML=`<section><div class="heading"><div><h2>CARGO</h2><p class="section-intro">Cargo register for creating sales.</p></div><button data-action="new-cargo">+ Add cargo type</button></div><div class="catalog-toolbar"><input id="cargo-search" type="search" aria-label="Search cargo" placeholder="Name, grade, manufacturer" class="catalog-search"><select id="cargo-family" aria-label="Cargo category"><option value="">All categories</option>${[...new Set(state.cargoTypes.filter(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).map(c=>c.family||'Other cargoes'))].map(f=>`<option>${esc(f)}</option>`).join('')}</select></div>${table(['Cargo','Planning SF, m³/t','IMSBC Group'],state.cargoTypes.map((c,i)=>({c,i})).filter(({c})=>M.isBulkCargo(c)&&M.ok(c.sf,true)).map(({c,i})=>`<tr data-family="${esc(c.family||'Other cargoes')}" data-catalog-name="${esc([c.name,c.aliases,c.producer,c.family].filter(Boolean).join(' ').toLowerCase())}"><td class="cargo-name-cell">${input('cargoTypes.'+i+'.name','Cargo name',{type:'text'})}</td><td class="cargo-sf-cell">${input('cargoTypes.'+i+'.sf','Planning stowage factor',{disabled:!M.isBulkCargo(c)})}</td><td class="cargo-group-cell">${select('cargoTypes.'+i+'.group','IMSBC group',[['',M.isBulkCargo(c)?'Pending':'N/A'],'A','B','C','A & B'])}</td></tr>`))}<p class="form-note">Planning SF is a reference estimate and must be confirmed for the shipment. IMSBC Group must match the exact product.</p></section>`;return;}
-$('app').innerHTML='<div class="heading"><div><h2>VESSEL TYPES</h2><p class="section-intro">Standard vessel types for cargo carriage.</p></div><button data-action="new-vessel">+ Add vessel type</button></div>'+state.vesselProfiles.map((v,i)=>{const path='vesselProfiles.'+i;return `<details class="vessel-card"><summary><strong>VESSEL · ${esc(v.name)}</strong><span>${esc(v.model)} · ${fmt(v.dwt,0)} DWT</span></summary><div class="vessel-card-body"><div class="heading vessel-apply"><span></span><button data-action="apply-vessel" data-id="${esc(v.id)}">Apply to voyage</button></div><div class="grid">${[['name','Name'],['model','Project / model'],['source','Parameter source']].map(([k,l])=>field(path+'.'+k,l,{type:'text'})).join('')}${[['dwt','DWT, MT'],['draft','Draft SSW, m'],['tpc','TPC, t/cm'],['loa','LOA, m'],['beam','Beam, m'],['airDraft','Air draft, m'],['grain','Grain capacity, m³'],['bale','Bale capacity, m³'],['gt','GRT'],['nrt','NRT'],['cranes','Cranes, qty'],['craneSWL','Crane SWL, MT'],['tanktop','Tank top, t/m²']].map(([k,l])=>field(path+'.'+k,l)).join('')}</div><h3>Speed and consumption</h3><div class="grid">${[['speed','Laden speed, kn'],['burn','Laden main fuel, t/day'],['ballastSpeed','Ballast speed, kn'],['ballastBurn','Ballast main fuel, t/day'],['aux','Sea LSMGO, t/day'],['working','Port main working, t/day'],['idle','Port main idle, t/day'],['auxWorking','Port LSMGO working, t/day'],['auxIdle','Port LSMGO idle, t/day'],['boiler','Separate boiler, t/day'],['ecaBurn','ECA main fuel, t/day']].map(([k,l])=>field(path+'.'+k,l)).join('')}</div><h3>Holds</h3><div class="grid holds-grid">${v.holdData.map((h,j)=>field(path+'.holdData.'+j+'.volume','Hold №'+h.id+', m³')).join('')}</div></div></details>`;}).join('');}
+// SALE, PORT, CARGO and VESSEL are built by catalog-views.js; this places what it returns.
+const catalogViews=window.ProjectXCatalogViews.create({M,getState:()=>state,esc,fmt,input,select,field,table,portNames});
+function renderCatalog(){M.ensureCatalogs(state);$('app').innerHTML=catalogViews.render(currentTab);}
 function setupChrome(){if(document.documentElement)document.documentElement.lang='en';}
 function syncWorkspace(){for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
 for(const tab of tabs)$('tab-'+tab).onclick=()=>{currentTab=tab;try{sessionStorage.setItem(tabKey,tab);}catch{}syncWorkspace();render();};
@@ -15546,90 +16443,26 @@ window.ProjectXApp={
  storageKind:storage.kind,
  isShared:!!storage.shared,
  getAccount:()=>account&&{...account},
- signOut:async()=>{if(storage.signOut){await storage.signOut();account=null;showSignIn('You have been signed out.');}}
+ signOut:async()=>{account=null;await signIn.signOut();}
 };
 ensureLegs();setupChrome();setupCalculations();syncWorkspace();render();if(startupMessage)$('status').textContent=startupMessage;
 
 // A shared workspace belongs to an account. Until somebody is signed in the page shows the
 // sign-in form and nothing else: no blank calculation that looks like lost work, and no
 // planner chrome over data that has not been read.
-let signInAddress='';
-// The tab strip and the calculation controls are meaningless before anything has been read.
-function showChrome(visible){
- const actions=$('planner-actions');
- if(actions)actions.hidden=!visible;
- const tabList=typeof document.querySelector==='function'?document.querySelector('.workspace-tabs'):null;
- if(tabList)tabList.hidden=!visible;
-}
-function showSignIn(message){
- showChrome(false);
- $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
-  `<p class="section-intro">Calculations are shared with your organisation.</p>`+
-  `<form id="sign-in-form"><div class="grid">`+
-  `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
-  `<label>Password<input id="sign-in-password" type="password" autocomplete="current-password"></label>`+
-  `</div><div class="button-row"><button id="sign-in-submit" type="submit">Sign in</button></div></form>`+
-  `<details class="sign-in-alternative"><summary>Sign in with a code instead</summary>`+
-  `<p class="muted">A code is sent to your address. Delivery depends on the mail service configured for this project.</p>`+
-  `<div class="grid"><label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code"></label></div>`+
-  `<div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
-  `<button id="sign-in-verify" type="button">Use code</button></div></details>`+
-  `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
- const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
- const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
- // The password is read at the moment it is sent and is never stored, echoed or kept in state.
- const secret=()=>(($('sign-in-password')||{}).value||'');
-
- $('sign-in-form').onsubmit=async event=>{
-  event.preventDefault();
-  if(!address()||!secret()){say('Enter your work email and password.');return;}
-  say('Signing in…');
-  const signedIn=await storage.signInWithPassword(address(),secret());
-  if(!signedIn.ok){say(signedIn.error||'That email and password were not accepted.');return;}
-  await startShared();
- };
- $('sign-in-send').onclick=async()=>{
-  if(!address()){say('Enter your work email address.');return;}
-  say('Sending…');
-  const sent=await storage.signIn(address());
-  say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it below.':(sent.error||'The code could not be sent.'));
- };
- $('sign-in-verify').onclick=async()=>{
-  const code=(($('sign-in-code')||{}).value||'').trim();
-  if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
-  say('Signing in…');
-  const verified=await storage.verifyCode(address(),code);
-  if(!verified.ok){say(verified.error||'That code was not accepted.');return;}
-  await startShared();
- };
-}
-
-// Signed in: find which organisation this account belongs to, then open its workspace.
-async function startShared(){
- const who=await storage.ready();
- if(!who.ok){
-  if(who.reason==='signed-out')showSignIn('');
-  else showSignIn(who.error||'The workspace could not be reached.');
-  return;
- }
- const organisations=await storage.organisations();
- if(organisations.ok===false){showSignIn(organisations.error||'Your organisations could not be read.');return;}
- if(!organisations.length){
-  showSignIn('Signed in as '+who.user.email+', but this account is not a member of any organisation yet. Ask an administrator to add it.');
-  return;
- }
- const preferred=organisations.find(x=>x.id===storage.orgId)||organisations[0];
- storage.useOrganisation(preferred.id);
-
- showChrome(true);
- const loaded=await session.open(recall());
- if(loaded&&loaded.error){$('status').textContent=loaded.error;return;}
- if(!adopt(loaded)){$('status').textContent='The workspace could not be opened.';return;}
- account={email:who.user.email,organisation:preferred.name};
- ensureLegs();setupCalculations();syncWorkspace();render();
- $('status').textContent='Signed in as '+who.user.email+' · '+preferred.name;
- await refreshCalculations();
-}
+// Who is working, and for which organisation, is sign-in.js. What happens once they are in
+// stays here: the module refuses entry without knowing what a voyage is.
+const signIn=window.ProjectXSignIn.create({storage,esc,byId:$,document,
+ onSignedIn:async who=>{
+  const loaded=await session.open(recall());
+  if(loaded&&loaded.error){$('status').textContent=loaded.error;return;}
+  if(!adopt(loaded)){$('status').textContent='The workspace could not be opened.';return;}
+  account=who;
+  ensureLegs();setupCalculations();syncWorkspace();render();
+  $('status').textContent='Signed in as '+who.email+' · '+who.organisation;
+  await refreshCalculations();
+ }});
+const startShared=()=>signIn.start();
 
 // An adapter that had to be awaited finishes here and the page is drawn again with the
 // workspace it found. A failure says so rather than leaving a blank calculation on screen.

@@ -1,7 +1,7 @@
 (function(root){
 'use strict';
 // Describes what the tabs actually enforce. Keep in step with app.js, not with the intended process.
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
 
 const STEPS=[
  {tab:'CARGO',title:'Register the cargo',
