@@ -103,7 +103,9 @@ function create(env){
    date('dealDate')+
    labelled('Cargo',`<select name="cargoId" required>${cargoOptions}</select>`)+
    amount('Volume, MT','quantity','0.001')+
-   amount('Price FOB, USD/MT','fob','0')+
+   labelled('Delivery basis',`<select name="priceBasis" required>`+
+    M.PRICE_BASES.map(b=>`<option value="${esc(b)}" ${b==='FOB'?'selected':''}>${esc(b)}</option>`).join('')+`</select>`)+
+   amount('Price, USD/MT','price','0')+
    labelled('Load port',`<select name="loadPort" required>${portOptions}</select>`)+
    berth('Load berth','loadPort')+
    labelled('Discharge port',`<select name="dischargePort" required>${portOptions}</select>`)+
@@ -118,7 +120,7 @@ function create(env){
   document.body.appendChild(dialog);
   // The berth list belongs to the chosen port, so it is refilled whenever that port changes.
   for(const berth of dialog.querySelectorAll('[data-berth-for]')){const port=dialog.querySelector(`[name="${berth.dataset.berthFor}"]`);const fill=()=>{const rows=state().portRecords.filter(p=>p.name===port.value);berth.innerHTML=rows.length?rows.map(p=>`<option value="${esc(p.id)}">${esc(p.berth||p.name)}</option>`).join(''):'<option value="">Select a port first</option>';};port.addEventListener('change',fill);fill();}
-  dialog.querySelector('#close-sale').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);try{M.addSale(state(),{dealDate:f.get('dealDate'),cargoId:f.get('cargoId'),quantity:Number(f.get('quantity')),fob:Number(f.get('fob')),loadPort:f.get('loadPort'),dischargePort:f.get('dischargePort'),loadPortId:f.get('loadPortId'),dischargePortId:f.get('dischargePortId'),shipmentFrom:f.get('shipmentFrom'),shipmentTo:f.get('shipmentTo')});dialog.close();changed();}catch(error){dialog.querySelector('#sale-error').textContent=error.message;}};dialog.showModal();}
+  dialog.querySelector('#close-sale').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);try{M.addSale(state(),{dealDate:f.get('dealDate'),cargoId:f.get('cargoId'),quantity:Number(f.get('quantity')),price:Number(f.get('price')),priceBasis:String(f.get('priceBasis')||'FOB'),loadPort:f.get('loadPort'),dischargePort:f.get('dischargePort'),loadPortId:f.get('loadPortId'),dischargePortId:f.get('dischargePortId'),shipmentFrom:f.get('shipmentFrom'),shipmentTo:f.get('shipmentTo')});dialog.close();changed();}catch(error){dialog.querySelector('#sale-error').textContent=error.message;}};dialog.showModal();}
  function showCargoDialog(){
   const dialog=document.createElement('dialog');
   dialog.innerHTML='<form><div class="heading"><h2>New bulk cargo</h2><button type="button" data-close aria-label="Close">×</button></div><div class="grid"><label class="field">Cargo name<input name="name" required></label><label class="field">Planning SF, m³/t<input name="sf" type="number" min="0.000001" step="any" required></label><label class="field">IMSBC group<select name="group"><option value="">Pending</option><option>A</option><option>B</option><option>C</option><option>A &amp; B</option></select></label></div><p class="error" role="alert"></p><button type="submit">Add cargo</button></form>';

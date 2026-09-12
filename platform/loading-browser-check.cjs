@@ -13,7 +13,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
     s.vesselSnapshot={...s.vesselSnapshot,grain:50000,holdData:JSON.parse(JSON.stringify(s.holds))};
     s.lots.forEach((l,i)=>{
      l.quantity=i?4000:6000;l.sf=1;l.group='C';delete l.un;
-     Object.assign(s.sales.find(x=>x.id===l.saleId),{quantity:l.quantity,fob:100});
+     Object.assign(s.sales.find(x=>x.id===l.saleId),{quantity:l.quantity,price:100,priceBasis:'FOB'});
     });
     const rows=mode==='deferred'?[[0,0,2000,2000,2000],[2000,2000,0,0,0]]
      :mode==='uniform'||mode==='incomplete'?[[1200,1200,1200,1200,1200],[800,800,800,800,800]]

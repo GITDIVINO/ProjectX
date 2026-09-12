@@ -187,15 +187,26 @@ function create(env){
 
  // Section 5: what each sale carries of the voyage. The method is the open question Q-005,
  // so it is a choice on the screen rather than a rule buried in the engine.
+ // Netback is what the sale leaves once the cost of delivering it is off. On FOB nothing comes
+ // off, because the freight was never ours; the column says which basis each figure is on.
  const allocationRow=a=>{
   const l=state().lots.find(l=>l.id===a.id);
   return `<tr><td class="name"><span class="tag" style="background:${esc(l.color)}"></span>${esc(l.name)}</td>`+
    `<td>${esc(l.port)}</td><td>${fmt(a.quantity,1)}</td>`+
-   `<td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td></tr>`;
+   `<td>${fmt(a.cents/100,2)}</td><td>${fmt(a.cents/100/a.quantity,2)}</td>`+
+   `<td>${esc(a.priceBasis||'—')}</td>`+
+   `<td>${a.price===null||a.price===undefined?'—':fmt(a.price,2)}</td>`+
+   `<td class="netback-cell">${a.netbackUnit===null||a.netbackUnit===undefined?'—':fmt(a.netbackUnit,2)}</td></tr>`;
  };
- const allocationTable=()=>b
-  ? table(['Sale','Port','Tonnage','Allocated, USD','USD/t'],b.allocation.map(allocationRow))
-  : '<p class="empty">Allocation appears after the voyage calculation is complete.</p>';
+ const allocationTable=()=>{
+  if(!b)return '<p class="empty">Allocation appears after the voyage calculation is complete.</p>';
+  const total=b.netback===null||b.netback===undefined
+   ? '<p class="muted">Voyage netback appears once every parcel in the voyage carries a price.</p>'
+   : `<p class="chain-line"><span class="chain-name">Voyage netback</span><span class="chain-result">${fmt(b.netback,2)} USD</span></p>`;
+  // The basis column says which figures had the freight taken off, so nothing needs saying.
+  return table(['Sale','Port','Tonnage','Allocated, USD','USD/t','Basis','Price, USD/t','Netback, USD/t'],
+   b.allocation.map(allocationRow))+total;
+ };
  // The sources editor is shown for a calculation that already carries notes, so section 5
  // ends with the allocation itself for everyone else.
  const notesBlock=()=>String(state().notes||'').trim()
@@ -203,7 +214,7 @@ function create(env){
   : '';
 
  html+=(planIncomplete?INFEASIBLE:'')+`</section><section>`+
-  `<div class="heading"><h2>5. Cost by sale</h2>`+
+  `<div class="heading"><h2>5. Netback by sale</h2>`+
   select('allocation','Allocation method',[['route','By legs and ports'],['tonnage','Entire budget by tonnage']])+
   `</div>`+allocationTable()+notesBlock()+`</section>`;
   return html;

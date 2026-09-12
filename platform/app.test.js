@@ -285,7 +285,7 @@ test('Section 5 ends with the allocation itself',()=>{
  const html=boot(JSON.stringify(s)).elements.get('app').innerHTML;
  for(const gone of ['Proposed method: leg costs','not the incremental cost of adding a sale','id="calc-allocation"','Calculation sources and notes','data-path="notes"'])
   assert.ok(!html.includes(gone),gone+' is still printed under the allocation');
- assert.ok(html.includes('5. Cost by sale')&&html.includes('Allocation method'),'the section and its table are untouched');
+ assert.ok(html.includes('5. Netback by sale')&&html.includes('Allocation method'),'the section and its table are untouched');
  assert.ok(!fs.readFileSync(__dirname+'/app.js','utf8').includes('allocationCalculation'),'and the builder behind the block is gone, not left unused');
  // Notes already written stay reachable: the sources of a saved calculation are not swallowed.
  const written=M.demo();P.ensure(written);written.notes='Pub. 151 distances checked 10.09.2026';
@@ -364,7 +364,7 @@ test('App restores a saved voyage and the active workspace tab',()=>{const saved
 test('Corrupt or obsolete saved state falls back to blank',()=>{for(const value of ['{broken',JSON.stringify({version:1}),JSON.stringify({version:2,lots:[{},{}],ports:[{},{},{}]})])assert.equal(boot(value).app.getResult().budget,null);});
 
 test('CARGO retains catalog records while rendering the simplified register',()=>{const {app,elements}=boot(null);elements.get('tab-cargo').onclick();const html=elements.get('app').innerHTML;assert.equal((html.match(/data-catalog-name=/g)||[]).length,25);assert.ok(app.getState().cargoTypes.length>=97);assert.ok(html.includes('Planning SF, m³/t'));assert.ok(html.includes('IMSBC Group'));for(const removed of ['Hold restriction','Properties / source','Apply to parcels','UN number','Transport hazard class','SDS / declaration required','Reference estimate','N/A to this carriage mode','cargo-meta'])assert.ok(!html.includes(removed));});
-test('SALE and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('Ust-Luga'));assert.ok(ports.includes('European Sulphur Terminal'));assert.ok(!ports.includes('DA, USD'));assert.match(ports,/<div class="heading"><div><h2>PORT<\/h2><p class="section-intro">Port and berth register with published size limits\.<\/p><\/div>/,'PORT is headed like the other registers');assert.ok(!ports.includes('Charterer port and terminal register'),'not the intro line the user removed earlier');assert.match(ports,/<th scope="col">Country<\/th><th scope="col">Port<\/th><th scope="col">Terminal<\/th><th scope="col">Berth<\/th><th scope="col">Water density, t\/m³<\/th><th scope="col">Max draft, m<\/th><th scope="col">Max beam, m<\/th><th scope="col">Max LOA, m<\/th><th scope="col">Max air draft, m<\/th><th scope="col">Max DWT<\/th>/,'columns follow the source table: draft, beam, LOA');assert.ok(ports.includes('value="Russia"')&&ports.includes('value="Brazil"'));assert.ok(!ports.includes('>Notes<'),'the Notes column is not rendered');assert.ok(!ports.includes('Compared with'),'no comparison line above the register');assert.ok(ports.includes('Berth 13'),'Murmansk berths are separate rows');assert.ok(!ports.includes('limit-exceeded')&&!ports.includes('limit-flag'),'PORT is a register only: breaches are shown in PLANNER');});
+test('SALES and PORTS tabs render their business registers',()=>{const {elements}=boot(null);elements.get('tab-sale').onclick();assert.ok(elements.get('app').innerHTML.includes('Register of concluded sales'));assert.ok(elements.get('app').innerHTML.includes('Add the first deal'));elements.get('tab-ports').onclick();const ports=elements.get('app').innerHTML;assert.ok(ports.includes('Ust-Luga'));assert.ok(ports.includes('European Sulphur Terminal'));assert.ok(!ports.includes('DA, USD'));assert.match(ports,/<div class="heading"><div><h2>PORTS<\/h2><p class="section-intro">Port and berth register with published size limits\.<\/p><\/div>/,'PORTS is headed like the other registers');assert.ok(!ports.includes('Charterer port and terminal register'),'not the intro line the user removed earlier');assert.match(ports,/<th scope="col">Country<\/th><th scope="col">Port<\/th><th scope="col">Terminal<\/th><th scope="col">Berth<\/th><th scope="col">Water density, t\/m³<\/th><th scope="col">Max draft, m<\/th><th scope="col">Max beam, m<\/th><th scope="col">Max LOA, m<\/th><th scope="col">Max air draft, m<\/th><th scope="col">Max DWT<\/th>/,'columns follow the source table: draft, beam, LOA');assert.ok(ports.includes('value="Russia"')&&ports.includes('value="Brazil"'));assert.ok(!ports.includes('>Notes<'),'the Notes column is not rendered');assert.ok(!ports.includes('Compared with'),'no comparison line above the register');assert.ok(ports.includes('Berth 13'),'Murmansk berths are separate rows');assert.ok(!ports.includes('limit-exceeded')&&!ports.includes('limit-flag'),'PORT is a register only: breaches are shown in PLANNER');});
 
 test('The DWT limit appears only after Calculate intake and never outlives its inputs',()=>{
  const blank=boot(null).elements.get('app').innerHTML;
@@ -478,7 +478,7 @@ test('GUIDE explains the order of work and never touches the voyage',()=>{
  assert.match(html,/<h2>GUIDE<\/h2><p class="section-intro">How a voyage is put together, tab by tab\.<\/p>/);
  assert.ok(html.includes('<svg viewBox="0 0 900 330"'),'the flow diagram is drawn inline');
  assert.equal((html.match(/class="guide-box[ "]/g)||[]).length,5,'four registers and the planner');
- for(const tab of ['CARGO','PORT','VESSEL','SALE','PLANNER'])assert.ok(html.includes('>'+tab+'<'),tab+' is missing from the diagram or the steps');
+ for(const tab of ['CARGOES','PORTS','VESSELS','SALES','PLANNER'])assert.ok(html.includes('>'+tab+'<'),tab+' is missing from the diagram or the steps');
  assert.equal((html.match(/<ul class="guide-notes">(.*?)<\/ul>/)?.[1].match(/<li>/g)||[]).length,4,'the closing notes');
  assert.equal((html.match(/guide-step-head/g)||[]).length,10,'five tabs plus five planner sections');
  assert.ok(html.includes('stored in this browser only'),'the storage limit is stated');
@@ -487,9 +487,9 @@ test('GUIDE explains the order of work and never touches the voyage',()=>{
  assert.equal(elements.get('planner-actions').hidden,true,'no calculation controls over the guide');});
 
 test('VESSEL heads its register like the other tabs',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();
- assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>VESSEL TYPES<\/h2><p class="section-intro">Standard vessel types for cargo carriage\.<\/p><\/div>/);
+ assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>VESSELS<\/h2><p class="section-intro">Standard vessel types for cargo carriage\.<\/p><\/div>/);
  elements.get('tab-sale').onclick();
- assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>SALE<\/h2><p class="section-intro">/,'the same shape SALE uses');});
+ assert.match(elements.get('app').innerHTML,/<div class="heading"><div><h2>SALES<\/h2><p class="section-intro">/,'the same shape SALE uses');});
 
 test('VESSEL lays hold volumes out as fields, not as a table',()=>{const {elements}=boot(null);elements.get('tab-vessel').onclick();const html=elements.get('app').innerHTML;
  assert.ok(html.includes('<h3>Holds</h3>'));

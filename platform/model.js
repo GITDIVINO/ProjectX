@@ -177,7 +177,7 @@ function initial(){const s={version:2,vesselId:'tbn-1',cargoTypes:JSON.parse(JSO
 function demo(){
  const s=initial();
  s.lots=[{id:'S1',name:'BULK SULPHUR APP C',cargoId:'cargo-1',saleId:'SALE-S1',color:'#d5ae60',selected:true,quantity:24000,sf:.9,loadPort:'Ust-Luga',port:'Santos'},{id:'S2',name:'Crushed lump sulphur',cargoId:'cargo-2',saleId:'SALE-S2',color:'#829fcb',selected:true,quantity:6000,sf:.9,loadPort:'Ust-Luga',port:'Paranaguá',group:'B',un:'1350'}];
- s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',fob:null,legacyLotId:'S2'}];
+ s.sales=[{id:'SALE-S1',dealDate:'',cargoId:'cargo-1',cargoName:'BULK SULPHUR APP C',quantity:24000,loadPort:'Ust-Luga',dischargePort:'Santos',shipmentFrom:'',shipmentTo:'',price:null,priceBasis:'FOB',legacyLotId:'S1'},{id:'SALE-S2',dealDate:'',cargoId:'cargo-2',cargoName:'Crushed lump sulphur',quantity:6000,loadPort:'Ust-Luga',dischargePort:'Paranaguá',shipmentFrom:'',shipmentTo:'',price:null,priceBasis:'FOB',legacyLotId:'S2'}];
  s.vesselSnapshot={...s.vesselSnapshot,dwt:37667};
  s.holds=[7948,9790,9782,9782,9428].map((volume,i)=>({id:i+1,volume,massLimit:null}));
  s.ports=[port('Ust-Luga'),port('Santos'),port('Paranaguá')];
@@ -353,7 +353,26 @@ function computeChecked(s){
   row.rounding=Object.fromEntries(lots.map((l,i)=>{const exact=R(row.cents).mul(weights[i]).div(weightR);return [l.id,portions[i]-Number(exact.n/exact.d)];}));
   portions.forEach((x,i)=>allocation[i].cents+=x);row.shares=Object.fromEntries(lots.map((l,i)=>[l.id,portions[i]]));
  }
- const total=totalCents/100,hireCents=sum(rows.filter(r=>r.kind==='hire').map(r=>r.cents)),hire=hireCents/100,voyageCents=totalCents-hireCents,voyage=voyageCents/100;
+
+ // Netback: what the sale leaves once the cost of delivering it is taken off. On FOB nothing
+ // is taken off, because the freight was never ours. A parcel with no price has no netback —
+ // stated as unknown rather than as zero, which would read as a sale that earns nothing.
+ for(const row of allocation){
+  const lot=lots.find(l=>l.id===row.id);
+  const sale=s.sales?.find(x=>x.id===lot?.saleId);
+  row.priceBasis=sale?.priceBasis??null;
+  row.price=ok(sale?.price)?sale.price:null;
+  if(row.price===null||!ok(row.quantity,true)){row.revenueCents=null;row.netbackCents=null;row.netbackUnit=null;continue;}
+  row.revenueCents=cents(R(row.quantity).mul(row.price));
+  const deduct=FREIGHT_IS_OURS(row.priceBasis)?row.cents:0;
+  row.netbackCents=row.revenueCents-deduct;
+  row.netbackUnit=R(row.netbackCents).div(100).div(row.quantity).number();
+ }
+ // The voyage total is a total only when every parcel in it has a price.
+ const netbackCents=allocation.every(r=>r.netbackCents!==null)&&allocation.length
+  ? sum(allocation.map(r=>r.netbackCents)) : null;
+ const netback=netbackCents===null?null:netbackCents/100;
+  const total=totalCents/100,hireCents=sum(rows.filter(r=>r.kind==='hire').map(r=>r.cents)),hire=hireCents/100,voyageCents=totalCents-hireCents,voyage=voyageCents/100;
  const grossCents=s.freight===null?null:cents(quantityR.mul(s.freight)),commissionCents=grossCents===null?null:cents(R(grossCents).div(100).mul(s.commission).div(100)),extraCents=cents(s.extraIncome);
  const safeInteger=n=>{const v=Number(n);if(!Number.isSafeInteger(v))throw RangeError('Income or P&L is outside the exact monetary range');return v;};
  const netCents=grossCents===null?null:safeInteger(BigInt(grossCents)-BigInt(commissionCents)+BigInt(extraCents)),pnlCents=netCents===null?null:safeInteger(BigInt(netCents)-BigInt(totalCents));
@@ -379,7 +398,7 @@ function computeChecked(s){
  explain('totals','Unrounded covering freight','max(0, cost − rounded other income) / (cargo × (1 − commission / 100))',`max(0, ${text(total)} − ${extraCents/100}) / (${text(quantityR)} × (1 − ${s.commission}/100))`,requiredR,'USD/t');
  explain('totals','Covering quote','Round required gross income UP to a cent, divide by cargo, round rate UP to a cent',`${text(grossNeeded.div(100))} USD → ${text(R(grossNeededCents).div(100))} USD / ${text(quantityR)} t → ${text(requiredFreightQuote)} USD/t`,R(quoteUnits).div(100),'USD/t');
  for(const fuel of ['main','eca','aux'])explain('totals',fuel+' consumption','Sum of all phase masses (including separate boiler)',usageParts[fuel].join(' + ')||'0',usageR[fuel],'t');
- return {errors:[],ship,budget:{q,days,sea:seaR.number(),work:workTotalR.number(),idle:idleTotalR.number(),usage:Object.fromEntries(Object.entries(usageR).map(([k,v])=>[k,v.number()])),rows,legs:legResults,ports:portResults,totalCents,total,hire,voyage,requiredFreightQuote,unit:unitR.number(),requiredFreight:requiredR.number(),gross,commission,net,tce:tceR?.number()??null,pnl:pnlCents===null?null:pnlCents/100,allocation,trace}};
+ return {errors:[],ship,budget:{q,days,sea:seaR.number(),work:workTotalR.number(),idle:idleTotalR.number(),usage:Object.fromEntries(Object.entries(usageR).map(([k,v])=>[k,v.number()])),rows,legs:legResults,ports:portResults,totalCents,total,hire,voyage,requiredFreightQuote,unit:unitR.number(),requiredFreight:requiredR.number(),gross,commission,net,tce:tceR?.number()??null,pnl:pnlCents===null?null:pnlCents/100,netback,netbackCents,allocation,trace}};
 }
 function stageAllocations(s){if(s.stage==='load')return s.allocations;const index=s.ports.findIndex(p=>p.name===s.stage);return s.allocations.filter(a=>{const l=s.lots.find(l=>l.id===a.lot);return l&&s.ports.findIndex(p=>p.name===loadOf(s,l))<=index&&s.ports.findIndex(p=>p.name===l.port)>index;});}
 function changeLoadPort(s,name,code=''){if(!name.trim()||s.ports.slice(1).some(p=>p.name===name))throw Error('Select a load port, different from the discharge port');const old=s.ports[0].name;if(old===name&&s.ports[0].code===code)return;s.lots.forEach(l=>l.loadPort=name);s.ports[0]={...port(name),code};s.legs=s.legs.filter(l=>l.from!==old&&l.to!==old);s.ballast=leg(deliveryName(s),name);s.stage='load';}
@@ -440,7 +459,7 @@ function ensureBusinessData(s){
  for(const l of s.lots){
   if(l.saleId)continue;
   let sale=s.sales.find(x=>x.legacyLotId===l.id);
-  if(!sale){sale={id:'SALE-'+l.id,legacyLotId:l.id,dealDate:'',cargoId:l.cargoId||'',cargoName:l.name,quantity:l.quantity,loadPort:l.loadPort||'Ust-Luga',dischargePort:l.port,shipmentFrom:'',shipmentTo:'',fob:null};s.sales.push(sale);}
+  if(!sale){sale={id:'SALE-'+l.id,legacyLotId:l.id,dealDate:'',cargoId:l.cargoId||'',cargoName:l.name,quantity:l.quantity,loadPort:l.loadPort||'Ust-Luga',dischargePort:l.port,shipmentFrom:'',shipmentTo:'',price:null,priceBasis:'FOB'};s.sales.push(sale);}
   l.saleId=sale.id;
  }
  if(migratePorts)for(const name of [...new Set(s.ports.map(p=>p.name))])s.portRecords.push({...portRecord('P'+(s.portRecords.length+1),name),da:s.ports.find(p=>p.name===name)?.da??null});
@@ -452,7 +471,9 @@ function validateSale(s,data,{legacy=false}={}){
  const cargo=s.cargoTypes.find(c=>c.id===data.cargoId);
  if(!cargo||!isBulkCargo(cargo))throw Error('Select a bulk cargo from CARGO');
  if(!ok(data.quantity,true))throw Error('Enter a positive sale quantity');
- if(!(legacy&&data.fob===null)&&!ok(data.fob))throw Error('Enter a non-negative FOB price');
+ if(!PRICE_BASES.includes(data.priceBasis??'FOB'))throw Error('Select a delivery basis: FOB, CFR or CIF');
+ const price=data.price===undefined?data.fob:data.price;
+ if(!(legacy&&(price===null||price===undefined))&&!ok(price))throw Error('Enter a non-negative price');
  const validDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
  if(!(legacy&&!data.dealDate&&!data.shipmentFrom&&!data.shipmentTo)&&![data.dealDate,data.shipmentFrom,data.shipmentTo].every(validDate))throw Error('Enter valid deal and shipment dates');
  if(data.shipmentFrom>data.shipmentTo)throw Error('Shipment start cannot be later than shipment end');
@@ -461,7 +482,7 @@ function validateSale(s,data,{legacy=false}={}){
  if(load.name===discharge.name)throw Error('Load and discharge ports must be different');
  // The berth is one registered row of that port; an unknown or foreign row falls back to the first.
  const berthOf=(id,fallback)=>s.portRecords.find(p=>p.id===id&&p.name===fallback.name)?.id??fallback.id;
- return {...data,loadPortId:berthOf(data.loadPortId,load),dischargePortId:berthOf(data.dischargePortId,discharge),cargoName:cargo.name};
+ return {...data,price,priceBasis:data.priceBasis??'FOB',loadPortId:berthOf(data.loadPortId,load),dischargePortId:berthOf(data.dischargePortId,discharge),cargoName:cargo.name};
 }
 function addSale(s,data){
  ensureCatalogs(s);
@@ -565,12 +586,29 @@ function syncRoute(s){
 function berthsAt(s,call){const out=[];for(const l of active(s)){const sale=s.sales?.find(x=>x.id===l.saleId);if(!sale)continue;if(l.loadPort===call.name&&sale.loadPortId)out.push(sale.loadPortId);if(l.port===call.name&&sale.dischargePortId)out.push(sale.dischargePortId);}return [...new Set(out)];}
 function syncBerths(s){for(const call of s.ports){const ids=berthsAt(s,call);if(!ids.length)continue;call.planning??={berthId:'',arrival:{},departure:{}};call.planning.berthId=ids[0];}}
 function moveCall(s,name,direction){if(![-1,1].includes(direction))return false;const loadNames=new Set(active(s).map(l=>l.loadPort)),isLoad=loadNames.has(name),group=callsOf(s).filter(p=>loadNames.has(p.name)===isLoad);const index=group.findIndex(p=>p.name===name),target=index+direction;if(index<0||target<0||target>=group.length)return false;const a=s.ports.indexOf(group[index]),b=s.ports.indexOf(group[target]);[s.ports[a],s.ports[b]]=[s.ports[b],s.ports[a]];syncRoute(s);s.stage='load';return true;}
+// A price means nothing without the basis it is quoted on. FOB leaves the freight with the
+// buyer; CFR and CIF leave it with us, and only then is it deducted to reach a netback. The
+// field used to be called fob and held whatever number was typed into it, which is how a CFR
+// price ends up counted as though the freight were somebody else's.
+const PRICE_BASES=['FOB','CFR','CIF'];
+const FREIGHT_IS_OURS=basis=>basis==='CFR'||basis==='CIF';
+
+function migratePrices(s){
+ for(const sale of s.sales||[]){
+  if(sale.price===undefined&&sale.fob!==undefined)sale.price=sale.fob;
+  sale.price??=null;
+  // Anything already in the file was entered under a field called fob, so that is its basis.
+  if(!PRICE_BASES.includes(sale.priceBasis))sale.priceBasis='FOB';
+  delete sale.fob;
+ }
+}
+
 function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}s.vesselProfiles.forEach(v=>{v.airDraft??=null;});if(s.vesselSnapshot)s.vesselSnapshot.airDraft??=null;ensureBusinessData(s);mergeRequestedCatalogs(s);mergeDeliveryPorts(s);// A distance already in the file predates the route estimate and counts as the user's own.
  for(const l of [...(s.legs||[]),...(s.ballast?[s.ballast]:[])]){
   if(l.distanceSource==null&&ok(l.distance,true))l.distanceSource='entered';
   l.eca??=0;// an ECA distance the file never carried is none, and an empty one stopped the calculation without saying why
  }
- mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
+ migratePrices(s);mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id&&!l.passport)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
 // A profile has to be complete before a voyage can be planned on it. These are the figures
 // that must be present and positive, those that may be absent but not nonsense if given,
@@ -618,5 +656,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,legDays,portDays,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={PRICE_BASES,FREIGHT_IS_OURS,DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,legDays,portDays,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);

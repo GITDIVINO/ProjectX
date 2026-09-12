@@ -9,13 +9,13 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   async function seed(mode='normal'){
    await page.evaluate(mode=>{
     const M=ProjectXModel,s=M.demo();
-    s.sales.forEach((x,i)=>Object.assign(x,{dealDate:'2026-09-01',shipmentFrom:i?'2026-09-10':'2026-09-01',shipmentTo:i?'2026-09-20':'2026-09-10',fob:100}));
+    s.sales.forEach((x,i)=>Object.assign(x,{dealDate:'2026-09-01',shipmentFrom:i?'2026-09-10':'2026-09-01',shipmentTo:i?'2026-09-20':'2026-09-10',price:100,priceBasis:'FOB'}));
     const base={...s.sales[0],legacyLotId:undefined};
     M.addSale(s,{...base,quantity:2000,loadPort:'Murmansk',shipmentFrom:'2026-09-15',shipmentTo:'2026-09-25'});
     M.addSale(s,{...base,quantity:3000,shipmentFrom:'2026-10-01',shipmentTo:'2026-10-15'});
     s.lots=s.lots.slice(0,1);s.allocations=s.allocations.filter(x=>x.lot===s.lots[0].id);
-    if(mode==='invalid')s.sales.find(x=>x.id==='SALE-2').fob=-1;
-    if(mode==='unknown')Object.assign(s.sales.find(x=>x.id==='SALE-S2'),{shipmentFrom:'',shipmentTo:'',dealDate:'',fob:null});
+    if(mode==='invalid')s.sales.find(x=>x.id==='SALE-2').price=-1;
+    if(mode==='unknown')Object.assign(s.sales.find(x=>x.id==='SALE-S2'),{shipmentFrom:'',shipmentTo:'',dealDate:'',price:null});
     if(mode==='empty'){s.lots=[];s.sales=[];s.allocations=[];}
     localStorage.setItem('projectx-current-v2',JSON.stringify(s));sessionStorage.setItem('projectx-current-tab','planner');
    },mode);await page.reload();
@@ -67,7 +67,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   await page.emulateMedia({media:'print'});assert.equal(await page.locator('.sale-link').first().isVisible(),true);await page.emulateMedia({media:'screen'});
   await seed('invalid');await open();await page.locator('#sale-select-visible').check();
   const before=await page.evaluate(()=>JSON.stringify(ProjectXApp.getState()));await page.locator('#sale-add-selected').click();
-  assert.match(await page.locator('#lot-error').textContent(),/FOB/);assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),before,'invalid batch does not partially add valid sales');await page.keyboard.press('Escape');
+  assert.match(await page.locator('#lot-error').textContent(),/non-negative price/);assert.equal(await page.evaluate(()=>JSON.stringify(ProjectXApp.getState())),before,'invalid batch does not partially add valid sales');await page.keyboard.press('Escape');
   await seed('unknown');await open();assert.equal(await page.locator('dialog tr[data-sale-id="SALE-S2"] .shipment-window').textContent(),'—');
   await page.locator('#sale-from').fill('2026-09-01');await page.locator('#sale-search').focus();assert.ok(!(await visibleIds()).includes('SALE-S2'),'unknown windows are not claimed to match the period');await page.keyboard.press('Escape');
   await seed('empty');await open();assert.match(await page.locator('#sale-picker-results').textContent(),/No sales yet/);assert.equal(await page.locator('#sale-add-selected').isDisabled(),true);

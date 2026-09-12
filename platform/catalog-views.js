@@ -27,7 +27,7 @@ function create(env){
 
  // ---- SALE ------------------------------------------------------------------------------
 
- const SALE_COLUMNS=['Deal','Date','Cargo','Volume, MT','Loading','Discharge','Shipment','FOB, USD/MT',''];
+ const SALE_COLUMNS=['Deal','Date','Cargo','Volume, MT','Loading','Discharge','Shipment','Basis','Price, USD/MT',''];
 
  // A parcel already in the voyage carries its shipment source, so the button sits with the
  // price it was agreed at rather than in a screen of its own.
@@ -47,7 +47,10 @@ function create(env){
   portCell('sales.'+i+'.loadPort','Load port','sales.'+i+'.loadPortId','Load berth',s.loadPort)+
   portCell('sales.'+i+'.dischargePort','Discharge port','sales.'+i+'.dischargePortId','Discharge berth',s.dischargePort)+
   `<td><div class="date-range">${input('sales.'+i+'.shipmentFrom','Shipment from',{type:'date'})}${input('sales.'+i+'.shipmentTo','Shipment to',{type:'date'})}</div></td>`+
-  `<td>${input('sales.'+i+'.fob','Price FOB')}${shipmentSources(s.id)}</td>`+
+  // A price is quoted on a basis. FOB leaves the freight with the buyer; CFR and CIF leave
+  // it with us, and only then does the voyage cost come off the netback.
+  `<td>${select('sales.'+i+'.priceBasis','Delivery basis',M.PRICE_BASES)}</td>`+
+  `<td>${input('sales.'+i+'.price','Price on the stated basis')}${shipmentSources(s.id)}</td>`+
   `<td><button data-action="remove-sale" data-index="${i}" aria-label="Remove sale ${esc(s.id)}">×</button></td>`+
   `</tr>`;
 
@@ -56,7 +59,7 @@ function create(env){
  function saleView(){
   const sales=state().sales;
   return `<section>`+
-   heading('SALE','Register of concluded sales for voyage planning.','new-sale','+ Add sale')+
+   heading('SALES','Register of concluded sales for voyage planning.','new-sale','+ Add sale')+
    (sales.length?table(SALE_COLUMNS,sales.map(saleRow)):SALE_EMPTY)+
    `<p class="form-note">A sale already added to PLANNER cannot be deleted until it is removed from the voyage.</p>`+
    `</section>`;
@@ -97,7 +100,7 @@ function create(env){
  function portView(){
   const columns=['Country','Port','Terminal','Berth','Water density, t/m³',...LIMIT_COLUMNS.map(([,label])=>label),''];
   return `<section>`+
-   heading('PORT','Port and berth register with published size limits.','new-port','+ Add port')+
+   heading('PORTS','Port and berth register with published size limits.','new-port','+ Add port')+
    table(columns,state().portRecords.map(portRow),'port-table')+
    `</section>`;
  }
@@ -132,7 +135,7 @@ function create(env){
  function cargoView(){
   const rows=state().cargoTypes.map((c,i)=>({c,i})).filter(({c})=>plannable(c));
   return `<section>`+
-   heading('CARGO','Cargo register for creating sales.','new-cargo','+ Add cargo type')+
+   heading('CARGOES','Cargo register for creating sales.','new-cargo','+ Add cargo type')+
    cargoToolbar()+
    table(['Cargo','Planning SF, m³/t','IMSBC Group'],rows.map(cargoRow))+
    `<p class="form-note">Planning SF is a reference estimate and must be confirmed for the shipment. IMSBC Group must match the exact product.</p>`+
@@ -172,7 +175,7 @@ function create(env){
  };
 
  function vesselView(){
-  return heading('VESSEL TYPES','Standard vessel types for cargo carriage.','new-vessel','+ Add vessel type')+
+  return heading('VESSELS','Standard vessel types for cargo carriage.','new-vessel','+ Add vessel type')+
    state().vesselProfiles.map(vesselCard).join('');
  }
 

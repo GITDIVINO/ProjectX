@@ -129,7 +129,7 @@ test('An edited Murmansk row is not relabelled and a removed port is not restore
  assert.equal(gone.portRecords.filter(p=>p.name==='Murmansk').length,0,'a port the user removed stays removed');});
 
 test('Berth rows share a port name but must differ by berth',()=>{const s=M.initial();const i=s.portRecords.findIndex(p=>p.berth==='Berth 4');assert.throws(()=>M.updatePortRecord(s,i,'berth','Berth 13'),/already exist/);M.updatePortRecord(s,i,'berth','Berth 4A');assert.equal(s.portRecords[i].berth,'Berth 4A');
- const sale=M.addSale(s,{cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Murmansk',dischargePort:'Santos'});
+ const sale=M.addSale(s,{cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,price:250,priceBasis:'FOB',dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Murmansk',dischargePort:'Santos'});
  assert.ok(sale.loadPortId);
  assert.doesNotThrow(()=>M.removePortRecord(s,i),'one of several berth rows can go while the port is in use');
  while(s.portRecords.filter(p=>p.name==='Murmansk').length>1)M.removePortRecord(s,s.portRecords.findIndex(p=>p.name==='Murmansk'));

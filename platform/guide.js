@@ -4,13 +4,13 @@
 const {esc}=typeof module!=='undefined'&&module.exports?require('./ui-format'):root.ProjectXFormat;
 
 const STEPS=[
- {tab:'CARGO',title:'Register the cargo',
+ {tab:'CARGOES',title:'Register the cargo',
   body:'Each product a sale can be written against lives here with its planning stowage factor. A cargo without a positive SF cannot be selected in SALE, so fill the SF first. Properties are edited here and nowhere else: PLANNER shows them read-only.'},
- {tab:'PORT',title:'Register ports and berths',
+ {tab:'PORTS',title:'Register ports and berths',
   body:'One row per berth, not per port: a port with published per-berth limits holds several rows sharing its name. Country, terminal, berth and the size limits are all editable. SALE offers only ports listed here, so an empty register blocks the first sale.'},
- {tab:'VESSEL',title:'Choose the vessel type',
+ {tab:'VESSELS',title:'Choose the vessel type',
   body:'Editable size classes with deadweight, dimensions, hold volumes, speeds and consumption. Apply to voyage copies the card into the current voyage and replaces its hold list, so apply before you distribute cargo rather than after.'},
- {tab:'SALE',title:'Record the concluded sale',
+ {tab:'SALES',title:'Record the concluded sale',
   body:'The trader enters deal date, cargo, volume, load and discharge port, shipment window and FOB price. Cargo comes from CARGO and both ports come from PORT; nothing else is accepted. A sale already used in a voyage cannot be deleted until it is removed from PLANNER.'},
  {tab:'PLANNER',title:'Build the voyage',
   body:'Add sales as parcels, order the calls, enter hold volumes and deductions, distribute cargo, then complete the cost inputs. Parcels can only come from SALE. Save, Save PDF and Clear calculation live here.'}
@@ -45,10 +45,10 @@ function diagram(){
   '<text x="24" y="22" class="guide-lane">Reference registers</text>'+
   '<text x="330" y="22" class="guide-lane">Commercial record</text>'+
   '<text x="560" y="22" class="guide-lane">Voyage workspace</text>'+
-  box(24,36,190,62,'CARGO','Products and planning SF')+
-  box(24,124,190,62,'PORT','Berths and size limits')+
-  box(24,212,190,62,'VESSEL','Size class and holds')+
-  box(330,80,170,62,'SALE','The concluded deal',true)+
+  box(24,36,190,62,'CARGOES','Products and planning SF')+
+  box(24,124,190,62,'PORTS','Berths and size limits')+
+  box(24,212,190,62,'VESSELS','Size class and holds')+
+  box(330,80,170,62,'SALES','The concluded deal',true)+
   '<rect x="560" y="36" width="316" height="238" rx="10" class="guide-box guide-box-wide"/>'+
   '<text x="580" y="63" class="guide-box-title">PLANNER</text>'+
   PLANNER_STEPS.map(([n,name],i)=>'<text x="580" y="'+(90+i*32)+'" class="guide-box-note"><tspan class="guide-step-n">'+n+'</tspan>  '+esc(name)+'</text>').join('')+

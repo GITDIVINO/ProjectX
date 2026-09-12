@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),cp=require('node:child_process'),M=require('./model');
-const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,fob:250,dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
+const saleData=s=>({cargoId:s.cargoTypes.find(c=>M.isBulkCargo(c)&&M.ok(c.sf,true)).id,quantity:1000,price:250,priceBasis:'FOB',dealDate:'2026-09-01',shipmentFrom:'2026-09-10',shipmentTo:'2026-09-20',loadPort:'Ust-Luga',dischargePort:'Santos'});
 test('MARKET import preserves the eight existing reports byte-for-byte',()=>{
  const {createHash}=require('node:crypto'),market=require('./market');
  const expected=[["dry-bulk-2026-07-09","55c7b2be5838d26d98b7edf4efbc564d5d7da59b4f6e31731b705c95ce7be15a"],["dry-bulk-2026-07-02","7c83559204676ed2f88465d79ee5f048bf5f7740540553ffe4bb148bf8ae0c74"],["dry-bulk-2026-06-25","4e2bcc0ad95f3ea9359fecaf9d84c8b5322f72592b569d8ed05fa15de3555515"],["dry-bulk-2026-06-18","8ecb0625f43c166cfc030a1c5ad38a1cb8462b97c755d37d1e79f9518dd6b2fa"],["dry-bulk-2026-06-11","cd76eb0f91b739655e6653023735250901481d14213409aaec2157086fc7939a"],["dry-bulk-2026-06-04","0cf9618af6a2e6ae87d60dd808cf1fa46cb5a23659b1e99a62b70d7d875aede2"],["dry-bulk-2026-05-28","6839c053f3cac79f8fa336c1f1bbdc4d9ce653c33fa10324bbe381823bbb6afd"],["dry-bulk-2026-05-21","0755f84c578c34b7157803c4d8a21c1b2165e77888bacbaa2809f17caa307210"]];
@@ -96,7 +96,7 @@ test('UI templates and model messages are English without a runtime translator',
 test('Sale updates are validated before mutation and cannot extend PORT',()=>{
  const s=M.initial(),sale=M.addSale(s,saleData(s));M.addSaleToPlanner(s,sale.id);
  const before=JSON.stringify(s);
- for(const changes of [{loadPort:'Unlisted'},{dischargePort:'Unlisted'},{loadPort:'Santos'},{quantity:-1},{quantity:null},{fob:-2},{shipmentFrom:'2026-10-01'},{dealDate:'2026-02-30'}]){
+ for(const changes of [{loadPort:'Unlisted'},{dischargePort:'Unlisted'},{loadPort:'Santos'},{quantity:-1},{quantity:null},{price:-2},{priceBasis:'EXW'},{shipmentFrom:'2026-10-01'},{dealDate:'2026-02-30'}]){
   assert.throws(()=>M.updateSale(s,sale.id,changes));assert.equal(JSON.stringify(s),before);
  }
  M.updateSale(s,sale.id,{loadPort:'Murmansk',quantity:900});

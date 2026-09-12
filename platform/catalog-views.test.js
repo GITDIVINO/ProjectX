@@ -52,10 +52,10 @@ test('Each register names itself and offers the one way to add a record',()=>{
  const state=M.initial();
  const v=views(state);
  for(const [markup,title,action] of [
-  [v.saleView(),'SALE','new-sale'],
-  [v.portView(),'PORT','new-port'],
-  [v.cargoView(),'CARGO','new-cargo'],
-  [v.vesselView(),'VESSEL TYPES','new-vessel']
+  [v.saleView(),'SALES','new-sale'],
+  [v.portView(),'PORTS','new-port'],
+  [v.cargoView(),'CARGOES','new-cargo'],
+  [v.vesselView(),'VESSELS','new-vessel']
  ]){
   assert.ok(markup.includes(`<h2>${title}</h2>`),title+' names itself');
   assert.equal((markup.match(new RegExp(`data-action="${action}"`,'g'))||[]).length,1,title+' offers exactly one add control');
