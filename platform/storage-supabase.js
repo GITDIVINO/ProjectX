@@ -18,11 +18,26 @@ const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesse
 // A deployment that has its keys but not its schema is the common first failure, and the
 // raw PostgREST wording ("relation ... does not exist") does not say what to do about it.
 const SCHEMA_MISSING=/does not exist|schema cache|PGRST205/i;
+
+// Which migration creates which table, so a database missing one is told the file to apply
+// rather than always the first migration: a project that already has 0001 and not 0005 must
+// not be sent back to 0001. Anything unrecognised is the initial schema, which is the case
+// when nothing has been applied at all.
+const TABLE_MIGRATIONS=[
+ [/price_assessments/,'0005_price_assessments.sql'],
+ [/cargo_types|port_records|vessel_profiles/,'0003_registers_per_row.sql'],
+ [/profiles|voyage_register|organisation_members/,'0002_people_and_register.sql']
+];
+const migrationFor=message=>{
+ for(const [pattern,file] of TABLE_MIGRATIONS)if(pattern.test(message))return file;
+ return '0001_initial_schema.sql';
+};
 const fail=(error,reason='error')=>{
  const message=error?.message||String(error||'Unknown storage error');
  if(SCHEMA_MISSING.test(message))
   return {ok:false,reason:'no-schema',
-   error:'The database is reachable but its tables are missing. Apply supabase/migrations/0001_initial_schema.sql to the project, then reload.'};
+   error:'The database is reachable but a table this page needs is missing. Apply supabase/migrations/'+
+    migrationFor(message)+' to the project, then reload.'};
  return {ok:false,reason,error:message};
 };
 

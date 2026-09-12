@@ -333,6 +333,24 @@ test('Keys without a schema say which migration is missing',async()=>{
  assert.doesNotMatch(result.error,/relation/,'and not the wording only a DBA would read');
 });
 
+test('A missing table names its own migration, not the first one',async()=>{
+ // A register added later has its own migration. Telling somebody whose project already has
+ // the initial schema to apply the initial schema is advice they have already followed.
+ const missing=async table=>{
+  const client=fakeClient();
+  client.from=()=>({select(){return this;},eq(){return this;},order(){return this;},maybeSingle(){return this;},
+   then(resolve){return Promise.resolve({data:null,
+    error:{message:'relation "public.'+table+'" does not exist'}}).then(resolve);}});
+  const result=await Supabase.create({client,orgId:'org-1'}).loadRegisters();
+  assert.equal(result.reason,'no-schema',table);
+  return result.error;
+ };
+ assert.match(await missing('price_assessments'),/0005_price_assessments\.sql/);
+ assert.match(await missing('cargo_types'),/0003_registers_per_row\.sql/);
+ assert.match(await missing('profiles'),/0002_people_and_register\.sql/);
+ assert.match(await missing('memberships'),/0001_initial_schema\.sql/,'and an unknown table is the initial schema');
+});
+
 test('A signed-out visitor is told so rather than shown a blank calculation',async()=>{
  const client=fakeClient({},null);
  const storage=Supabase.create({client,orgId:'org-1'});
