@@ -56,8 +56,20 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.equal(await page.locator('#market-region').inputValue(),'US Gulf');
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  const marketTabBox=await page.locator('#tab-market').boundingBox();
-  assert.ok(marketTabBox.x>=0&&marketTabBox.x+marketTabBox.width<=390);
+  // Eight tabs do not fit across 390 px and are not meant to: the strip scrolls, the page does
+  // not. What must hold is that the page itself never scrolls sideways and that every tab can
+  // be reached — a tab that cannot be scrolled to is a tab that does not exist.
+  assert.equal(await page.evaluate(()=>{
+   const strip=document.querySelector('.workspace-tabs');
+   return getComputedStyle(strip).overflowX;
+  }),'auto','the tab strip is what scrolls');
+  for(const id of ['tab-planner','tab-register','tab-sale','tab-cargo','tab-ports','tab-vessel','tab-market','tab-guide']){
+   await page.locator('#'+id).scrollIntoViewIfNeeded();
+   const box=await page.locator('#'+id).boundingBox();
+   assert.ok(box&&box.x>=-1&&box.x+box.width<=391,id+' can be brought into view');
+  }
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,
+   'and the page itself still does not scroll sideways');
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('#tab-vessel').click();
   assert.equal(await page.locator('[data-path$=".direction"]').count(),0);

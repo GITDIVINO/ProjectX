@@ -12,6 +12,11 @@ const INDEX_KEY='projectx-voyages-v3';
 const VOYAGE_PREFIX='projectx-voyage-v3:';
 const LEGACY_KEY='projectx-current-v2';   // the prototype's single save; never deleted here
 const LEGACY_SEEN='projectx-legacy-seen-v3';
+const PROFILE_KEY='projectx-profile-v3';
+// The shared registers, a row each — the same shape as the shared adapter stores, so the
+// session behaves identically whichever one is behind it.
+const REGISTER_PREFIX='projectx-register-v3:';
+const REGISTERS=['cargoTypes','portRecords','vesselProfiles','sales'];
 
 const now=()=>new Date().toISOString();
 const id=()=>'v-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
@@ -42,6 +47,13 @@ function create(options={}){
   const sales={};
   for(const sale of parts.sales.sales||[])if(sale&&sale.id)sales[sale.id]={document:sale,revision:1,updatedAt:now()};
   write(SALES_KEY,sales);
+  // The registers become rows. A record with no id has no key and is left in the document
+  // rather than stored under an invented one.
+  for(const name of REGISTERS){
+   const held={};
+   for(const row of parts.registers[name]||[])if(row&&row.id)held[row.id]={document:row,revision:1,updatedAt:now()};
+   write(REGISTER_PREFIX+name,held);
+  }
   const existing=index();
   const voyageId=existing[0]?existing[0].id:id();
   const revision=existing[0]?existing[0].revision+1:1;
@@ -71,9 +83,15 @@ function create(options={}){
    const document=read(VOYAGE_PREFIX+chosen.id);
    if(!document)return null;
    const sales=read(SALES_KEY)||{};
+   const registers={};
+   for(const name of REGISTERS){
+    const held=read(REGISTER_PREFIX+name)||{};
+    registers[name]=Object.entries(held).map(([id,x])=>({id,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
+   }
    return {
     catalogs:read(CATALOG_KEY)||{document:{},revision:0,updatedAt:null},
     sales:Object.entries(sales).map(([saleId,x])=>({id:saleId,document:x.document,revision:x.revision,updatedAt:x.updatedAt})),
+    registers,
     voyage:{...chosen,document}
    };
   },
@@ -88,6 +106,35 @@ function create(options={}){
    const next={document,revision:current.revision+1,updatedAt:now()};
    write(CATALOG_KEY,next);
    return {ok:true,revision:next.revision,updatedAt:next.updatedAt};
+  },
+
+  async loadRegisters(){
+   importLegacy();
+   const out={};
+   for(const name of REGISTERS){
+    const held=read(REGISTER_PREFIX+name)||{};
+    out[name]=Object.entries(held).map(([id,x])=>({id,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
+   }
+   return out;
+  },
+  async saveRegisterRow(register,id,document,revision){
+   if(!REGISTERS.includes(register))return {ok:false,reason:'unknown-register'};
+   const key=REGISTER_PREFIX+register;
+   const held=read(key)||{};
+   const current=held[id];
+   if(current&&revision!==undefined&&revision!==current.revision)
+    return {ok:false,reason:'conflict',current:{id,...current}};
+   const next={document,revision:(current?.revision||0)+1,updatedAt:now()};
+   write(key,{...held,[id]:next});
+   return {ok:true,id,revision:next.revision,updatedAt:next.updatedAt};
+  },
+  async deleteRegisterRow(register,id){
+   const key=REGISTER_PREFIX+register;
+   const held=read(key)||{};
+   if(!held[id])return {ok:false,reason:'missing'};
+   delete held[id];
+   write(key,held);
+   return {ok:true};
   },
 
   // Sales are one row per deal, so two traders editing different deals do not collide.
@@ -112,6 +159,49 @@ function create(options={}){
    return {ok:true};
   },
 
+  // There are no accounts in this browser, so there is one person: whoever is sitting here.
+  // The contract is the same as the shared adapter's, so the register screen does not need to
+  // know which one it is talking to.
+  async profile(){
+   const saved=read(PROFILE_KEY);
+   return {id:'local',name:saved?.name||'This browser',title:saved?.title||null,email:null};
+  },
+  async saveProfile(name,title){
+   write(PROFILE_KEY,{name,title:title||null});
+   return {ok:true,name,title:title||null};
+  },
+  async members(){
+   const me=await this.profile();
+   return [{id:me.id,role:'member',name:me.name,title:me.title}];
+  },
+  async setResponsible(voyageId,userId){
+   const meta=entry(voyageId);
+   if(!meta)return {ok:false,reason:'missing'};
+   write(INDEX_KEY,index().map(x=>x.id===voyageId?{...x,responsibleId:userId}:x));
+   return {ok:true,id:voyageId,responsibleId:userId};
+  },
+
+  // The register, assembled from what this browser holds. The voyage document is read for the
+  // vessel and the ports, so a row is recognisable without opening the calculation.
+  async listRegister(){
+   importLegacy();
+   const me=await this.profile();
+   return index().map(meta=>{
+    const document=read(VOYAGE_PREFIX+meta.id)||{};
+    const ports=[...new Set((document.ports||[]).map(p=>p.name).filter(Boolean))].sort();
+    return {
+     id:meta.id,name:meta.name,revision:meta.revision,catalogRevision:meta.catalogRevision,
+     createdAt:meta.createdAt||meta.updatedAt,updatedAt:meta.updatedAt,
+     responsibleId:meta.responsibleId||me.id,
+     responsible:me.name,responsibleTitle:me.title,
+     createdBy:me.name,updatedBy:me.name,
+     vessel:document.vesselSnapshot?.name||null,
+     parcels:(document.lots||[]).filter(l=>l.selected).length,
+     ports:ports.join(' · ')
+    };
+   }).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  },
+
   async listVoyages(){importLegacy();return index();},
   async loadVoyage(voyageId){
    const meta=entry(voyageId);
@@ -122,7 +212,7 @@ function create(options={}){
   },
   async createVoyage(name,document,catalogRevision=0){
    const voyageId=id();
-   const meta={id:voyageId,name,revision:1,catalogRevision,updatedAt:now()};
+   const meta={id:voyageId,name,revision:1,catalogRevision,createdAt:now(),updatedAt:now()};
    write(VOYAGE_PREFIX+voyageId,document);
    write(INDEX_KEY,[...index(),meta]);
    return {ok:true,...meta};
@@ -165,6 +255,6 @@ function create(options={}){
  };
 }
 
-const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY,LEGACY_SEEN};
+const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY,LEGACY_SEEN,PROFILE_KEY,REGISTER_PREFIX,REGISTERS};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageLocal=api;
 })(globalThis);

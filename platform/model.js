@@ -398,7 +398,12 @@ function addLot(s,data){
  const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());
  // Liquids and packaged goods are kept in the catalogue but cannot go in a bulk hold.
  if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');
- if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});
+ // A catalogue entry without an id cannot be stored as its own row, and the registers are
+ // per-row so that two people editing different cargoes do not collide. Give it one.
+ if(!known){
+  let c=1;while(s.cargoTypes.some(x=>x.id==='cargo-'+c))c++;
+  s.cargoTypes.push({id:'cargo-'+c,name:data.name.trim(),group:''});
+ }
 
  const l={
   id:'S'+n,

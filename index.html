@@ -40,6 +40,13 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 .sign-in .button-row{display:flex;gap:8px;margin-top:16px}
 .sign-in-alternative{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
 .sign-in-alternative summary{cursor:pointer;color:var(--muted);font-size:13px}
+.register-table td{vertical-align:top}
+.register-table small{display:block;color:var(--muted);font-size:11px}
+.responsible-cell strong{font-weight:600}
+.register-ports{max-width:260px;overflow-wrap:anywhere}
+.register-actions{white-space:nowrap}
+.register-actions button{margin-left:4px}
+.register-row--open{background:color-mix(in srgb, var(--line) 40%, transparent)}
 .calculation-picker label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .calculation-picker select{min-width:180px;max-width:min(46vw,320px)}.planner-actions[hidden],#planner-footer[hidden]{display:none}.section-intro{margin:4px 0 0;color:var(--muted);font-size:12px}.heading>div h2{margin:0}.empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;padding:56px 20px;border:1px dashed var(--accent);border-radius:12px;color:var(--muted);text-align:center}.empty-state strong{color:var(--text);font-weight:550}.date-range{display:flex;gap:6px}.port-cell{display:flex;gap:8px;align-items:center}
 /* The calculation chain: name, result, and the parts the result is made of. */
@@ -167,7 +174,7 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 <div class="brand-block"><h1>ProjectX</h1><p>Voyage Planner Prototype</p></div>
 <div class="workspace-tabs" role="tablist" aria-label="Sections">
 <button id="tab-planner" role="tab" aria-selected="true">PLANNER</button>
-<button id="tab-sale" role="tab" aria-selected="false">SALE</button>
+<button id="tab-register" role="tab" aria-selected="false">CALCULATIONS</button><button id="tab-sale" role="tab" aria-selected="false">SALE</button>
 <button id="tab-cargo" role="tab" aria-selected="false">CARGO</button>
 <button id="tab-ports" role="tab" aria-selected="false">PORT</button>
 <button id="tab-vessel" role="tab" aria-selected="false">VESSEL</button>
@@ -3449,7 +3456,12 @@ function addLot(s,data){
  const known=s.cargoTypes.find(l=>l.name.toLowerCase()===data.name.trim().toLowerCase());
  // Liquids and packaged goods are kept in the catalogue but cannot go in a bulk hold.
  if(known&&!isBulkCargo(known))throw Error('This product requires another carriage mode and cannot be planned in bulk carrier holds');
- if(!known)s.cargoTypes.push({name:data.name.trim(),group:''});
+ // A catalogue entry without an id cannot be stored as its own row, and the registers are
+ // per-row so that two people editing different cargoes do not collide. Give it one.
+ if(!known){
+  let c=1;while(s.cargoTypes.some(x=>x.id==='cargo-'+c))c++;
+  s.cargoTypes.push({id:'cargo-'+c,name:data.name.trim(),group:''});
+ }
 
  const l={
   id:'S'+n,
@@ -14680,37 +14692,68 @@ const api={create};if(typeof module!=='undefined'&&module.exports)module.exports
 // Every key the model adds later falls to the voyage unless it is named below, so a new field
 // is never silently published into shared organisation data.
 
-// Shared across the organisation. Slowly changing, edited in CARGO / PORT / VESSEL.
-const CATALOG_KEYS=[
+// Shared registers, edited in CARGO / PORT / VESSEL / SALE. Each is a list of records with
+// an id, and each record is stored as its own row: fifteen people editing different cargoes,
+// or one editing a port while another edits a vessel, must not collide. A single document per
+// organisation would refuse the second writer although nothing they touched overlapped.
+const REGISTER_KEYS=[
  'cargoTypes',            // reference cargo register with planning SF and IMSBC group
  'portRecords',           // port and berth register with published size limits
  'vesselProfiles',        // editable vessel particulars
- 'importedCargoSeeds',    // one-off import markers, kept with the catalog they seeded
+ 'sales'                  // concluded deals; a sale outlives any one voyage
+];
+
+// Housekeeping the migrations read: seed markers and revision stamps. One document per
+// organisation is right for these — they are written rarely, and by one person at a time.
+const MARKER_KEYS=[
+ 'importedCargoSeeds',
  'catalogAdditions',
  'portProfileRevision',
  'portBerthRevision',
  'tbnSourceRevision'
 ];
 
-// Concluded deals. Organisation-wide, but their own register: a sale outlives any one voyage.
+// Sales have always been their own document; the other registers and the markers are what
+// "catalogs" means to the adapters. Sales must not appear in both, because split() decides by
+// the first list that matches and would send them to the wrong place.
 const SALES_KEYS=['sales'];
+const CATALOG_KEYS=[...REGISTER_KEYS.filter(k=>!SALES_KEYS.includes(k)),...MARKER_KEYS];
 
 // Everything else is the voyage document, including vesselSnapshot: the particulars pinned
 // into this calculation stay with the calculation and are not re-read from the catalog.
 const copy=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
 
 function split(state){
- const catalogs={},sales={},voyage={};
+ const catalogs={},sales={},voyage={},registers={},markers={};
  for(const key of Object.keys(state)){
   const target=CATALOG_KEYS.includes(key)?catalogs:SALES_KEYS.includes(key)?sales:voyage;
   target[key]=copy(state[key]);
+  if(REGISTER_KEYS.includes(key))registers[key]=copy(state[key])||[];
+  else if(MARKER_KEYS.includes(key))markers[key]=copy(state[key]);
  }
- return {catalogs,sales,voyage};
+ // Every register the state did not carry is an empty one, so a caller can write each of them
+ // without first asking whether it exists.
+ for(const key of REGISTER_KEYS)registers[key]??=[];
+ return {catalogs,sales,voyage,registers,markers};
 }
 
 function merge(parts){
- const {catalogs={},sales={},voyage={}}=parts||{};
- return {...copy(voyage),...copy(catalogs),...copy(sales)};
+ const {catalogs={},sales={},voyage={},registers,markers}=parts||{};
+ // Either shape may be handed in: the whole catalogs document, or the registers and markers
+ // that replaced it. The registers win where both are given, because they are the stored form.
+ return {...copy(voyage),...copy(catalogs),...copy(sales),...copy(markers||{}),...copy(registers||{})};
+}
+
+// A record that cannot be keyed cannot be stored as its own row. Reported rather than dropped:
+// silently losing a catalogue entry is worse than refusing to write it.
+function unkeyed(state){
+ const parts=split(state);
+ const out={};
+ for(const key of REGISTER_KEYS){
+  const missing=(parts.registers[key]||[]).filter(row=>!row||!row.id);
+  if(missing.length)out[key]=missing;
+ }
+ return out;
 }
 
 // Bytes each document contributes, so the split stays measurable instead of asserted.
@@ -14728,7 +14771,7 @@ function sizes(state){
 // voyage is what lets a later catalog correction be detected rather than applied silently.
 function stamp(voyage,catalogRevision){return {...copy(voyage),catalogRevision};}
 
-const api={CATALOG_KEYS,SALES_KEYS,split,merge,sizes,stamp};
+const api={CATALOG_KEYS,SALES_KEYS,REGISTER_KEYS,MARKER_KEYS,split,merge,sizes,stamp,unkeyed};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXSchema=api;
 })(globalThis);
 </script><script>(function(root){
@@ -14745,6 +14788,11 @@ const INDEX_KEY='projectx-voyages-v3';
 const VOYAGE_PREFIX='projectx-voyage-v3:';
 const LEGACY_KEY='projectx-current-v2';   // the prototype's single save; never deleted here
 const LEGACY_SEEN='projectx-legacy-seen-v3';
+const PROFILE_KEY='projectx-profile-v3';
+// The shared registers, a row each — the same shape as the shared adapter stores, so the
+// session behaves identically whichever one is behind it.
+const REGISTER_PREFIX='projectx-register-v3:';
+const REGISTERS=['cargoTypes','portRecords','vesselProfiles','sales'];
 
 const now=()=>new Date().toISOString();
 const id=()=>'v-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
@@ -14775,6 +14823,13 @@ function create(options={}){
   const sales={};
   for(const sale of parts.sales.sales||[])if(sale&&sale.id)sales[sale.id]={document:sale,revision:1,updatedAt:now()};
   write(SALES_KEY,sales);
+  // The registers become rows. A record with no id has no key and is left in the document
+  // rather than stored under an invented one.
+  for(const name of REGISTERS){
+   const held={};
+   for(const row of parts.registers[name]||[])if(row&&row.id)held[row.id]={document:row,revision:1,updatedAt:now()};
+   write(REGISTER_PREFIX+name,held);
+  }
   const existing=index();
   const voyageId=existing[0]?existing[0].id:id();
   const revision=existing[0]?existing[0].revision+1:1;
@@ -14804,9 +14859,15 @@ function create(options={}){
    const document=read(VOYAGE_PREFIX+chosen.id);
    if(!document)return null;
    const sales=read(SALES_KEY)||{};
+   const registers={};
+   for(const name of REGISTERS){
+    const held=read(REGISTER_PREFIX+name)||{};
+    registers[name]=Object.entries(held).map(([id,x])=>({id,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
+   }
    return {
     catalogs:read(CATALOG_KEY)||{document:{},revision:0,updatedAt:null},
     sales:Object.entries(sales).map(([saleId,x])=>({id:saleId,document:x.document,revision:x.revision,updatedAt:x.updatedAt})),
+    registers,
     voyage:{...chosen,document}
    };
   },
@@ -14821,6 +14882,35 @@ function create(options={}){
    const next={document,revision:current.revision+1,updatedAt:now()};
    write(CATALOG_KEY,next);
    return {ok:true,revision:next.revision,updatedAt:next.updatedAt};
+  },
+
+  async loadRegisters(){
+   importLegacy();
+   const out={};
+   for(const name of REGISTERS){
+    const held=read(REGISTER_PREFIX+name)||{};
+    out[name]=Object.entries(held).map(([id,x])=>({id,document:x.document,revision:x.revision,updatedAt:x.updatedAt}));
+   }
+   return out;
+  },
+  async saveRegisterRow(register,id,document,revision){
+   if(!REGISTERS.includes(register))return {ok:false,reason:'unknown-register'};
+   const key=REGISTER_PREFIX+register;
+   const held=read(key)||{};
+   const current=held[id];
+   if(current&&revision!==undefined&&revision!==current.revision)
+    return {ok:false,reason:'conflict',current:{id,...current}};
+   const next={document,revision:(current?.revision||0)+1,updatedAt:now()};
+   write(key,{...held,[id]:next});
+   return {ok:true,id,revision:next.revision,updatedAt:next.updatedAt};
+  },
+  async deleteRegisterRow(register,id){
+   const key=REGISTER_PREFIX+register;
+   const held=read(key)||{};
+   if(!held[id])return {ok:false,reason:'missing'};
+   delete held[id];
+   write(key,held);
+   return {ok:true};
   },
 
   // Sales are one row per deal, so two traders editing different deals do not collide.
@@ -14845,6 +14935,49 @@ function create(options={}){
    return {ok:true};
   },
 
+  // There are no accounts in this browser, so there is one person: whoever is sitting here.
+  // The contract is the same as the shared adapter's, so the register screen does not need to
+  // know which one it is talking to.
+  async profile(){
+   const saved=read(PROFILE_KEY);
+   return {id:'local',name:saved?.name||'This browser',title:saved?.title||null,email:null};
+  },
+  async saveProfile(name,title){
+   write(PROFILE_KEY,{name,title:title||null});
+   return {ok:true,name,title:title||null};
+  },
+  async members(){
+   const me=await this.profile();
+   return [{id:me.id,role:'member',name:me.name,title:me.title}];
+  },
+  async setResponsible(voyageId,userId){
+   const meta=entry(voyageId);
+   if(!meta)return {ok:false,reason:'missing'};
+   write(INDEX_KEY,index().map(x=>x.id===voyageId?{...x,responsibleId:userId}:x));
+   return {ok:true,id:voyageId,responsibleId:userId};
+  },
+
+  // The register, assembled from what this browser holds. The voyage document is read for the
+  // vessel and the ports, so a row is recognisable without opening the calculation.
+  async listRegister(){
+   importLegacy();
+   const me=await this.profile();
+   return index().map(meta=>{
+    const document=read(VOYAGE_PREFIX+meta.id)||{};
+    const ports=[...new Set((document.ports||[]).map(p=>p.name).filter(Boolean))].sort();
+    return {
+     id:meta.id,name:meta.name,revision:meta.revision,catalogRevision:meta.catalogRevision,
+     createdAt:meta.createdAt||meta.updatedAt,updatedAt:meta.updatedAt,
+     responsibleId:meta.responsibleId||me.id,
+     responsible:me.name,responsibleTitle:me.title,
+     createdBy:me.name,updatedBy:me.name,
+     vessel:document.vesselSnapshot?.name||null,
+     parcels:(document.lots||[]).filter(l=>l.selected).length,
+     ports:ports.join(' · ')
+    };
+   }).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  },
+
   async listVoyages(){importLegacy();return index();},
   async loadVoyage(voyageId){
    const meta=entry(voyageId);
@@ -14855,7 +14988,7 @@ function create(options={}){
   },
   async createVoyage(name,document,catalogRevision=0){
    const voyageId=id();
-   const meta={id:voyageId,name,revision:1,catalogRevision,updatedAt:now()};
+   const meta={id:voyageId,name,revision:1,catalogRevision,createdAt:now(),updatedAt:now()};
    write(VOYAGE_PREFIX+voyageId,document);
    write(INDEX_KEY,[...index(),meta]);
    return {ok:true,...meta};
@@ -14898,7 +15031,7 @@ function create(options={}){
  };
 }
 
-const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY,LEGACY_SEEN};
+const api={create,CATALOG_KEY,SALES_KEY,INDEX_KEY,VOYAGE_PREFIX,LEGACY_KEY,LEGACY_SEEN,PROFILE_KEY,REGISTER_PREFIX,REGISTERS};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageLocal=api;
 })(globalThis);
 </script><script>(function(root){
@@ -14911,7 +15044,12 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Proj
 // Access is enforced by the policies in the database, not by this file. Nothing here is a
 // permission check: an adapter that forgot a filter would still be refused by the server.
 
-const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots',memberships:'memberships'};
+const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voyage_snapshots',
+ memberships:'memberships',profiles:'profiles',register:'voyage_register',members:'organisation_members'};
+
+// The shared registers, a row each. Sales were always this shape; the other three joined
+// them so that two people editing different records cannot collide.
+const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesselProfiles:'vessel_profiles',sales:'sales'};
 
 // A deployment that has its keys but not its schema is the common first failure, and the
 // raw PostgREST wording ("relation ... does not exist") does not say what to do about it.
@@ -15026,6 +15164,56 @@ function create(options={}){
    return {ok:true,revision:data.revision,updatedAt:data.updated_at};
   },
 
+  // Every shared register, read as rows. A caller gets the same shape for all four, so the
+  // session does not need a special case for any of them.
+  async loadRegisters(){
+   const out={};
+   for(const [name,tableName] of Object.entries(REGISTER_TABLES)){
+    const {data,error}=await withOrg(scoped(tableName).select('id,document,revision,updated_at'))
+     .order('updated_at',{ascending:false});
+    if(error)return fail(error);
+    out[name]=(data||[]).map(x=>({id:x.id,document:x.document,revision:x.revision,updatedAt:x.updated_at}));
+   }
+   return out;
+  },
+
+  // One record of one register. Revision 0 means it is new; anything else must match what was
+  // read, so a record changed by somebody else is reported rather than overwritten.
+  async saveRegisterRow(register,id,document,revision){
+   const tableName=REGISTER_TABLES[register];
+   if(!tableName)return {ok:false,reason:'unknown-register',error:'No register named '+register};
+   if(!revision){
+    const row={id,document,revision:1};
+    if(orgId)row.org_id=orgId;
+    const {data,error}=await scoped(tableName).insert(row).select('id,revision,updated_at').maybeSingle();
+    if(error){
+     // The primary key is (org_id, id), so a race on a new record lands here. The loser reads
+     // what the winner wrote and resolves it, rather than reporting a database error.
+     const rows=await this.loadRegisters();
+     const current=rows&&rows[register]&&rows[register].find(x=>x.id===id);
+     return current?{ok:false,reason:'conflict',current}:fail(error);
+    }
+    return {ok:true,id:data.id,revision:data.revision,updatedAt:data.updated_at};
+   }
+   const {data,error}=await withOrg(
+    scoped(tableName).update({document,revision:revision+1}).eq('id',id).eq('revision',revision)
+   ).select('id,revision,updated_at').maybeSingle();
+   if(error)return fail(error);
+   if(!data){
+    const rows=await this.loadRegisters();
+    const current=rows&&rows[register]&&rows[register].find(x=>x.id===id);
+    return current?{ok:false,reason:'conflict',current}:{ok:false,reason:'missing'};
+   }
+   return {ok:true,id:data.id,revision:data.revision,updatedAt:data.updated_at};
+  },
+
+  async deleteRegisterRow(register,id){
+   const tableName=REGISTER_TABLES[register];
+   if(!tableName)return {ok:false,reason:'unknown-register'};
+   const {error}=await withOrg(scoped(tableName).delete().eq('id',id));
+   return error?fail(error):{ok:true};
+  },
+
   // Sales are one row per deal, so two traders editing different deals do not collide.
   async listSales(){
    const {data,error}=await withOrg(scoped(TABLES.sales).select('id,document,revision,updated_at'))
@@ -15055,6 +15243,58 @@ function create(options={}){
   async deleteSale(saleId){
    const {error}=await withOrg(scoped(TABLES.sales).delete().eq('id',saleId));
    return error?fail(error):{ok:true};
+  },
+
+  // The register: one row per calculation with the names already resolved, so a screen that
+  // shows who is responsible cannot fall back to showing a bare identifier.
+  async listRegister(){
+   const {data,error}=await withOrg(scoped(TABLES.register).select(
+    'id,name,revision,catalog_revision,created_at,updated_at,responsible_id,responsible_name,responsible_title,'+
+    'created_by_name,updated_by_name,vessel_name,parcels,ports'))
+    .order('updated_at',{ascending:false});
+   if(error)return fail(error);
+   return (data||[]).map(x=>({
+    id:x.id,name:x.name,revision:x.revision,catalogRevision:x.catalog_revision,
+    createdAt:x.created_at,updatedAt:x.updated_at,
+    responsibleId:x.responsible_id,responsible:x.responsible_name,responsibleTitle:x.responsible_title,
+    createdBy:x.created_by_name,updatedBy:x.updated_by_name,
+    vessel:x.vessel_name,parcels:Number(x.parcels)||0,ports:x.ports||''
+   }));
+  },
+
+  // Who is in the organisation, for handing a calculation over.
+  async members(){
+   const {data,error}=await withOrg(scoped(TABLES.members).select('user_id,role,display_name,job_title'))
+    .order('display_name',{ascending:true});
+   if(error)return fail(error);
+   return (data||[]).map(x=>({id:x.user_id,role:x.role,name:x.display_name,title:x.job_title}));
+  },
+
+  // Handing over is a change of who answers for the work, not of who may edit it: the
+  // row-level policies stay as they were, and any member can still open the calculation.
+  async setResponsible(voyageId,userId){
+   const {data,error}=await withOrg(scoped(TABLES.voyages).update({responsible_id:userId}).eq('id',voyageId))
+    .select('id,responsible_id').maybeSingle();
+   if(error)return fail(error);
+   return data?{ok:true,id:data.id,responsibleId:data.responsible_id}:{ok:false,reason:'missing'};
+  },
+
+  // A person's own profile. Nobody renames a colleague; the policy enforces that.
+  async profile(){
+   const who=await this.user();
+   if(!who)return null;
+   const {data,error}=await scoped(TABLES.profiles).select('user_id,display_name,job_title').eq('user_id',who.id).maybeSingle();
+   if(error)return fail(error);
+   return data?{id:data.user_id,name:data.display_name,title:data.job_title,email:who.email}:null;
+  },
+  async saveProfile(name,title){
+   const who=await this.user();
+   if(!who)return {ok:false,reason:'signed-out'};
+   const {data,error}=await scoped(TABLES.profiles)
+    .update({display_name:name,job_title:title||null,updated_at:new Date().toISOString()})
+    .eq('user_id',who.id).select('user_id,display_name,job_title').maybeSingle();
+   if(error)return fail(error);
+   return data?{ok:true,name:data.display_name,title:data.job_title}:{ok:false,reason:'missing'};
   },
 
   async listVoyages(){
@@ -15176,36 +15416,68 @@ function create(storage,options={}){
  let writtenCatalogs=null;                        // last catalogs written, to avoid rewriting them
  let writtenSales=null;                           // last sale documents written, without their versions
  const saleRevisions=new Map();                   // sale id -> version last seen from storage
+ // The shared registers are rows, so each is tracked the way sales are: what was last written,
+ // and what version each record was at. That is what lets a keystroke in one cargo leave the
+ // other ninety-six untouched, and two people edit different records without colliding.
+ const writtenRegisters=new Map();                // register name -> JSON of what was written
+ const registerRevisions=new Map();               // register name -> Map(id -> version)
  let inFlight=null,queued=null;
 
- const assemble=(catalogs,sales,voyage)=>Schema.merge({
+ const assemble=(catalogs,sales,voyage,registers)=>Schema.merge({
   catalogs,
   sales:{sales},
-  voyage
+  voyage,
+  registers
  });
 
- function adopt(catalogs,rows,record){
+ function adopt(catalogs,rows,record,registers){
   const sales=salesOf(rows);
   catalogRevision=catalogs.revision;
   writtenCatalogs=stable(catalogs.document);
   writtenSales=stable(sales);
   saleRevisions.clear();
   if(Array.isArray(rows))for(const row of rows)saleRevisions.set(row.id,row.revision);
+
+  // What writeOnce will send has to be what adopt recorded, or the first save rewrites the
+  // catalogs document for no reason — and on a shared deployment collides with everyone else
+  // doing the same. With per-row registers in use, only the markers travel in that document.
+  if(registers){
+   const markers={};
+   for(const key of Schema.MARKER_KEYS)
+    if(catalogs.document&&Object.hasOwn(catalogs.document,key))markers[key]=catalogs.document[key];
+   writtenCatalogs=stable(markers);
+  }
+
+  writtenRegisters.clear();registerRevisions.clear();
+  const held={};
+  // An adapter that does not answer with registers leaves them alone. Absent and empty are
+  // different: blanking a register because it was not read would erase the organisation's
+  // catalogue on the next write.
+  for(const name of Schema.REGISTER_KEYS){
+   if(!registers||!Array.isArray(registers[name]))continue;
+   const list=registers[name];
+   held[name]=list.map(r=>r.document);
+   writtenRegisters.set(name,stable(held[name]));
+   registerRevisions.set(name,new Map(list.map(r=>[r.id,r.revision])));
+  }
+
   current=record?{id:record.id,name:record.name,revision:record.revision,catalogRevision:record.catalogRevision}:null;
-  return assemble(catalogs.document,sales,record?record.document:fresh());
+  return assemble(catalogs.document,sales,record?record.document:fresh(),held);
  }
 
  const salesOf=rows=>Array.isArray(rows)?rows.map(row=>row.document):[];
 
  // A blank workspace still needs one calculation to write into, otherwise the first edit has
  // nowhere to go and the user would have to know to create one.
- async function ensureVoyage(catalogs,rows,list,preferred){
+ async function ensureVoyage(catalogs,rows,list,preferred,registers){
   const chosen=list.find(x=>x.id===preferred)||list[0];
   if(chosen){
    const record=await storage.loadVoyage(chosen.id);
-   if(record)return adopt(catalogs,rows,record);
+   if(record)return adopt(catalogs,rows,record,registers);
   }
-  const state=adopt(catalogs,rows,null);
+  // Nothing is stored yet, so the registers come from the model's seed rather than from
+  // storage: empty rows here mean "not written", not "the organisation has no cargoes".
+  const state=adopt(catalogs,rows,null,null);
   const parts=Schema.split(state);
   const created=await storage.createVoyage(options.firstName||'Calculation 1',parts.voyage,catalogs.revision);
   current={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision??catalogs.revision};
@@ -15213,11 +15485,29 @@ function create(storage,options={}){
   // A new workspace starts from the model's seeded registers. Store them now rather than on
   // whichever edit happens to come first, so what is on disk matches what is on screen.
   // A failure here leaves the workspace half-seeded, so it is reported rather than swallowed.
-  if(stable(parts.catalogs)!==writtenCatalogs){
-   const written=await storage.saveCatalogs(parts.catalogs,catalogRevision);
+  const perRow=typeof storage.saveRegisterRow==='function';
+  const catalogsDocument=perRow?parts.markers:parts.catalogs;
+  if(stable(catalogsDocument)!==writtenCatalogs){
+   const written=await storage.saveCatalogs(catalogsDocument,catalogRevision);
    if(!written.ok)throw Error(written.error||'The reference catalogs could not be stored');
-   catalogRevision=written.revision;writtenCatalogs=stable(parts.catalogs);
+   catalogRevision=written.revision;writtenCatalogs=stable(catalogsDocument);
   }
+
+  if(perRow){
+   for(const name of Schema.REGISTER_KEYS){
+    const versions=new Map();
+    for(const row of parts.registers[name]||[]){
+     if(!row||!row.id)continue;
+     const written=await storage.saveRegisterRow(name,row.id,row,0);
+     if(!written.ok)throw Error(written.error||('The '+name+' register could not be stored'));
+     versions.set(row.id,written.revision);
+    }
+    registerRevisions.set(name,versions);
+    writtenRegisters.set(name,stable(parts.registers[name]||[]));
+   }
+   return state;
+  }
+
   for(const sale of parts.sales.sales||[]){
    const written=await storage.saveSale(sale.id,sale,0);
    if(!written.ok)throw Error(written.error||'The sales register could not be stored');
@@ -15239,17 +15529,19 @@ function create(storage,options={}){
    if(typeof storage.openSync!=='function')return null;
    const opened=storage.openSync(preferred);
    if(!opened)return null;
-   return {state:adopt(opened.catalogs,opened.sales,opened.voyage),voyage:current};
+   return {state:adopt(opened.catalogs,opened.sales,opened.voyage,opened.registers),voyage:current};
   },
 
   async open(preferred){
    const catalogs=await storage.loadCatalogs();
    if(catalogs&&catalogs.ok===false)return {error:catalogs.error||'The workspace could not be opened'};
-   const rows=await storage.listSales();
+   const registers=typeof storage.loadRegisters==='function'?await storage.loadRegisters():null;
+   if(registers&&registers.ok===false)return {error:registers.error||'The shared registers could not be opened'};
+   const rows=registers&&registers.sales?registers.sales:await storage.listSales();
    if(rows&&rows.ok===false)return {error:rows.error||'The sales register could not be opened'};
    const list=await storage.listVoyages();
    if(list&&list.ok===false)return {error:list.error||'The calculations could not be listed'};
-   const state=await ensureVoyage(catalogs,rows,list,preferred);
+   const state=await ensureVoyage(catalogs,rows,list,preferred,registers);
    return {state,voyage:current};
   },
 
@@ -15292,8 +15584,9 @@ function create(storage,options={}){
    const record=await storage.loadVoyage(id);
    if(!record)return {ok:false,reason:'missing'};
    const catalogs=await storage.loadCatalogs();
-   const rows=await storage.listSales();
-   return {ok:true,state:adopt(catalogs,rows,record),voyage:current};
+   const registers=typeof storage.loadRegisters==='function'?await storage.loadRegisters():null;
+   const rows=registers&&registers.sales?registers.sales:await storage.listSales();
+   return {ok:true,state:adopt(catalogs,rows,record,registers),voyage:current};
   },
 
   async snapshot(label){
@@ -15304,18 +15597,54 @@ function create(storage,options={}){
 
  // One write of one state. Shared registers are only sent when they actually changed, so a
  // keystroke in the voyage does not rewrite the organisation's catalogs.
+ // One record of one register. Only what changed is sent, so a keystroke in one cargo leaves
+ // the other ninety-six alone and two people editing different records never meet.
+ async function writeRegister(name,rows){
+  if(!writtenRegisters.has(name))return null;                 // not read, so not ours to write
+  if(stable(rows)===writtenRegisters.get(name))return null;
+  const previous=JSON.parse(writtenRegisters.get(name)||'[]');
+  const versions=registerRevisions.get(name)||new Map();
+  for(const row of rows){
+   if(!row||!row.id)continue;                                 // no key, no row; reported by unkeyed()
+   const before=previous.find(x=>x&&x.id===row.id);
+   if(before&&stable(before)===stable(row))continue;
+   const written=await storage.saveRegisterRow(name,row.id,row,versions.get(row.id)||0);
+   if(!written.ok)return written;
+   versions.set(row.id,written.revision);
+  }
+  for(const before of previous)if(before&&before.id&&!rows.some(x=>x&&x.id===before.id)){
+   await storage.deleteRegisterRow(name,before.id);
+   versions.delete(before.id);
+  }
+  registerRevisions.set(name,versions);
+  writtenRegisters.set(name,stable(rows));
+  return null;
+ }
+
  async function writeOnce(state){
   const parts=Schema.split(state);
   const sales=parts.sales.sales||[];
+  const perRow=typeof storage.saveRegisterRow==='function';
 
-  if(stable(parts.catalogs)!==writtenCatalogs){
-   const written=await storage.saveCatalogs(parts.catalogs,catalogRevision);
+  // The catalogs document is the housekeeping markers once the registers are rows of their
+  // own; on an adapter that has no per-row registers it is still everything.
+  const catalogsDocument=perRow?parts.markers:parts.catalogs;
+  if(stable(catalogsDocument)!==writtenCatalogs){
+   const written=await storage.saveCatalogs(catalogsDocument,catalogRevision);
    if(!written.ok)return written;
    catalogRevision=written.revision;
-   writtenCatalogs=stable(parts.catalogs);
+   writtenCatalogs=stable(catalogsDocument);
   }
 
-  if(stable(sales)!==writtenSales){
+  if(perRow){
+   for(const name of Schema.REGISTER_KEYS){
+    const failed=await writeRegister(name,parts.registers[name]||[]);
+    if(failed)return failed;
+   }
+  }
+
+  // Sales predate the per-row registers and keep their own path for an adapter without them.
+  if(!perRow&&stable(sales)!==writtenSales){
    const previous=JSON.parse(writtenSales||'[]');
    for(const sale of sales){
     const before=previous.find(x=>x.id===sale.id);
@@ -15963,7 +16292,9 @@ function create(env){
   const preferred=organisations.find(x=>x.id===storage.orgId)||organisations[0];
   storage.useOrganisation(preferred.id);
   showChrome(true);
-  await onSignedIn({email:who.user.email,organisation:preferred.name});
+  // The id travels with the account: the register counts what is yours by it, and a name
+  // is not an identity.
+  await onSignedIn({id:who.user.id,email:who.user.email,organisation:preferred.name,organisationId:preferred.id});
   return {ok:true,user:who.user,organisation:preferred};
  }
 
@@ -16197,9 +16528,95 @@ function create(env){
 const api={create};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXPlannerView=api;
 })(globalThis);
+</script><script>(function(root){
+'use strict';
+// The register of calculations: every calculation the organisation holds, who answers for it,
+// and when it was last touched.
+//
+// A dropdown is enough to switch between two calculations. It is not enough to run a desk:
+// fifteen people need to see what exists, whose it is, and what it is about before opening it.
+// That is why a row carries the vessel, the parcels and the ports — recognising a calculation
+// should not require loading it.
+
+function create(env){
+ const {esc,fmt,table}=env;
+
+ // A date is shown as the day, because the question a register answers is "is this current",
+ // not "at what second was it written".
+ const day=value=>{
+  if(!value)return '—';
+  const d=new Date(value);
+  return Number.isFinite(d.getTime())
+   ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
+   : '—';
+ };
+
+ const COLUMNS=['Calculation','Responsible specialist','Vessel','Ports','Parcels','Last change',''];
+
+ const responsibleCell=row=>{
+  // An unassigned calculation is stated as unassigned rather than left blank: a blank cell
+  // reads as a rendering fault, and this is a real condition somebody has to resolve.
+  const name=row.responsible||'Unassigned';
+  const title=row.responsibleTitle?`<small>${esc(row.responsibleTitle)}</small>`:'';
+  return `<td class="responsible-cell"><strong>${esc(name)}</strong>${title}</td>`;
+ };
+
+ const registerRow=(row,openId)=>
+  `<tr class="register-row ${row.id===openId?'register-row--open':''}" data-calculation="${esc(row.id)}">`+
+  `<td class="name"><button class="text-action" data-action="open-calculation" data-id="${esc(row.id)}">${esc(row.name)}</button>`+
+  (row.id===openId?'<small>Open</small>':'')+`</td>`+
+  responsibleCell(row)+
+  `<td>${row.vessel?esc(row.vessel):'—'}</td>`+
+  `<td class="register-ports">${row.ports?esc(row.ports):'—'}</td>`+
+  `<td>${row.parcels||'—'}</td>`+
+  `<td>${esc(day(row.updatedAt))}<small>${esc(row.updatedBy||'')}</small></td>`+
+  `<td class="register-actions">`+
+  `<button data-action="assign-responsible" data-id="${esc(row.id)}">Hand over</button>`+
+  `<button data-action="rename-calculation-row" data-id="${esc(row.id)}">Rename</button>`+
+  `<button data-action="delete-calculation-row" data-id="${esc(row.id)}">Delete</button>`+
+  `</td></tr>`;
+
+ const EMPTY='<div class="empty-state"><strong>No calculations yet</strong><span>Create the first one, and it will be listed here with whoever is responsible for it.</span></div>';
+
+ // A failed read is reported as a failure. An empty register and an unreadable one are not
+ // the same thing, and a desk must not be told its work is gone when it is merely unreachable.
+ function render(rows,openId,account){
+  if(rows&&rows.ok===false)
+   return `<section><div class="heading"><div><h2>CALCULATIONS</h2></div></div>`+
+    `<p class="error">${esc(rows.error||'The register could not be read.')}</p></section>`;
+
+  const list=Array.isArray(rows)?rows:[];
+  const mine=account?list.filter(r=>r.responsibleId===account.id).length:0;
+  const summary=list.length
+   ? `${list.length} calculation${list.length===1?'':'s'}`+(account?` · ${mine} yours`:'')
+   : '';
+
+  return `<section>`+
+   `<div class="heading"><div><h2>CALCULATIONS</h2>`+
+   `<p class="section-intro">Every calculation in the organisation, and who answers for it. ${esc(summary)}</p></div>`+
+   `<button data-action="new-calculation-row">+ New calculation</button></div>`+
+   (list.length?table(COLUMNS,list.map(row=>registerRow(row,openId)),'register-table'):EMPTY)+
+   `<p class="form-note">Responsibility records who holds the work. It does not restrict who may open or edit a calculation, and it is not the commercial approval, which stays with the head of freight.</p>`+
+   `</section>`;
+ }
+
+ // The hand-over dialog's body. The list is the organisation's members, so a calculation
+ // cannot be handed to somebody who is not in it.
+ const handOver=(row,members,selectedId)=>
+  `<p>Who answers for <strong>${esc(row.name)}</strong>?</p>`+
+  `<label class="field">Responsible specialist<select name="responsible">`+
+  members.map(m=>`<option value="${esc(m.id)}" ${m.id===selectedId?'selected':''}>${esc(m.name)}${m.title?' · '+esc(m.title):''}</option>`).join('')+
+  `</select></label>`;
+
+ return {render,handOver,day};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXRegisterView=api;
+})(globalThis);
 </script><script>(function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','sale','cargo','ports','vessel','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','register','sale','cargo','ports','vessel','market','guide'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -16279,7 +16696,7 @@ const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,
  table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
  shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
 const {intakeKey}=plannerView;
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
  const html=plannerView.markup(r,b,ship,lots);
  $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
@@ -16314,6 +16731,11 @@ $('app').addEventListener('pointerdown',e=>{
  svg.addEventListener('pointermove',move);svg.addEventListener('pointerup',stop);svg.addEventListener('pointercancel',stop);
 });
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
+ case'open-calculation':openCalculation(el.dataset.id).then(()=>{currentTab='register'===currentTab?'planner':currentTab;syncWorkspace();render();});return;
+ case'assign-responsible':assignResponsible(el.dataset.id);return;
+ case'new-calculation-row':newCalculation().then(refreshRegister);return;
+ case'rename-calculation-row':renameCalculation(el.dataset.id).then(refreshRegister);return;
+ case'delete-calculation-row':deleteCalculation(el.dataset.id).then(refreshRegister);return;
  case'map-zoom':zoomMap(Number(el.dataset.factor));return;
  case'map-reset':resetMap();return;
  case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;
@@ -16400,38 +16822,97 @@ async function openCalculation(id){
  if(!result.ok||!adopt(result)){$('status').textContent='That calculation could not be opened.';return;}
  ensureLegs();syncWorkspace();render();await refreshCalculations();
 }
+// CALCULATIONS: the register of everything the organisation holds. It is read fresh each time
+// the tab is drawn, because on a shared deployment a colleague may have added one since.
+const registerView=window.ProjectXRegisterView.create({esc,fmt,table});
+let registerRows=null,registerMembers=null;
+
+function renderRegister(){
+ $('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+ if(registerRows===null)refreshRegister();
+}
+async function refreshRegister(){
+ try{registerRows=await storage.listRegister();}
+ catch(e){registerRows={ok:false,error:e.message};}
+ if(currentTab==='register')$('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+}
+async function membersList(){
+ if(registerMembers)return registerMembers;
+ try{const list=await storage.members();registerMembers=Array.isArray(list)?list:[];}
+ catch{registerMembers=[];}
+ return registerMembers;
+}
+
+// Handing a calculation over changes who answers for it, not who may edit it.
+async function assignResponsible(id){
+ const rows=Array.isArray(registerRows)?registerRows:[];
+ const row=rows.find(r=>r.id===id);
+ if(!row)return;
+ const members=await membersList();
+ if(!members.length){$('status').textContent='No colleagues are listed for this organisation yet.';return;}
+ const current=Math.max(1,members.findIndex(m=>m.id===row.responsibleId)+1);
+ const chosen=prompt('Responsible specialist for "'+row.name+'"\n\n'+
+  members.map((m,i)=>(i+1)+'. '+m.name+(m.title?' · '+m.title:'')).join('\n')+
+  '\n\nEnter the number',String(current));
+ if(chosen===null)return;
+ const picked=members[Number(chosen)-1];
+ if(!picked){$('status').textContent='That is not one of the listed people.';return;}
+ const result=await storage.setResponsible(id,picked.id);
+ if(!result.ok){$('status').textContent='The calculation could not be handed over.';return;}
+ $('status').textContent='"'+row.name+'" is now with '+picked.name+'.';
+ await refreshRegister();
+}
+
+// Creating, renaming and deleting a calculation are the same three operations whether they
+// are reached from the picker beside the planner or from the register. They are named once.
+async function newCalculation(){
+ const name=prompt('Name for the new calculation','Calculation');
+ if(!name||!name.trim())return false;
+ // The registers stay shared; only the voyage starts empty.
+ const blank=M.initial();
+ for(const shared of ['cargoTypes','vesselProfiles','portRecords','sales'])blank[shared]=JSON.parse(JSON.stringify(state[shared]));
+ const created=await session.createNamed(name.trim(),blank);
+ if(created.ok===false){$('status').textContent='The calculation could not be created.';return false;}
+ state=blank;voyage={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision};
+ remember(voyage.id);ensureLegs();saveCalculation(true);syncWorkspace();render();await refreshCalculations();
+ return true;
+}
+
+async function renameCalculation(id){
+ const target=id||(voyage&&voyage.id);
+ if(!target)return false;
+ const rows=Array.isArray(registerRows)?registerRows:[];
+ const current=(rows.find(r=>r.id===target)||{}).name||(voyage&&voyage.id===target?voyage.name:'');
+ const name=prompt('Rename this calculation',current);
+ if(!name||!name.trim())return false;
+ const result=await session.rename(target,name.trim());
+ if(!result.ok){$('status').textContent='The calculation could not be renamed.';return false;}
+ if(voyage&&voyage.id===target)voyage={...voyage,name:name.trim()};
+ await refreshCalculations();
+ return true;
+}
+
+async function deleteCalculation(id){
+ const target=id||(voyage&&voyage.id);
+ if(!target)return false;
+ const list=await session.list();
+ // The last calculation is kept: deleting it would leave the next edit with nowhere to go.
+ if(list.length<2){$('status').textContent='This is the only calculation. Use Clear calculation to empty it.';return false;}
+ const name=(list.find(x=>x.id===target)||{}).name||'this calculation';
+ if(!confirm('Delete the calculation "'+name+'"? This cannot be undone.'))return false;
+ const removed=await session.remove(target);
+ if(!removed.ok){$('status').textContent='The calculation could not be deleted.';return false;}
+ if(voyage&&voyage.id===target){voyage=null;await openCalculation(list.find(item=>item.id!==target).id);}
+ await refreshCalculations();
+ return true;
+}
+
 function setupCalculations(){
  const select=$('calculation');
  if(select)select.onchange=()=>{openCalculation(select.value);};
- if($('new-calculation'))$('new-calculation').onclick=async()=>{
-  const name=prompt('Name for the new calculation','Calculation');
-  if(!name||!name.trim())return;
-  // The registers stay shared; only the voyage starts empty.
-  const blank=M.initial();
-  for(const shared of ['cargoTypes','vesselProfiles','portRecords','sales'])blank[shared]=JSON.parse(JSON.stringify(state[shared]));
-  const created=await session.createNamed(name.trim(),blank);
-  if(created.ok===false){$('status').textContent='The calculation could not be created.';return;}
-  state=blank;voyage={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision};
-  remember(voyage.id);ensureLegs();saveCalculation(true);syncWorkspace();render();await refreshCalculations();
- };
- if($('rename-calculation'))$('rename-calculation').onclick=async()=>{
-  if(!voyage)return;
-  const name=prompt('Rename this calculation',voyage.name);
-  if(!name||!name.trim())return;
-  const result=await session.rename(voyage.id,name.trim());
-  if(!result.ok){$('status').textContent='The calculation could not be renamed.';return;}
-  voyage={...voyage,name:name.trim()};await refreshCalculations();
- };
- if($('delete-calculation'))$('delete-calculation').onclick=async()=>{
-  if(!voyage)return;
-  const list=await session.list();
-  if(list.length<2){$('status').textContent='This is the only calculation. Use Clear calculation to empty it.';return;}
-  if(!confirm('Delete the calculation "'+voyage.name+'"? This cannot be undone.'))return;
-  const removed=await session.remove(voyage.id);
-  if(!removed.ok){$('status').textContent='The calculation could not be deleted.';return;}
-  const next=list.find(item=>item.id!==voyage.id);
-  voyage=null;await openCalculation(next.id);await refreshCalculations();
- };
+ if($('new-calculation'))$('new-calculation').onclick=()=>newCalculation();
+ if($('rename-calculation'))$('rename-calculation').onclick=()=>renameCalculation();
+ if($('delete-calculation'))$('delete-calculation').onclick=()=>deleteCalculation();
 }
 
 window.ProjectXApp={

@@ -87,7 +87,9 @@ function create(env){
   const preferred=organisations.find(x=>x.id===storage.orgId)||organisations[0];
   storage.useOrganisation(preferred.id);
   showChrome(true);
-  await onSignedIn({email:who.user.email,organisation:preferred.name});
+  // The id travels with the account: the register counts what is yours by it, and a name
+  // is not an identity.
+  await onSignedIn({id:who.user.id,email:who.user.email,organisation:preferred.name,organisationId:preferred.id});
   return {ok:true,user:who.user,organisation:preferred};
  }
 

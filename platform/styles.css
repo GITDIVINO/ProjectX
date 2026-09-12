@@ -34,6 +34,13 @@ main{max-width:1480px;margin:auto;padding:18px 36px 28px}.planner-actions{displa
 .sign-in .button-row{display:flex;gap:8px;margin-top:16px}
 .sign-in-alternative{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
 .sign-in-alternative summary{cursor:pointer;color:var(--muted);font-size:13px}
+.register-table td{vertical-align:top}
+.register-table small{display:block;color:var(--muted);font-size:11px}
+.responsible-cell strong{font-weight:600}
+.register-ports{max-width:260px;overflow-wrap:anywhere}
+.register-actions{white-space:nowrap}
+.register-actions button{margin-left:4px}
+.register-row--open{background:color-mix(in srgb, var(--line) 40%, transparent)}
 .calculation-picker label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .calculation-picker select{min-width:180px;max-width:min(46vw,320px)}.planner-actions[hidden],#planner-footer[hidden]{display:none}.section-intro{margin:4px 0 0;color:var(--muted);font-size:12px}.heading>div h2{margin:0}.empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;padding:56px 20px;border:1px dashed var(--accent);border-radius:12px;color:var(--muted);text-align:center}.empty-state strong{color:var(--text);font-weight:550}.date-range{display:flex;gap:6px}.port-cell{display:flex;gap:8px;align-items:center}
 /* The calculation chain: name, result, and the parts the result is made of. */

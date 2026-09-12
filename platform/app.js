@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','sale','cargo','ports','vessel','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','register','sale','cargo','ports','vessel','market','guide'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -80,7 +80,7 @@ const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,
  table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
  shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
 const {intakeKey}=plannerView;
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
  const html=plannerView.markup(r,b,ship,lots);
  $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
@@ -115,6 +115,11 @@ $('app').addEventListener('pointerdown',e=>{
  svg.addEventListener('pointermove',move);svg.addEventListener('pointerup',stop);svg.addEventListener('pointercancel',stop);
 });
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
+ case'open-calculation':openCalculation(el.dataset.id).then(()=>{currentTab='register'===currentTab?'planner':currentTab;syncWorkspace();render();});return;
+ case'assign-responsible':assignResponsible(el.dataset.id);return;
+ case'new-calculation-row':newCalculation().then(refreshRegister);return;
+ case'rename-calculation-row':renameCalculation(el.dataset.id).then(refreshRegister);return;
+ case'delete-calculation-row':deleteCalculation(el.dataset.id).then(refreshRegister);return;
  case'map-zoom':zoomMap(Number(el.dataset.factor));return;
  case'map-reset':resetMap();return;
  case'new-port':state.portRecords.push({id:'P'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:'',country:'',terminal:'',berth:'Berth 1',notes:'',da:null,...Object.fromEntries(M.PORT_LIMIT_FIELDS.map(k=>[k,null]))});break;
@@ -201,38 +206,97 @@ async function openCalculation(id){
  if(!result.ok||!adopt(result)){$('status').textContent='That calculation could not be opened.';return;}
  ensureLegs();syncWorkspace();render();await refreshCalculations();
 }
+// CALCULATIONS: the register of everything the organisation holds. It is read fresh each time
+// the tab is drawn, because on a shared deployment a colleague may have added one since.
+const registerView=window.ProjectXRegisterView.create({esc,fmt,table});
+let registerRows=null,registerMembers=null;
+
+function renderRegister(){
+ $('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+ if(registerRows===null)refreshRegister();
+}
+async function refreshRegister(){
+ try{registerRows=await storage.listRegister();}
+ catch(e){registerRows={ok:false,error:e.message};}
+ if(currentTab==='register')$('app').innerHTML=registerView.render(registerRows,voyage&&voyage.id,account);
+}
+async function membersList(){
+ if(registerMembers)return registerMembers;
+ try{const list=await storage.members();registerMembers=Array.isArray(list)?list:[];}
+ catch{registerMembers=[];}
+ return registerMembers;
+}
+
+// Handing a calculation over changes who answers for it, not who may edit it.
+async function assignResponsible(id){
+ const rows=Array.isArray(registerRows)?registerRows:[];
+ const row=rows.find(r=>r.id===id);
+ if(!row)return;
+ const members=await membersList();
+ if(!members.length){$('status').textContent='No colleagues are listed for this organisation yet.';return;}
+ const current=Math.max(1,members.findIndex(m=>m.id===row.responsibleId)+1);
+ const chosen=prompt('Responsible specialist for "'+row.name+'"\n\n'+
+  members.map((m,i)=>(i+1)+'. '+m.name+(m.title?' · '+m.title:'')).join('\n')+
+  '\n\nEnter the number',String(current));
+ if(chosen===null)return;
+ const picked=members[Number(chosen)-1];
+ if(!picked){$('status').textContent='That is not one of the listed people.';return;}
+ const result=await storage.setResponsible(id,picked.id);
+ if(!result.ok){$('status').textContent='The calculation could not be handed over.';return;}
+ $('status').textContent='"'+row.name+'" is now with '+picked.name+'.';
+ await refreshRegister();
+}
+
+// Creating, renaming and deleting a calculation are the same three operations whether they
+// are reached from the picker beside the planner or from the register. They are named once.
+async function newCalculation(){
+ const name=prompt('Name for the new calculation','Calculation');
+ if(!name||!name.trim())return false;
+ // The registers stay shared; only the voyage starts empty.
+ const blank=M.initial();
+ for(const shared of ['cargoTypes','vesselProfiles','portRecords','sales'])blank[shared]=JSON.parse(JSON.stringify(state[shared]));
+ const created=await session.createNamed(name.trim(),blank);
+ if(created.ok===false){$('status').textContent='The calculation could not be created.';return false;}
+ state=blank;voyage={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision};
+ remember(voyage.id);ensureLegs();saveCalculation(true);syncWorkspace();render();await refreshCalculations();
+ return true;
+}
+
+async function renameCalculation(id){
+ const target=id||(voyage&&voyage.id);
+ if(!target)return false;
+ const rows=Array.isArray(registerRows)?registerRows:[];
+ const current=(rows.find(r=>r.id===target)||{}).name||(voyage&&voyage.id===target?voyage.name:'');
+ const name=prompt('Rename this calculation',current);
+ if(!name||!name.trim())return false;
+ const result=await session.rename(target,name.trim());
+ if(!result.ok){$('status').textContent='The calculation could not be renamed.';return false;}
+ if(voyage&&voyage.id===target)voyage={...voyage,name:name.trim()};
+ await refreshCalculations();
+ return true;
+}
+
+async function deleteCalculation(id){
+ const target=id||(voyage&&voyage.id);
+ if(!target)return false;
+ const list=await session.list();
+ // The last calculation is kept: deleting it would leave the next edit with nowhere to go.
+ if(list.length<2){$('status').textContent='This is the only calculation. Use Clear calculation to empty it.';return false;}
+ const name=(list.find(x=>x.id===target)||{}).name||'this calculation';
+ if(!confirm('Delete the calculation "'+name+'"? This cannot be undone.'))return false;
+ const removed=await session.remove(target);
+ if(!removed.ok){$('status').textContent='The calculation could not be deleted.';return false;}
+ if(voyage&&voyage.id===target){voyage=null;await openCalculation(list.find(item=>item.id!==target).id);}
+ await refreshCalculations();
+ return true;
+}
+
 function setupCalculations(){
  const select=$('calculation');
  if(select)select.onchange=()=>{openCalculation(select.value);};
- if($('new-calculation'))$('new-calculation').onclick=async()=>{
-  const name=prompt('Name for the new calculation','Calculation');
-  if(!name||!name.trim())return;
-  // The registers stay shared; only the voyage starts empty.
-  const blank=M.initial();
-  for(const shared of ['cargoTypes','vesselProfiles','portRecords','sales'])blank[shared]=JSON.parse(JSON.stringify(state[shared]));
-  const created=await session.createNamed(name.trim(),blank);
-  if(created.ok===false){$('status').textContent='The calculation could not be created.';return;}
-  state=blank;voyage={id:created.id,name:created.name,revision:created.revision,catalogRevision:created.catalogRevision};
-  remember(voyage.id);ensureLegs();saveCalculation(true);syncWorkspace();render();await refreshCalculations();
- };
- if($('rename-calculation'))$('rename-calculation').onclick=async()=>{
-  if(!voyage)return;
-  const name=prompt('Rename this calculation',voyage.name);
-  if(!name||!name.trim())return;
-  const result=await session.rename(voyage.id,name.trim());
-  if(!result.ok){$('status').textContent='The calculation could not be renamed.';return;}
-  voyage={...voyage,name:name.trim()};await refreshCalculations();
- };
- if($('delete-calculation'))$('delete-calculation').onclick=async()=>{
-  if(!voyage)return;
-  const list=await session.list();
-  if(list.length<2){$('status').textContent='This is the only calculation. Use Clear calculation to empty it.';return;}
-  if(!confirm('Delete the calculation "'+voyage.name+'"? This cannot be undone.'))return;
-  const removed=await session.remove(voyage.id);
-  if(!removed.ok){$('status').textContent='The calculation could not be deleted.';return;}
-  const next=list.find(item=>item.id!==voyage.id);
-  voyage=null;await openCalculation(next.id);await refreshCalculations();
- };
+ if($('new-calculation'))$('new-calculation').onclick=()=>newCalculation();
+ if($('rename-calculation'))$('rename-calculation').onclick=()=>renameCalculation();
+ if($('delete-calculation'))$('delete-calculation').onclick=()=>deleteCalculation();
 }
 
 window.ProjectXApp={
