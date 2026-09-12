@@ -74,19 +74,16 @@ function installStandIn(){
   return {data:q.single?(hit[0]||null):hit,error:null};
  }
 
- window.__standIn={tables,sentTo:()=>sent};
+ window.__standIn={tables,attempts:()=>sent};
  window.supabase={createClient:()=>({
   from:builder,
   auth:{
    getUser:async()=>({data:{user},error:null}),
    signInWithPassword:async({email,password})=>{
+    // What the page sent is recorded: a login is typed, and the address it becomes is the
+    // application's own business, not something a person ever sees or enters.
+    sent.push(email);
     if(password!=='correct-horse')return {data:null,error:{message:'Invalid login credentials'}};
-    user={id:'user-1',email};
-    return {data:{user},error:null};
-   },
-   signInWithOtp:async({email})=>{sent.push(email);return {error:null};},
-   verifyOtp:async({email,token})=>{
-    if(token!=='123456')return {data:null,error:{message:'Token has expired or is invalid'}};
     user={id:'user-1',email};
     return {data:{user},error:null};
    },
@@ -122,32 +119,41 @@ function installStandIn(){
   assert.equal(await passwordField.getAttribute('autocomplete'),'current-password');
 
   // A wrong password is refused and changes nothing.
-  await page.locator('#sign-in-email').fill('planner@example.com');
+  await page.locator('#sign-in-login').fill('planner');
   await passwordField.fill('wrong-password');
   await page.locator('#sign-in-submit').click();
   await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('Invalid login credentials'));
   assert.equal(await page.locator('#sign-in-form').count(),1,'still on the sign-in screen');
   assert.equal(await page.evaluate(()=>ProjectXApp.getAccount()),null);
 
-  // The code route is still there for a project whose mail is configured. It is folded away,
-  // because Supabase's built-in mail is rate-limited and not the way most people will get in.
-  assert.equal(await page.locator('details.sign-in-alternative').evaluate(el=>el.open),false,'the code route starts folded');
-  await page.locator('details.sign-in-alternative summary').click();
-  await page.locator('#sign-in-send').click();
-  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('sent to'));
-  assert.deepEqual(await page.evaluate(()=>window.__standIn.sentTo()),['planner@example.com']);
-  await page.locator('#sign-in-code').fill('000000');
-  await page.locator('#sign-in-verify').click();
-  await page.waitForFunction(()=>document.getElementById('sign-in-message').textContent.includes('expired or is invalid'));
+  // The platform is closed, and the way in says so: no registration, and no code by mail to
+  // a login that has no mailbox.
+  assert.match(await page.locator('.sign-in-note').textContent(),/closed/);
+  assert.match(await page.locator('.sign-in-note').textContent(),/no registration/);
+  for(const gone of ['#sign-in-email','#sign-in-code','#sign-in-send','#sign-in-verify','details.sign-in-alternative'])
+   assert.equal(await page.locator(gone).count(),0,gone+' is a route nobody issued');
 
   // The right password opens the organisation's workspace.
   await passwordField.fill('correct-horse');
   await page.locator('#sign-in-submit').click();
   await page.waitForSelector('#planner-actions:not([hidden])',{timeout:10000});
   const account=await page.evaluate(()=>ProjectXApp.getAccount());
-  assert.deepEqual(account,{id:'user-1',email:'planner@example.com',organisation:'Exporter',organisationId:'org-1'},
+  assert.deepEqual(account,{id:'user-1',login:'planner',organisation:'Exporter',organisationId:'org-1',role:'member'},
    'the account carries its id as well as its names: the register counts by id, and a name is not an identity');
-  assert.match(await page.locator('#status').innerText(),/Signed in as planner@example.com/);
+  assert.match(await page.locator('#status').innerText(),/Signed in as planner/);
+  // The login is what was typed; the address is how a password is stored against it.
+  assert.deepEqual(await page.evaluate(()=>window.__standIn.attempts()),
+   ['planner@projectx.local','planner@projectx.local']);
+
+  // A member is not an owner: no ADMIN tab, and asking for it anyway opens nothing. The tab
+  // is forced because a member cannot click what is hidden — the point is what happens if
+  // they reach it another way.
+  assert.equal(await page.locator('#tab-admin').evaluate(el=>el.hidden),true,'a member sees no admin screen');
+  await page.evaluate(()=>document.getElementById('tab-admin').click());
+  assert.equal(await page.locator('#tab-planner').getAttribute('aria-selected'),'true',
+   'a member who asks for the admin screen is put back on the planner');
+  assert.ok(!(await page.locator('#app').textContent()).includes('Who can sign in'));
+  assert.equal(await page.locator('#new-login').count(),0,'and is offered no way to issue a login');
 
   // A first calculation exists and the registers were written to the database, not a browser key.
   assert.equal((await page.locator('#calculation option').allTextContents()).length,1);
@@ -243,6 +249,6 @@ function installStandIn(){
   assert.equal(await page.locator('.workspace-tabs').evaluate(el=>el.hidden),true);
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: shared browser — sign-in gate, wrong password refused, wrong code refused, password accepted and never stored, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one register, the register naming who is responsible, opening a row out, renaming and handing over in place, opening from the register, and sign-out.');
+  console.log('PASS: shared browser — sign-in gate, login instead of address, wrong password refused, no registration or mail route, a member refused the admin screen, password accepted and never stored, organisation from membership, calculations and registers stored as rows, edits reaching the database, second calculation on one register, the register naming who is responsible, opening a row out, renaming and handing over in place, opening from the register, and sign-out.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

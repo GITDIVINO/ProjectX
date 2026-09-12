@@ -194,3 +194,21 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 @media print{.forward-cell--best{box-shadow:none;text-decoration:underline}}
 
 .guide-materials{display:flex;gap:20px;flex-wrap:wrap;margin:20px 0}.guide-materials a{color:var(--accent);text-decoration:underline;text-underline-offset:4px}
+
+/* ADMIN — who can sign in. The login is the identity, so it is the one column set in the
+   body colour; everything else about a person is description. */
+/* Columns are centred here as in every other table: app.test.js keeps that rule, and pinning
+   a column aside for this one screen would be a local exception with no reason behind it. */
+.login-table td.name strong{font-weight:600}
+.login-table td.name small{display:block}
+.login-row--self td{background:#1d1d1d}
+.login-editor-row td{border-top:0}
+.login-editor,.login-form{margin:0}
+.login-form{margin-top:4px}
+.login-form .grid,.login-editor .grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+/* .button-row is already defined for the planner; only the spacing of these two forms is
+   this screen's business. */
+.login-form .button-row,.login-editor .button-row{margin-top:14px}
+/* A login nobody has used is a loose end, not a neutral fact. */
+.notice-inline{color:#d5ae60}
+.sign-in-note{max-width:64ch;margin-top:18px}

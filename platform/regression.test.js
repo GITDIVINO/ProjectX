@@ -83,7 +83,7 @@ test('The shipped HTML preserves script bytes and every embedded script parses',
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
  // The page loads these, in this order. The count is this list's own length: a module added
  // to the build and forgotten here shows up as a mismatch rather than as a passing test.
- const files=['ui-format.js','arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js','sea-data.js','sea-table.js','sea-route.js','planning.js','planner-ui.js','schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','voyage-map.js','catalog-views.js','dialogs.js','sign-in.js','planner-view.js','register-view.js','forward.js','forward-view.js','app.js'];
+ const files=['ui-format.js','arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js','sea-data.js','sea-table.js','sea-route.js','planning.js','planner-ui.js','schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','voyage-map.js','catalog-views.js','dialogs.js','sign-in.js','planner-view.js','register-view.js','forward.js','forward-view.js','admin.js','admin-view.js','app.js'];
  assert.equal(scripts.length,files.length);
  files.forEach((name,i)=>{
   assert.equal(scripts[i],fs.readFileSync(path.join(__dirname,name),'utf8').replace(/<\/script/gi,'<\\/script'));

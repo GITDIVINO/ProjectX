@@ -66,8 +66,13 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   }),'auto','the tab strip is what scrolls');
   const strip=await page.locator('.workspace-tabs button').evaluateAll(bs=>bs.map(b=>b.id));
   assert.deepEqual(strip,['tab-planner','tab-forward','tab-register','tab-sale','tab-cargo',
-   'tab-ports','tab-vessel','tab-prices','tab-market','tab-guide']);
-  for(const id of strip){
+   'tab-ports','tab-vessel','tab-prices','tab-market','tab-guide','tab-admin']);
+  // ADMIN belongs to the owner of a shared deployment. This page has no backend at all, so
+  // there is no owner and no such screen — and it is hidden rather than empty.
+  assert.equal(await page.locator('#tab-admin').evaluate(el=>el.hidden),true,
+   'without a shared deployment there are no accounts to manage');
+  const reachable=await page.locator('.workspace-tabs button').evaluateAll(bs=>bs.filter(b=>!b.hidden).map(b=>b.id));
+  for(const id of reachable){
    await page.locator('#'+id).scrollIntoViewIfNeeded();
    const box=await page.locator('#'+id).boundingBox();
    assert.ok(box&&box.x>=-1&&box.x+box.width<=391,id+' can be brought into view');

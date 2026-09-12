@@ -379,43 +379,49 @@ test('Both adapters answer the same contract',()=>{
  assert.equal(shared.shared,true);
 });
 
-test('Signing in sends a code and never asks for a password',async()=>{
+test('A login is signed in by its own name, and the address it carries is not shown',async()=>{
  const client=fakeClient({},null);
  const storage=Supabase.create({client});
  assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'});
 
- assert.deepEqual(await storage.signIn('planner@example.com'),{ok:true,sent:'planner@example.com'});
- assert.deepEqual(client.auth.sent,['planner@example.com']);
-
- const wrong=await storage.verifyCode('planner@example.com','000000');
- assert.equal(wrong.ok,false);
- assert.match(wrong.error,/expired or is invalid/);
- assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'},'a rejected code does not sign anybody in');
-
- const right=await storage.verifyCode('planner@example.com','123456');
- assert.equal(right.ok,true);
- assert.equal(right.user.email,'planner@example.com');
- assert.equal((await storage.ready()).ok,true);
-});
-
-test('A password is checked by Supabase and never held by the adapter',async()=>{
- const client=fakeClient({},null);
- const storage=Supabase.create({client});
-
- const wrong=await storage.signInWithPassword('planner@example.com','hunter2');
+ const wrong=await storage.signInWithLogin('aldivino','hunter2');
  assert.equal(wrong.ok,false);
  assert.match(wrong.error,/Invalid login credentials/);
  assert.deepEqual(await storage.ready(),{ok:false,reason:'signed-out'},'a wrong password signs nobody in');
 
- const right=await storage.signInWithPassword('planner@example.com','correct-horse');
+ const right=await storage.signInWithLogin('aldivino','correct-horse');
  assert.equal(right.ok,true);
- assert.equal(right.user.email,'planner@example.com');
+ // The login is what a person types; the address is how Supabase stores a password against it.
+ assert.deepEqual(client.auth.passwordAttempts,['aldivino@projectx.local','aldivino@projectx.local']);
  assert.equal((await storage.ready()).ok,true);
 
  // The adapter passes the password through and keeps nothing: it is not on the returned
  // object and not on the adapter itself.
  assert.ok(!JSON.stringify(right).includes('correct-horse'));
  assert.ok(!Object.keys(storage).some(k=>String(storage[k]).includes('correct-horse')));
+});
+
+test('A login is one login however it was typed',async()=>{
+ const client=fakeClient({},null);
+ const storage=Supabase.create({client});
+ await storage.signInWithLogin('  ALDIVINO ','correct-horse');
+ assert.deepEqual(client.auth.passwordAttempts,['aldivino@projectx.local'],
+  'case and spacing are folded before the address is built, or one person becomes two');
+});
+
+test('A deployment may name its own login domain',async()=>{
+ const client=fakeClient({},null);
+ const storage=Supabase.create({client,loginDomain:'logins.example'});
+ assert.equal(storage.loginDomain,'logins.example');
+ await storage.signInWithLogin('aldivino','correct-horse');
+ assert.deepEqual(client.auth.passwordAttempts,['aldivino@logins.example']);
+});
+
+test('The closed platform offers no route in but the issued login',()=>{
+ const storage=Supabase.create({client:fakeClient()});
+ for(const gone of ['signIn','verifyCode','signUp','resetPassword','signInWithPassword'])
+  assert.equal(storage[gone],undefined,
+   gone+' would be a way in that nobody issued; a login has no mailbox to send a code to');
 });
 
 test('Signing out ends the session',async()=>{

@@ -200,6 +200,24 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 @media print{.forward-cell--best{box-shadow:none;text-decoration:underline}}
 
 .guide-materials{display:flex;gap:20px;flex-wrap:wrap;margin:20px 0}.guide-materials a{color:var(--accent);text-decoration:underline;text-underline-offset:4px}
+
+/* ADMIN — who can sign in. The login is the identity, so it is the one column set in the
+   body colour; everything else about a person is description. */
+/* Columns are centred here as in every other table: app.test.js keeps that rule, and pinning
+   a column aside for this one screen would be a local exception with no reason behind it. */
+.login-table td.name strong{font-weight:600}
+.login-table td.name small{display:block}
+.login-row--self td{background:#1d1d1d}
+.login-editor-row td{border-top:0}
+.login-editor,.login-form{margin:0}
+.login-form{margin-top:4px}
+.login-form .grid,.login-editor .grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+/* .button-row is already defined for the planner; only the spacing of these two forms is
+   this screen's business. */
+.login-form .button-row,.login-editor .button-row{margin-top:14px}
+/* A login nobody has used is a loose end, not a neutral fact. */
+.notice-inline{color:#d5ae60}
+.sign-in-note{max-width:64ch;margin-top:18px}
 </style>
 </head>
 <body>
@@ -215,6 +233,7 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 <button id="tab-prices" role="tab" aria-selected="false">PRICES</button>
 <button id="tab-market" role="tab" aria-selected="false">MARKET</button>
 <button id="tab-guide" role="tab" aria-selected="false">GUIDE</button>
+<button id="tab-admin" role="tab" aria-selected="false" hidden>ADMIN</button>
 </div>
 </header>
 <main>
@@ -15199,6 +15218,13 @@ const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesse
 
 // A deployment that has its keys but not its schema is the common first failure, and the
 // raw PostgREST wording ("relation ... does not exist") does not say what to do about it.
+// Logins, not addresses. Supabase Auth knows a password only against an address, so every
+// login carries a service address `<login>@<this domain>`. It is not mail: nobody receives
+// anything at it and it is never shown. The value must match LOGIN_DOMAIN in
+// supabase/functions/admin-users — the page builds the address to sign in with, the function
+// builds the same one to create the account.
+const LOGIN_DOMAIN='projectx.local';
+
 const SCHEMA_MISSING=/does not exist|schema cache|PGRST205/i;
 
 // Which migration creates which table, so a database missing one is told the file to apply
@@ -15229,6 +15255,10 @@ function create(options={}){
  // The organisation is resolved from the signed-in user's membership, so a deployment does
  // not have to name one. A configured id is only a preference between several.
  let orgId=options.orgId||null;
+ const loginDomain=options.loginDomain||LOGIN_DOMAIN;
+ // A login is folded to one form in one place: signing in and creating an account must
+ // arrive at the same address, or "Aldivino" and "aldivino" become two different people.
+ const emailFor=login=>String(login??'').trim().toLowerCase()+'@'+loginDomain;
 
  // Every read and write is scoped to one organisation. The policies repeat this server-side;
  // the filter here keeps a wrong-org row from being requested in the first place.
@@ -15251,21 +15281,37 @@ function create(options={}){
   },
 
   // A password goes straight to Supabase and is never held by this application: not in its
-  // state, not in storage, not in a log. Supabase's built-in mail is rate-limited and meant
-  // for trying things out, so the code route is the fallback rather than the main way in.
-  async signInWithPassword(email,password){
-   const {data,error}=await client.auth.signInWithPassword({email,password});
+  // state, not in storage, not in a log. The platform is closed, so the only way in is a
+  // login that was issued: no code by mail, no registration — a login has no mailbox.
+  get loginDomain(){return loginDomain;},
+  async signInWithLogin(login,password){
+   const {data,error}=await client.auth.signInWithPassword({email:emailFor(login),password});
    if(error)return fail(error,'sign-in');
    return {ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
   },
 
-  async signIn(email){
-   const {error}=await client.auth.signInWithOtp({email});
-   return error?fail(error,'sign-in'):{ok:true,sent:email};
-  },
-  async verifyCode(email,token){
-   const {data,error}=await client.auth.verifyOtp({email,token,type:'email'});
-   return error?fail(error,'sign-in'):{ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
+  // Issuing logins. The key that can create an account bypasses every policy, so it is not
+  // in this page and cannot be: the request goes to supabase/functions/admin-users, where
+  // Supabase holds it. The database decides the right: the function asks is_owner as the
+  // caller, not as itself.
+  async adminUsers(action,payload={}){
+   if(typeof client.functions?.invoke!=='function')
+    return {ok:false,reason:'no-functions',
+     error:'This deployment cannot manage logins: the Supabase client has no functions transport.'};
+   // The organisation is the adapter's to name, not the caller's: it is spread last so no
+   // payload can point an action at a different one. The function checks the right against
+   // whatever arrives, so this is not the defence — it is not leaving the question open.
+   const {data,error}=await client.functions.invoke('admin-users',{body:{...payload,action,orgId}});
+   if(error){
+    // A refusal arrives as a transport error with the reason in the response body. Showing
+    // "Edge Function returned a non-2xx status code" instead of "that login is taken" tells
+    // the person nothing they can act on.
+    let message=error.message||'The request was refused';
+    try{const body=await error.context?.json?.();if(body&&body.error)message=body.error;}catch{}
+    return {ok:false,reason:'refused',error:message};
+   }
+   if(data&&data.ok===false)return {ok:false,reason:'refused',error:data.error};
+   return {ok:true,...(data||{})};
   },
   async signOut(){
    const {error}=await client.auth.signOut();
@@ -15522,7 +15568,7 @@ function create(options={}){
  };
 }
 
-const api={create,TABLES};
+const api={create,TABLES,LOGIN_DOMAIN};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageSupabase=api;
 })(globalThis);
 </script><script>(function(root){
@@ -15535,7 +15581,7 @@ const Local=typeof module!=='undefined'&&module.exports?require('./storage-local
 const Supabase=typeof module!=='undefined'&&module.exports?require('./storage-supabase'):root.ProjectXStorageSupabase;
 
 // Configuration reaches the page as a plain object written by the deployment, not as a build
-// step: window.PROJECTX_CONFIG = {supabaseUrl, supabaseAnonKey, orgId}. The anon key is a
+// step: window.PROJECTX_CONFIG = {supabaseUrl, supabaseAnonKey, orgId, loginDomain}. The anon key is a
 // public value by design — every row it can reach is decided by the policies in the database.
 function configured(config){
  return !!(config&&config.supabaseUrl&&config.supabaseAnonKey);
@@ -15543,13 +15589,14 @@ function configured(config){
 
 function create(options={}){
  const config=options.config||(typeof root!=='undefined'?root.PROJECTX_CONFIG:null);
- if(options.client)return Supabase.create({client:options.client,orgId:options.orgId||config?.orgId||null});
+ const shared=client=>Supabase.create({client,orgId:options.orgId||config?.orgId||null,
+  loginDomain:options.loginDomain||config?.loginDomain||null});
+ if(options.client)return shared(options.client);
  if(configured(config)){
   const factory=options.createClient||root.supabase?.createClient;
   // A page that names a backend but cannot load its client must say so, not fall back quietly.
   if(!factory)return {...Local.create(options),degraded:'The Supabase client library did not load; working in this browser only.'};
-  const client=factory(config.supabaseUrl,config.supabaseAnonKey);
-  return Supabase.create({client,orgId:options.orgId||config.orgId||null});
+  return shared(factory(config.supabaseUrl,config.supabaseAnonKey));
  }
  return Local.create(options);
 }
@@ -16467,15 +16514,20 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Proj
 // arrives as onSignedIn. That boundary is the point: this module can refuse entry without
 // knowing what a voyage is.
 //
-// A password is read at the moment it is sent and kept nowhere. Supabase's built-in mail is
-// rate-limited and meant for trying things out, so the code route is folded away rather than
-// offered first.
+// A login, not an address. The platform is closed: the owner issues accounts on the ADMIN
+// tab, nobody can register, and a login has no mailbox — so there is no code by mail either.
+// The password is read at the moment it is sent and kept nowhere: not in state, not in
+// storage.
+//
+// What stopped somebody is said step by step. "That login and password were not accepted",
+// "you are not in an organisation yet" and "the database cannot be reached" are three
+// different things, and they need three different answers.
 
 function create(env){
  const {storage,esc,byId,document,onSignedIn}=env;
  const $=byId;
 
- let signInAddress='';
+ let signInLogin='';
  // The tab strip and the calculation controls are meaningless before anything has been read.
  function showChrome(visible){
   const actions=$('planner-actions');
@@ -16488,40 +16540,28 @@ function create(env){
   $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
    `<p class="section-intro">Calculations are shared with your organisation.</p>`+
    `<form id="sign-in-form"><div class="grid">`+
-   `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
+   `<label>Login<input id="sign-in-login" type="text" autocomplete="username" spellcheck="false" `+
+   `autocapitalize="none" required value="${esc(signInLogin)}"></label>`+
    `<label>Password<input id="sign-in-password" type="password" autocomplete="current-password"></label>`+
    `</div><div class="button-row"><button id="sign-in-submit" type="submit">Sign in</button></div></form>`+
-   `<details class="sign-in-alternative"><summary>Sign in with a code instead</summary>`+
-   `<p class="muted">A code is sent to your address. Delivery depends on the mail service configured for this project.</p>`+
-   `<div class="grid"><label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code"></label></div>`+
-   `<div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
-   `<button id="sign-in-verify" type="button">Use code</button></div></details>`+
+   // There is no registration, and the sign-in screen says so rather than leaving somebody
+   // hunting for a button that does not exist.
+   `<p class="muted sign-in-note">This platform is closed. Logins are issued by the owner of `+
+   `your organisation; there is no registration and no password reset by email.</p>`+
    `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
   const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
-  const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
+  const login=()=>{signInLogin=($('sign-in-login')||{}).value||'';return signInLogin.trim();};
   // The password is read at the moment it is sent and is never stored, echoed or kept in state.
   const secret=()=>(($('sign-in-password')||{}).value||'');
 
   $('sign-in-form').onsubmit=async event=>{
    event.preventDefault();
-   if(!address()||!secret()){say('Enter your work email and password.');return;}
+   if(!login()||!secret()){say('Enter your login and password.');return;}
    say('Signing in…');
-   const signedIn=await storage.signInWithPassword(address(),secret());
-   if(!signedIn.ok){say(signedIn.error||'That email and password were not accepted.');return;}
-   await start();
-  };
-  $('sign-in-send').onclick=async()=>{
-   if(!address()){say('Enter your work email address.');return;}
-   say('Sending…');
-   const sent=await storage.signIn(address());
-   say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it below.':(sent.error||'The code could not be sent.'));
-  };
-  $('sign-in-verify').onclick=async()=>{
-   const code=(($('sign-in-code')||{}).value||'').trim();
-   if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
-   say('Signing in…');
-   const verified=await storage.verifyCode(address(),code);
-   if(!verified.ok){say(verified.error||'That code was not accepted.');return;}
+   const signedIn=await storage.signInWithLogin(login(),secret());
+   // A wrong login and a wrong password answer identically on purpose: anything else turns
+   // the sign-in form into a way of discovering which logins exist.
+   if(!signedIn.ok){say(signedIn.error||'That login and password were not accepted.');return;}
    await start();
   };
  }
@@ -16540,7 +16580,7 @@ function create(env){
    return {ok:false,reason:'organisations'};
   }
   if(!organisations.length){
-   showSignIn('Signed in as '+who.user.email+', but this account is not a member of any organisation yet. Ask an administrator to add it.');
+   showSignIn('That login exists but belongs to no organisation yet. Ask the owner to add it.');
    return {ok:false,reason:'no-membership'};
   }
   // A configured organisation is a preference between several, not a requirement.
@@ -16548,8 +16588,10 @@ function create(env){
   storage.useOrganisation(preferred.id);
   showChrome(true);
   // The id travels with the account: the register counts what is yours by it, and a name
-  // is not an identity.
-  await onSignedIn({id:who.user.id,email:who.user.email,organisation:preferred.name,organisationId:preferred.id});
+  // is not an identity. The role comes from the membership and gives the owner the ADMIN
+  // tab — but the right to issue a login is checked by the database, not by this line.
+  await onSignedIn({id:who.user.id,login:String(who.user.email||'').split('@')[0],
+   organisation:preferred.name,organisationId:preferred.id,role:preferred.role||'member'});
   return {ok:true,user:who.user,organisation:preferred};
  }
 
@@ -17317,9 +17359,201 @@ function create(env){
 const api={create};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXForwardView=api;
 })(globalThis);
+</script><script>(function(root){
+'use strict';
+// Issuing logins, from the page's side.
+//
+// The platform is closed: nobody can register, and an account is created by the owner.
+// Creating one needs the service key, which has no business being in a browser, so there is
+// not a single account operation here — only a check of what was typed and a call to
+// supabase/functions/admin-users, where Supabase holds that key. The database decides the
+// right: the function asks it is_owner as the caller. A hidden tab is not protection, and
+// nothing in this file treats it as any.
+//
+// The login rules and the password minimum are stated in three places — here, in the
+// function and in the database — on purpose. A rule checked in one place is a rule somebody
+// will eventually reach around.
+
+function create(env){
+ const {storage}=env;
+
+ // A login: lowercase letters, digits, dot, dash, underscore; 3 to 32 characters.
+ const USERNAME=/^[a-z0-9][a-z0-9._-]{2,31}$/;
+ const MIN_PASSWORD=10;
+ const ROLES=['member','owner'];
+
+ const normalise=login=>String(login??'').trim().toLowerCase();
+
+ // What is wrong with what was typed, in one sentence, or nothing. Separate from sending,
+ // because the form should say it before anything leaves the page.
+ function problemWith({login,password,role}={},{creating=true}={}){
+  if(creating&&!USERNAME.test(normalise(login)))
+   return 'A login is 3 to 32 characters: lowercase letters, digits, dot, dash or underscore.';
+  if(password!==undefined&&String(password).length<MIN_PASSWORD)
+   return 'A password needs at least '+MIN_PASSWORD+' characters.';
+  if(role!==undefined&&!ROLES.includes(role))
+   return 'A login is either a member or an owner.';
+  return null;
+ }
+
+ // No operation without a transport: the browser-local mode has no accounts at all, and
+ // saying so is better than failing on a method that is not there.
+ async function call(action,payload){
+  if(typeof storage.adminUsers!=='function')
+   return {ok:false,error:'Logins are managed by the shared deployment. This page is running in one browser only.'};
+  return storage.adminUsers(action,payload);
+ }
+
+ return {
+  USERNAME,MIN_PASSWORD,ROLES,normalise,problemWith,
+
+  list:()=>call('list',{}),
+
+  add({login,password,name,title,role='member'}){
+   const problem=problemWith({login,password,role});
+   if(problem)return Promise.resolve({ok:false,error:problem});
+   return call('create',{username:normalise(login),password,name:name||'',title:title||'',role});
+  },
+
+  // Setting a password is not reading the old one: nobody knows it and nobody can.
+  setPassword(userId,password){
+   const problem=problemWith({password},{creating:false});
+   if(problem)return Promise.resolve({ok:false,error:problem});
+   return call('password',{userId,password});
+  },
+
+  setRole(userId,role){
+   const problem=problemWith({role},{creating:false});
+   if(problem)return Promise.resolve({ok:false,error:problem});
+   return call('role',{userId,role});
+  },
+
+  remove:userId=>call('remove',{userId})
+ };
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXAdmin=api;
+})(globalThis);
+</script><script>(function(root){
+'use strict';
+// ADMIN — who can sign in.
+//
+// The owner's screen. The platform is closed: there is no registration, and the only way to
+// appear in it is a login issued here. So the screen shows more than a list — it shows when
+// each person last signed in, because a login nobody has ever used should be removed rather
+// than forgotten.
+//
+// A password is set here and never shown: the old one is unknown and cannot be read back.
+// The button says "Set password", not "Show password", and that is a fact about the system
+// rather than a choice of words.
+//
+// Nothing here decides anything: it builds markup, and the database checks the right. A
+// hidden tab is not protection, and this file holds no check worth relying on.
+
+function create(env){
+ const {esc,fmt,table}=env;
+
+ const day=value=>{
+  if(!value)return '—';
+  const d=new Date(value);
+  return Number.isFinite(d.getTime())
+   ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+ };
+
+ const COLUMNS=['','Login','Name','Job title','Role','Added','Last sign-in',''];
+
+ // The form that issues one. Every field is required except the job title: a login without
+ // a password lets nobody in, and one without a name reaches colleagues as an identifier.
+ const addForm=()=>
+  `<form id="new-login" class="login-form"><div class="grid">`+
+  `<label class="field">Login<input name="login" autocomplete="off" spellcheck="false" required placeholder="surname"></label>`+
+  `<label class="field">Password<input name="password" type="password" autocomplete="new-password" required></label>`+
+  `<label class="field">Name<input name="name" autocomplete="off" required placeholder="Alexander Pikul"></label>`+
+  `<label class="field">Job title<input name="title" autocomplete="off" placeholder="Freight manager"></label>`+
+  `<label class="field">Role<select name="role"><option value="member">Member</option>`+
+  `<option value="owner">Owner — can issue logins</option></select></label>`+
+  `</div><div class="button-row"><button type="submit" class="primary">Add login</button></div></form>`;
+
+ // Setting a password lives in the opened-out row rather than a browser prompt: a password
+ // typed into a prompt stands on the screen in full.
+ const editorRow=row=>
+  `<tr class="login-editor-row"><td></td><td colspan="7">`+
+  `<form class="login-editor" data-id="${esc(row.id)}"><div class="grid">`+
+  `<label class="field">New password for ${esc(row.username)}`+
+  `<input name="password" type="password" autocomplete="new-password" required></label>`+
+  `</div><div class="button-row">`+
+  `<button type="submit" class="primary">Set password</button>`+
+  `<button type="button" data-action="expand-login" data-id="${esc(row.id)}">Cancel</button>`+
+  `</div></form></td></tr>`;
+
+ const loginRow=(row,expandedId)=>{
+  const expanded=row.id===expandedId;
+  const owner=row.role==='owner';
+  return `<tr class="login-row${row.self?' login-row--self':''}" data-login="${esc(row.id)}">`+
+   `<td class="register-toggle"><button data-action="expand-login" data-id="${esc(row.id)}" `+
+   `aria-expanded="${expanded}" aria-label="${expanded?'Close':'Set a password for'} ${esc(row.username)}">`+
+   `${expanded?'▾':'▸'}</button></td>`+
+   `<td class="name"><strong>${esc(row.username)}</strong>${row.self?'<small>You</small>':''}</td>`+
+   `<td>${esc(row.name||'—')}</td>`+
+   `<td>${esc(row.title||'—')}</td>`+
+   `<td>${owner?'<strong>Owner</strong>':'Member'}</td>`+
+   `<td>${esc(day(row.createdAt))}</td>`+
+   // A login that has never been used says so plainly: that is the thing an owner needs to see.
+   `<td>${row.lastSignInAt?esc(day(row.lastSignInAt)):'<span class="notice-inline">Never</span>'}</td>`+
+   `<td class="register-actions">`+
+   (row.self?''
+    :`<button data-action="set-login-role" data-id="${esc(row.id)}" data-role="${owner?'member':'owner'}">`+
+     `${owner?'Make member':'Make owner'}</button>`+
+     `<button data-action="remove-login" data-id="${esc(row.id)}">Remove</button>`)+
+   `</td></tr>`;
+ };
+
+ const EMPTY='<div class="empty-state"><strong>You are the only login</strong>'+
+  '<span>Add one for each person who needs the platform. Nobody can create their own: '+
+  'a login exists only if it was issued here.</span></div>';
+
+ function render(rows,expandedId,organisation){
+  const intro=`<div class="heading"><div><h2>ADMIN</h2>`+
+   `<p class="section-intro">Who can sign in to ${esc(organisation||'this organisation')}. `+
+   `The platform is closed: there is no registration, and a login exists only if it was issued here.</p>`+
+   `</div></div>`;
+
+  // Until the list has been read, that is what it says. An empty table reads as "nobody is
+  // here", which is a different claim.
+  if(rows===null)
+   return `<section>${intro}<p class="muted">Reading the logins…</p></section>`;
+  if(rows&&rows.ok===false)
+   return `<section>${intro}<p class="error" role="alert">${esc(rows.error||'The logins could not be read.')}</p>`+
+    addForm()+`</section>`;
+
+  // One owner and nobody else is the ordinary state of a new deployment, and it is said
+  // under the table rather than instead of it: the owner still has to see their own login.
+  const list=Array.isArray(rows)?rows:[];
+  const drawn=list.map(row=>loginRow(row,expandedId)+(row.id===expandedId?editorRow(row):''));
+  const body=(list.length?table(COLUMNS,drawn,'login-table'):'')+(list.length<2?EMPTY:'');
+
+  return `<section>`+intro+body+
+   `<h3>Add a login</h3>`+
+   `<p class="section-intro">The password is set here and cannot be read back afterwards — `+
+   `only replaced. Pass it to the person by a route you trust, and change it if it went `+
+   `anywhere you do not.</p>`+
+   addForm()+
+   `<p class="form-note">An owner can issue and remove logins. A member cannot, and sees no `+
+   `such screen. Removing a login deletes the account; the calculations stay with the `+
+   `organisation, and whoever was responsible for them has to be named again.</p>`+
+   `</section>`;
+ }
+
+ return {render,day,loginRow:(row,expanded)=>loginRow(row,expanded),addForm,COLUMNS};
+}
+
+const api={create};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXAdminView=api;
+})(globalThis);
 </script><script>(function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','forward','register','sale','cargo','ports','vessel','prices','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','forward','register','sale','cargo','ports','vessel','prices','market','guide','admin'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -17399,7 +17633,7 @@ const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,
  table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
  shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
 const {intakeKey}=plannerView;
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='forward'){renderForward();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='forward'){renderForward();return;}if(currentTab==='admin'){renderAdmin();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
  const html=plannerView.markup(r,b,ship,lots);
  $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
@@ -17442,10 +17676,15 @@ $('app').addEventListener('pointerdown',e=>{
 // The register's editor is a real form, so Enter submits it. Nothing is posted anywhere:
 // the page handles it, and form-action in the deployed policy forbids the alternative.
 $('app').addEventListener('submit',e=>{
- const form=e.target.closest&&e.target.closest('.register-editor');
- if(!form)return;
- e.preventDefault();
- saveCalculationRow(form.dataset.id);
+ const editor=e.target.closest&&e.target.closest('.register-editor');
+ if(editor){e.preventDefault();saveCalculationRow(editor.dataset.id);return;}
+ // A password is typed into a form, and Enter in it means what the button means. Nothing is
+ // posted anywhere: the page handles the event, and form-action in the deployed policy
+ // forbids the alternative.
+ const password=e.target.closest&&e.target.closest('.login-editor');
+ if(password){e.preventDefault();setLoginPassword(password.dataset.id);return;}
+ const added=e.target.closest&&e.target.closest('#new-login');
+ if(added){e.preventDefault();addLogin(added);return;}
 });
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
  case'open-calculation':openCalculation(el.dataset.id).then(()=>{currentTab='register'===currentTab?'planner':currentTab;syncWorkspace();render();});return;
@@ -17461,6 +17700,9 @@ $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]')
  case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;
  case'new-cargo':showCargoDialog();return;
  case'new-assessment':showAssessmentDialog();return;
+ case'expand-login':toggleLogin(el.dataset.id);return;
+ case'set-login-role':setLoginRole(el.dataset.id,el.dataset.role);return;
+ case'remove-login':removeLogin(el.dataset.id);return;
  case'remove-assessment':M.removeAssessment(state,el.dataset.id);break;
  case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
  case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
@@ -17505,8 +17747,76 @@ function renderCatalog(){M.ensureCatalogs(state);$('app').innerHTML=catalogViews
 const forward=window.ProjectXForward.create({M,Sea:window.ProjectXSeaRoute,getState:()=>state});
 const forwardView=window.ProjectXForwardView.create({M,esc,fmt,input,select,table});
 function renderForward(){M.ensureCatalogs(state);$('app').innerHTML=forwardView.markup(forward.prepare());}
+// ADMIN. Issuing logins: admin.js checks what was typed and talks to the function that holds
+// the service key, admin-view.js draws it. Neither of them holds the right — the database
+// checks it on every call.
+const admin=window.ProjectXAdmin.create({storage});
+const adminView=window.ProjectXAdminView.create({esc,fmt,table});
+let logins=null,expandedLogin=null;
+const drawAdmin=()=>{$('app').innerHTML=adminView.render(logins,expandedLogin,account&&account.organisation);};
+function renderAdmin(){
+ drawAdmin();
+ if(logins===null)refreshLogins();
+}
+async function refreshLogins(){
+ const result=await admin.list();
+ logins=result.ok?(result.logins||[]):{ok:false,error:result.error};
+ if(currentTab==='admin')drawAdmin();
+}
+// An opened-out row is view state belonging to this screen and this person, as in the
+// register of calculations.
+function toggleLogin(id){
+ expandedLogin=expandedLogin===id?null:id;
+ drawAdmin();
+ const field=document.querySelector?.('.login-editor input[name="password"]');
+ if(field&&field.focus)field.focus();
+}
+async function addLogin(form){
+ const value=name=>(form.querySelector('[name="'+name+'"]')||{}).value||'';
+ const login=value('login');
+ const result=await admin.add({login,password:value('password'),name:value('name'),
+  title:value('title'),role:value('role')});
+ if(!result.ok){$('status').textContent=result.error;return;}
+ $('status').textContent='Login "'+admin.normalise(login)+'" added.';
+ logins=null;expandedLogin=null;
+ await refreshLogins();
+ drawAdmin();
+}
+async function setLoginPassword(id){
+ const form=document.querySelector?.('.login-editor[data-id="'+id+'"]');
+ if(!form)return;
+ const password=(form.querySelector('[name="password"]')||{}).value||'';
+ const result=await admin.setPassword(id,password);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ const row=(Array.isArray(logins)?logins:[]).find(x=>x.id===id);
+ $('status').textContent='The password for "'+(row?row.username:'that login')+'" was replaced.';
+ expandedLogin=null;drawAdmin();
+}
+async function setLoginRole(id,role){
+ const result=await admin.setRole(id,role);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ logins=null;await refreshLogins();
+}
+async function removeLogin(id){
+ const row=(Array.isArray(logins)?logins:[]).find(x=>x.id===id);
+ const named=row?row.username:'this login';
+ // Deleting an account cannot be undone, so the question names the login rather than
+ // asking about "the selected item".
+ if(!confirm('Remove the login "'+named+'"? The account is deleted and cannot sign in again.'))return;
+ const result=await admin.remove(id);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ $('status').textContent='Login "'+named+'" removed.';
+ logins=null;expandedLogin=null;await refreshLogins();
+}
+
 function setupChrome(){if(document.documentElement)document.documentElement.lang='en';}
-function syncWorkspace(){for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
+function syncWorkspace(){
+ // The owner's tab. Hiding it is a convenience, not protection: the function that issues
+ // logins asks the database for the right on every call, and refuses a plain member.
+ const owner=!!(storage.shared&&account&&account.role==='owner');
+ if($('tab-admin'))$('tab-admin').hidden=!owner;
+ if(!owner&&currentTab==='admin')currentTab='planner';
+ for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
 for(const tab of tabs)$('tab-'+tab).onclick=()=>{currentTab=tab;try{sessionStorage.setItem(tabKey,tab);}catch{}syncWorkspace();render();};
 function filterCargo(){const q=($('cargo-search')?.value||'').toLowerCase().trim();const family=$('cargo-family')?.value||'';document.querySelectorAll('[data-catalog-name]').forEach(row=>row.hidden=!(q.split(/\s+/).every(word=>row.dataset.catalogName.includes(word))&&(!family||row.dataset.family===family)));}
 $('app').addEventListener('input',e=>{
@@ -17689,7 +17999,7 @@ const signIn=window.ProjectXSignIn.create({storage,esc,byId:$,document,
   if(!adopt(loaded)){$('status').textContent='The workspace could not be opened.';return;}
   account=who;
   ensureLegs();setupCalculations();syncWorkspace();render();
-  $('status').textContent='Signed in as '+who.email+' · '+who.organisation;
+  $('status').textContent='Signed in as '+who.login+' · '+who.organisation;
   await refreshCalculations();
  }});
 const startShared=()=>signIn.start();

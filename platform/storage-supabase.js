@@ -17,6 +17,13 @@ const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesse
 
 // A deployment that has its keys but not its schema is the common first failure, and the
 // raw PostgREST wording ("relation ... does not exist") does not say what to do about it.
+// Logins, not addresses. Supabase Auth knows a password only against an address, so every
+// login carries a service address `<login>@<this domain>`. It is not mail: nobody receives
+// anything at it and it is never shown. The value must match LOGIN_DOMAIN in
+// supabase/functions/admin-users — the page builds the address to sign in with, the function
+// builds the same one to create the account.
+const LOGIN_DOMAIN='projectx.local';
+
 const SCHEMA_MISSING=/does not exist|schema cache|PGRST205/i;
 
 // Which migration creates which table, so a database missing one is told the file to apply
@@ -47,6 +54,10 @@ function create(options={}){
  // The organisation is resolved from the signed-in user's membership, so a deployment does
  // not have to name one. A configured id is only a preference between several.
  let orgId=options.orgId||null;
+ const loginDomain=options.loginDomain||LOGIN_DOMAIN;
+ // A login is folded to one form in one place: signing in and creating an account must
+ // arrive at the same address, or "Aldivino" and "aldivino" become two different people.
+ const emailFor=login=>String(login??'').trim().toLowerCase()+'@'+loginDomain;
 
  // Every read and write is scoped to one organisation. The policies repeat this server-side;
  // the filter here keeps a wrong-org row from being requested in the first place.
@@ -69,21 +80,37 @@ function create(options={}){
   },
 
   // A password goes straight to Supabase and is never held by this application: not in its
-  // state, not in storage, not in a log. Supabase's built-in mail is rate-limited and meant
-  // for trying things out, so the code route is the fallback rather than the main way in.
-  async signInWithPassword(email,password){
-   const {data,error}=await client.auth.signInWithPassword({email,password});
+  // state, not in storage, not in a log. The platform is closed, so the only way in is a
+  // login that was issued: no code by mail, no registration — a login has no mailbox.
+  get loginDomain(){return loginDomain;},
+  async signInWithLogin(login,password){
+   const {data,error}=await client.auth.signInWithPassword({email:emailFor(login),password});
    if(error)return fail(error,'sign-in');
    return {ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
   },
 
-  async signIn(email){
-   const {error}=await client.auth.signInWithOtp({email});
-   return error?fail(error,'sign-in'):{ok:true,sent:email};
-  },
-  async verifyCode(email,token){
-   const {data,error}=await client.auth.verifyOtp({email,token,type:'email'});
-   return error?fail(error,'sign-in'):{ok:true,user:data?.user?{id:data.user.id,email:data.user.email}:null};
+  // Issuing logins. The key that can create an account bypasses every policy, so it is not
+  // in this page and cannot be: the request goes to supabase/functions/admin-users, where
+  // Supabase holds it. The database decides the right: the function asks is_owner as the
+  // caller, not as itself.
+  async adminUsers(action,payload={}){
+   if(typeof client.functions?.invoke!=='function')
+    return {ok:false,reason:'no-functions',
+     error:'This deployment cannot manage logins: the Supabase client has no functions transport.'};
+   // The organisation is the adapter's to name, not the caller's: it is spread last so no
+   // payload can point an action at a different one. The function checks the right against
+   // whatever arrives, so this is not the defence — it is not leaving the question open.
+   const {data,error}=await client.functions.invoke('admin-users',{body:{...payload,action,orgId}});
+   if(error){
+    // A refusal arrives as a transport error with the reason in the response body. Showing
+    // "Edge Function returned a non-2xx status code" instead of "that login is taken" tells
+    // the person nothing they can act on.
+    let message=error.message||'The request was refused';
+    try{const body=await error.context?.json?.();if(body&&body.error)message=body.error;}catch{}
+    return {ok:false,reason:'refused',error:message};
+   }
+   if(data&&data.ok===false)return {ok:false,reason:'refused',error:data.error};
+   return {ok:true,...(data||{})};
   },
   async signOut(){
    const {error}=await client.auth.signOut();
@@ -340,6 +367,6 @@ function create(options={}){
  };
 }
 
-const api={create,TABLES};
+const api={create,TABLES,LOGIN_DOMAIN};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXStorageSupabase=api;
 })(globalThis);

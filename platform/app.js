@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','forward','register','sale','cargo','ports','vessel','prices','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','forward','register','sale','cargo','ports','vessel','prices','market','guide','admin'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -80,7 +80,7 @@ const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,
  table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
  shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
 const {intakeKey}=plannerView;
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='forward'){renderForward();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='forward'){renderForward();return;}if(currentTab==='admin'){renderAdmin();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
  const html=plannerView.markup(r,b,ship,lots);
  $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
@@ -123,10 +123,15 @@ $('app').addEventListener('pointerdown',e=>{
 // The register's editor is a real form, so Enter submits it. Nothing is posted anywhere:
 // the page handles it, and form-action in the deployed policy forbids the alternative.
 $('app').addEventListener('submit',e=>{
- const form=e.target.closest&&e.target.closest('.register-editor');
- if(!form)return;
- e.preventDefault();
- saveCalculationRow(form.dataset.id);
+ const editor=e.target.closest&&e.target.closest('.register-editor');
+ if(editor){e.preventDefault();saveCalculationRow(editor.dataset.id);return;}
+ // A password is typed into a form, and Enter in it means what the button means. Nothing is
+ // posted anywhere: the page handles the event, and form-action in the deployed policy
+ // forbids the alternative.
+ const password=e.target.closest&&e.target.closest('.login-editor');
+ if(password){e.preventDefault();setLoginPassword(password.dataset.id);return;}
+ const added=e.target.closest&&e.target.closest('#new-login');
+ if(added){e.preventDefault();addLogin(added);return;}
 });
 $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]');if(!el)return;if(plannerUI.action(el.dataset.action,el))return;switch(el.dataset.action){case'open-sale':openSale(el.dataset.id);return;case'new-sale':showSaleDialog();return;
  case'open-calculation':openCalculation(el.dataset.id).then(()=>{currentTab='register'===currentTab?'planner':currentTab;syncWorkspace();render();});return;
@@ -142,6 +147,9 @@ $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]')
  case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;
  case'new-cargo':showCargoDialog();return;
  case'new-assessment':showAssessmentDialog();return;
+ case'expand-login':toggleLogin(el.dataset.id);return;
+ case'set-login-role':setLoginRole(el.dataset.id,el.dataset.role);return;
+ case'remove-login':removeLogin(el.dataset.id);return;
  case'remove-assessment':M.removeAssessment(state,el.dataset.id);break;
  case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
  case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
@@ -186,8 +194,76 @@ function renderCatalog(){M.ensureCatalogs(state);$('app').innerHTML=catalogViews
 const forward=window.ProjectXForward.create({M,Sea:window.ProjectXSeaRoute,getState:()=>state});
 const forwardView=window.ProjectXForwardView.create({M,esc,fmt,input,select,table});
 function renderForward(){M.ensureCatalogs(state);$('app').innerHTML=forwardView.markup(forward.prepare());}
+// ADMIN. Issuing logins: admin.js checks what was typed and talks to the function that holds
+// the service key, admin-view.js draws it. Neither of them holds the right — the database
+// checks it on every call.
+const admin=window.ProjectXAdmin.create({storage});
+const adminView=window.ProjectXAdminView.create({esc,fmt,table});
+let logins=null,expandedLogin=null;
+const drawAdmin=()=>{$('app').innerHTML=adminView.render(logins,expandedLogin,account&&account.organisation);};
+function renderAdmin(){
+ drawAdmin();
+ if(logins===null)refreshLogins();
+}
+async function refreshLogins(){
+ const result=await admin.list();
+ logins=result.ok?(result.logins||[]):{ok:false,error:result.error};
+ if(currentTab==='admin')drawAdmin();
+}
+// An opened-out row is view state belonging to this screen and this person, as in the
+// register of calculations.
+function toggleLogin(id){
+ expandedLogin=expandedLogin===id?null:id;
+ drawAdmin();
+ const field=document.querySelector?.('.login-editor input[name="password"]');
+ if(field&&field.focus)field.focus();
+}
+async function addLogin(form){
+ const value=name=>(form.querySelector('[name="'+name+'"]')||{}).value||'';
+ const login=value('login');
+ const result=await admin.add({login,password:value('password'),name:value('name'),
+  title:value('title'),role:value('role')});
+ if(!result.ok){$('status').textContent=result.error;return;}
+ $('status').textContent='Login "'+admin.normalise(login)+'" added.';
+ logins=null;expandedLogin=null;
+ await refreshLogins();
+ drawAdmin();
+}
+async function setLoginPassword(id){
+ const form=document.querySelector?.('.login-editor[data-id="'+id+'"]');
+ if(!form)return;
+ const password=(form.querySelector('[name="password"]')||{}).value||'';
+ const result=await admin.setPassword(id,password);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ const row=(Array.isArray(logins)?logins:[]).find(x=>x.id===id);
+ $('status').textContent='The password for "'+(row?row.username:'that login')+'" was replaced.';
+ expandedLogin=null;drawAdmin();
+}
+async function setLoginRole(id,role){
+ const result=await admin.setRole(id,role);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ logins=null;await refreshLogins();
+}
+async function removeLogin(id){
+ const row=(Array.isArray(logins)?logins:[]).find(x=>x.id===id);
+ const named=row?row.username:'this login';
+ // Deleting an account cannot be undone, so the question names the login rather than
+ // asking about "the selected item".
+ if(!confirm('Remove the login "'+named+'"? The account is deleted and cannot sign in again.'))return;
+ const result=await admin.remove(id);
+ if(!result.ok){$('status').textContent=result.error;return;}
+ $('status').textContent='Login "'+named+'" removed.';
+ logins=null;expandedLogin=null;await refreshLogins();
+}
+
 function setupChrome(){if(document.documentElement)document.documentElement.lang='en';}
-function syncWorkspace(){for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
+function syncWorkspace(){
+ // The owner's tab. Hiding it is a convenience, not protection: the function that issues
+ // logins asks the database for the right on every call, and refuses a plain member.
+ const owner=!!(storage.shared&&account&&account.role==='owner');
+ if($('tab-admin'))$('tab-admin').hidden=!owner;
+ if(!owner&&currentTab==='admin')currentTab='planner';
+ for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
 for(const tab of tabs)$('tab-'+tab).onclick=()=>{currentTab=tab;try{sessionStorage.setItem(tabKey,tab);}catch{}syncWorkspace();render();};
 function filterCargo(){const q=($('cargo-search')?.value||'').toLowerCase().trim();const family=$('cargo-family')?.value||'';document.querySelectorAll('[data-catalog-name]').forEach(row=>row.hidden=!(q.split(/\s+/).every(word=>row.dataset.catalogName.includes(word))&&(!family||row.dataset.family===family)));}
 $('app').addEventListener('input',e=>{
@@ -370,7 +446,7 @@ const signIn=window.ProjectXSignIn.create({storage,esc,byId:$,document,
   if(!adopt(loaded)){$('status').textContent='The workspace could not be opened.';return;}
   account=who;
   ensureLegs();setupCalculations();syncWorkspace();render();
-  $('status').textContent='Signed in as '+who.email+' · '+who.organisation;
+  $('status').textContent='Signed in as '+who.login+' · '+who.organisation;
   await refreshCalculations();
  }});
 const startShared=()=>signIn.start();

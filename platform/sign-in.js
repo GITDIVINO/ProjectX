@@ -7,15 +7,20 @@
 // arrives as onSignedIn. That boundary is the point: this module can refuse entry without
 // knowing what a voyage is.
 //
-// A password is read at the moment it is sent and kept nowhere. Supabase's built-in mail is
-// rate-limited and meant for trying things out, so the code route is folded away rather than
-// offered first.
+// A login, not an address. The platform is closed: the owner issues accounts on the ADMIN
+// tab, nobody can register, and a login has no mailbox — so there is no code by mail either.
+// The password is read at the moment it is sent and kept nowhere: not in state, not in
+// storage.
+//
+// What stopped somebody is said step by step. "That login and password were not accepted",
+// "you are not in an organisation yet" and "the database cannot be reached" are three
+// different things, and they need three different answers.
 
 function create(env){
  const {storage,esc,byId,document,onSignedIn}=env;
  const $=byId;
 
- let signInAddress='';
+ let signInLogin='';
  // The tab strip and the calculation controls are meaningless before anything has been read.
  function showChrome(visible){
   const actions=$('planner-actions');
@@ -28,40 +33,28 @@ function create(env){
   $('app').innerHTML=`<section class="sign-in"><h2>Sign in</h2>`+
    `<p class="section-intro">Calculations are shared with your organisation.</p>`+
    `<form id="sign-in-form"><div class="grid">`+
-   `<label>Work email<input id="sign-in-email" type="email" autocomplete="email" required value="${esc(signInAddress)}"></label>`+
+   `<label>Login<input id="sign-in-login" type="text" autocomplete="username" spellcheck="false" `+
+   `autocapitalize="none" required value="${esc(signInLogin)}"></label>`+
    `<label>Password<input id="sign-in-password" type="password" autocomplete="current-password"></label>`+
    `</div><div class="button-row"><button id="sign-in-submit" type="submit">Sign in</button></div></form>`+
-   `<details class="sign-in-alternative"><summary>Sign in with a code instead</summary>`+
-   `<p class="muted">A code is sent to your address. Delivery depends on the mail service configured for this project.</p>`+
-   `<div class="grid"><label>Sign-in code<input id="sign-in-code" type="text" inputmode="numeric" autocomplete="one-time-code"></label></div>`+
-   `<div class="button-row"><button id="sign-in-send" type="button">Send code</button>`+
-   `<button id="sign-in-verify" type="button">Use code</button></div></details>`+
+   // There is no registration, and the sign-in screen says so rather than leaving somebody
+   // hunting for a button that does not exist.
+   `<p class="muted sign-in-note">This platform is closed. Logins are issued by the owner of `+
+   `your organisation; there is no registration and no password reset by email.</p>`+
    `<p class="muted" id="sign-in-message">${esc(message||'')}</p></section>`;
   const say=text=>{const line=$('sign-in-message');if(line)line.textContent=text;};
-  const address=()=>{signInAddress=($('sign-in-email')||{}).value||'';return signInAddress.trim();};
+  const login=()=>{signInLogin=($('sign-in-login')||{}).value||'';return signInLogin.trim();};
   // The password is read at the moment it is sent and is never stored, echoed or kept in state.
   const secret=()=>(($('sign-in-password')||{}).value||'');
 
   $('sign-in-form').onsubmit=async event=>{
    event.preventDefault();
-   if(!address()||!secret()){say('Enter your work email and password.');return;}
+   if(!login()||!secret()){say('Enter your login and password.');return;}
    say('Signing in…');
-   const signedIn=await storage.signInWithPassword(address(),secret());
-   if(!signedIn.ok){say(signedIn.error||'That email and password were not accepted.');return;}
-   await start();
-  };
-  $('sign-in-send').onclick=async()=>{
-   if(!address()){say('Enter your work email address.');return;}
-   say('Sending…');
-   const sent=await storage.signIn(address());
-   say(sent.ok?'A sign-in code was sent to '+address()+'. Enter it below.':(sent.error||'The code could not be sent.'));
-  };
-  $('sign-in-verify').onclick=async()=>{
-   const code=(($('sign-in-code')||{}).value||'').trim();
-   if(!address()||!code){say('Enter the address and the code that was sent to it.');return;}
-   say('Signing in…');
-   const verified=await storage.verifyCode(address(),code);
-   if(!verified.ok){say(verified.error||'That code was not accepted.');return;}
+   const signedIn=await storage.signInWithLogin(login(),secret());
+   // A wrong login and a wrong password answer identically on purpose: anything else turns
+   // the sign-in form into a way of discovering which logins exist.
+   if(!signedIn.ok){say(signedIn.error||'That login and password were not accepted.');return;}
    await start();
   };
  }
@@ -80,7 +73,7 @@ function create(env){
    return {ok:false,reason:'organisations'};
   }
   if(!organisations.length){
-   showSignIn('Signed in as '+who.user.email+', but this account is not a member of any organisation yet. Ask an administrator to add it.');
+   showSignIn('That login exists but belongs to no organisation yet. Ask the owner to add it.');
    return {ok:false,reason:'no-membership'};
   }
   // A configured organisation is a preference between several, not a requirement.
@@ -88,8 +81,10 @@ function create(env){
   storage.useOrganisation(preferred.id);
   showChrome(true);
   // The id travels with the account: the register counts what is yours by it, and a name
-  // is not an identity.
-  await onSignedIn({id:who.user.id,email:who.user.email,organisation:preferred.name,organisationId:preferred.id});
+  // is not an identity. The role comes from the membership and gives the owner the ADMIN
+  // tab — but the right to issue a login is checked by the database, not by this line.
+  await onSignedIn({id:who.user.id,login:String(who.user.email||'').split('@')[0],
+   organisation:preferred.name,organisationId:preferred.id,role:preferred.role||'member'});
   return {ok:true,user:who.user,organisation:preferred};
  }
 
