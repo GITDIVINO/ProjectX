@@ -11,7 +11,7 @@ const STEPS=[
  {tab:'VESSELS',title:'Choose the vessel type',
   body:'Editable size classes with deadweight, dimensions, hold volumes, speeds and consumption. Apply to voyage copies the card into the current voyage and replaces its hold list, so apply before you distribute cargo rather than after.'},
  {tab:'SALES',title:'Record the concluded sale',
-  body:'The trader enters deal date, cargo, volume, load and discharge port, shipment window and FOB price. Cargo comes from CARGO and both ports come from PORT; nothing else is accepted. A sale already used in a voyage cannot be deleted until it is removed from PLANNER.'},
+  body:'The trader enters deal date, cargo, volume, load and discharge port, shipment window, price and delivery basis (FOB, CFR or CIF). Cargo comes from CARGO and both ports come from PORT; nothing else is accepted. A sale already used in a voyage cannot be deleted until it is removed from PLANNER.'},
  {tab:'PLANNER',title:'Build the voyage',
   body:'Add sales as parcels, order the calls, enter hold volumes and deductions, distribute cargo, then complete the cost inputs. Parcels can only come from SALE. Save, Save PDF and Clear calculation live here.'}
 ];
@@ -21,7 +21,7 @@ const PLANNER_STEPS=[
  ['2','Vessel and rotation','Apply a vessel, record sources and deductions, order calls and check arrival / departure limits.'],
  ['3','Stowage by hold','Preview a volume allocation, apply or undo it, or edit by hand. Review each state and sourced limits in Checks. Cargo distribution screens every arrival and departure for mass gathered in one end, empty holds between loaded ones and similar patterns; these are preliminary signals, not a stability or strength calculation.'],
  ['4','Voyage calculation','Distances, speeds, port time, fuel prices, hire, DA, freight and commission.'],
- ['5','Cost by sale','The voyage cost split across the parcels, to the cent, on the chosen basis.']
+ ['5','Netback by sale','The allocated voyage cost and the sale netback. CFR/CIF deduct allocated delivery cost, FOB does not. Missing prices remain unknown.']
 ];
 
 function box(x,y,w,h,label,note,accent){
@@ -64,14 +64,16 @@ function diagram(){
 function render(){
  return '<section class="guide"><div class="heading"><div><h2>GUIDE</h2>'+
   '<p class="section-intro">How a voyage is put together, tab by tab.</p></div></div>'+
+  '<p class="guide-materials"><a href="roadmap.html" target="_blank" rel="noopener">Company roadmap and AI workforce guide</a> &nbsp; <a href="ProjectX-Company-Roadmap.pptx" download>Owner presentation, PowerPoint</a></p>'+
   diagram()+
   '<h3>Order of work</h3>'+
   '<ol class="guide-steps">'+STEPS.map(s=>'<li><div class="guide-step-head"><span class="guide-step-tab">'+esc(s.tab)+'</span><strong>'+esc(s.title)+'</strong></div><p>'+esc(s.body)+'</p></li>').join('')+'</ol>'+
   '<h3>Inside PLANNER</h3>'+
   '<ol class="guide-steps guide-steps-inner">'+PLANNER_STEPS.map(([n,name,note])=>'<li><div class="guide-step-head"><span class="guide-step-tab">'+esc(n)+'</span><strong>'+esc(name)+'</strong></div><p>'+esc(note)+'</p></li>').join('')+'</ol>'+
+  '<h3>Other workspaces</h3><p class="form-note">CALCULATIONS lists saved voyages and the responsible specialist. PRICES holds sourced market assessments. FORWARD compares direction and month using those assessments and the current voyage cost assumptions; it is not a live freight curve. MARKET is a dated archive. The company roadmap describes proposed future capabilities, including AI workers, which are not implemented yet.</p>'+
   '<h3>Worth knowing before you start</h3>'+
   '<ul class="guide-notes">'+[
-   'Everything is stored in this browser only. There is no server, no shared voyage and no account: another browser or another machine starts empty.',
+   'Storage depends on the deployment. Local mode saves in this browser. A configured shared deployment uses sign-in and the organisation database. A storage error means the latest changes may not be saved.',
    'A figure left empty is unknown, not zero. The calculation refuses to produce a budget rather than guess a missing input.',
    'Volume distribution, intake and the port size limits are planning aids. None of them is a stability, strength or draft approval for a real call.',
    'Reference values shipped with the platform, including stowage factors and port limits, need confirming against the shipment and the terminal before fixing.'

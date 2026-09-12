@@ -192,3 +192,5 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 .assessment-table td:nth-child(1) select{min-width:190px}
 .assessment-table td:nth-child(6) input{width:150px}
 @media print{.forward-cell--best{box-shadow:none;text-decoration:underline}}
+
+.guide-materials{display:flex;gap:20px;flex-wrap:wrap;margin:20px 0}.guide-materials a{color:var(--accent);text-decoration:underline;text-underline-offset:4px}

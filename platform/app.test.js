@@ -481,7 +481,9 @@ test('GUIDE explains the order of work and never touches the voyage',()=>{
  for(const tab of ['CARGOES','PORTS','VESSELS','SALES','PLANNER'])assert.ok(html.includes('>'+tab+'<'),tab+' is missing from the diagram or the steps');
  assert.equal((html.match(/<ul class="guide-notes">(.*?)<\/ul>/)?.[1].match(/<li>/g)||[]).length,4,'the closing notes');
  assert.equal((html.match(/guide-step-head/g)||[]).length,10,'five tabs plus five planner sections');
- assert.ok(html.includes('stored in this browser only'),'the storage limit is stated');
+ assert.ok(html.includes('Storage depends on the deployment'),'local and shared storage are distinguished');
+ assert.ok(html.includes('roadmap.html'),'the company roadmap is reachable');
+ assert.ok(html.includes('ProjectX-Company-Roadmap.pptx'),'the owner deck is downloadable');
  elements.get('tab-planner').onclick();elements.get('tab-guide').onclick();
  assert.equal(JSON.stringify(app.getState()),before,'reading the guide changes nothing');
  assert.equal(elements.get('planner-actions').hidden,true,'no calculation controls over the guide');});
