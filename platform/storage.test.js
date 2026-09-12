@@ -401,6 +401,21 @@ test('A login is signed in by its own name, and the address it carries is not sh
  assert.ok(!Object.keys(storage).some(k=>String(storage[k]).includes('correct-horse')));
 });
 
+test('Having no session is not an error to show somebody',async()=>{
+ // Supabase answers getUser() with "Auth session missing!" when nobody is signed in. Printed
+ // under a sign-in form it reads as a fault in the platform rather than as the ordinary state
+ // of not having signed in yet.
+ const client=fakeClient({},null);
+ client.auth.getUser=async()=>({data:null,error:{message:'Auth session missing!'}});
+ const result=await Supabase.create({client}).ready();
+ assert.deepEqual(result,{ok:false,reason:'signed-out'});
+ // A real failure still is one.
+ client.auth.getUser=async()=>({data:null,error:{message:'fetch failed'}});
+ const broken=await Supabase.create({client}).ready();
+ assert.equal(broken.reason,'auth');
+ assert.match(broken.error,/fetch failed/);
+});
+
 test('A login is one login however it was typed',async()=>{
  const client=fakeClient({},null);
  const storage=Supabase.create({client});

@@ -15226,6 +15226,7 @@ const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesse
 const LOGIN_DOMAIN='projectx.local';
 
 const SCHEMA_MISSING=/does not exist|schema cache|PGRST205/i;
+const NO_SESSION=/session missing|session_not_found|not authenticated|no user found/i;
 
 // Which migration creates which table, so a database missing one is told the file to apply
 // rather than always the first migration: a project that already has 0001 and not 0005 must
@@ -15269,9 +15270,14 @@ function create(options={}){
   kind:'supabase',
   shared:true,
 
+  // Supabase reports "nobody is signed in" as an error rather than as an empty user, and
+  // its wording — "Auth session missing!" — is not something to show a person who has
+  // simply not signed in yet. Having no session is the ordinary state of the sign-in
+  // screen, so it is reported as that and not as a failure.
   async ready(){
    const {data,error}=await client.auth.getUser();
-   if(error)return fail(error,'auth');
+   if(error)return NO_SESSION.test(error.message||'')
+    ? {ok:false,reason:'signed-out'} : fail(error,'auth');
    if(!data?.user)return {ok:false,reason:'signed-out'};
    return {ok:true,kind:'supabase',user:{id:data.user.id,email:data.user.email}};
   },
