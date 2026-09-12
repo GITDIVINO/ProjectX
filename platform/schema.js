@@ -19,7 +19,8 @@ const REGISTER_KEYS=[
  'cargoTypes',            // reference cargo register with planning SF and IMSBC group
  'portRecords',           // port and berth register with published size limits
  'vesselProfiles',        // editable vessel particulars
- 'sales'                  // concluded deals; a sale outlives any one voyage
+ 'sales',                 // concluded deals; a sale outlives any one voyage
+ 'priceAssessments'       // market prices by destination and month, with their source
 ];
 
 // Housekeeping the migrations read: seed markers and revision stamps. One document per

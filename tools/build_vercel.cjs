@@ -22,7 +22,7 @@ const ASSETS=[
  'index.html','styles.css','ui-format.js',
  'arithmetic.js','cargo-catalog.js','model.js','market.js','guide.js',
  'sea-data.js','sea-table.js','sea-route.js','planning.js','planner-ui.js',
- 'schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','voyage-map.js','catalog-views.js','dialogs.js','sign-in.js','planner-view.js','register-view.js','app.js'
+ 'schema.js','storage-local.js','storage-supabase.js','storage.js','session.js','voyage-map.js','catalog-views.js','dialogs.js','sign-in.js','planner-view.js','register-view.js','forward.js','forward-view.js','app.js'
 ];
 
 const CLIENT_CANDIDATES=[

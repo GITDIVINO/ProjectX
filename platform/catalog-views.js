@@ -142,6 +142,54 @@ function create(env){
    `</section>`;
  }
 
+ // ---- PRICES ----------------------------------------------------------------------------
+
+ // The forward curve as it was published: what a tonne of a product is assessed at for a
+ // destination and a month, and who assessed it when. The voyage engine answers what delivery
+ // costs; this is the other half of a netback, and it is the one figure in the platform that
+ // is bought rather than computed.
+ //
+ // Every field is editable, including the three that identify the cell. Moving a row onto a
+ // cell that is taken is refused by the model, which is where that rule belongs.
+ const PRICE_COLUMNS=['Cargo','Destination','Month','Basis','Price, USD/MT','Source','Published',''];
+
+ const assessmentRow=({a,i})=>{
+  const path='priceAssessments.'+i+'.';
+  const cargoes=state().cargoTypes.filter(plannable).map(c=>[c.id,c.name]);
+  return `<tr class="assessment-record">`+
+   `<td class="name">${select(path+'cargoId','Cargo assessed',cargoes)}</td>`+
+   `<td>${select(path+'destination','Destination assessed',portNames())}</td>`+
+   `<td>${input(path+'month','Month assessed',{type:'month'})}</td>`+
+   // A price cannot be netted without the basis it was quoted on: FOB leaves the freight with
+   // the buyer, CFR and CIF leave it with us.
+   `<td>${select(path+'basis','Price basis',M.PRICE_BASES)}</td>`+
+   `<td>${input(path+'value','Assessed price')}</td>`+
+   `<td>${input(path+'source','Assessment source',{type:'text'})}</td>`+
+   `<td>${input(path+'date','Publication date',{type:'date'})}</td>`+
+   `<td><button data-action="remove-assessment" data-id="${esc(a.id)}" `+
+   `aria-label="Remove the ${esc(a.month)} assessment for ${esc(a.destination)}">×</button></td>`+
+   `</tr>`;
+ };
+
+ const PRICE_EMPTY='<div class="empty-state"><strong>No assessments yet</strong>'+
+  '<span>Enter the published price for a destination and a month. '+
+  'Without it a netback cannot be compared across destinations.</span></div>';
+
+ function assessmentView(){
+  // Shown by cargo, destination and month, while each row keeps the index it is stored at:
+  // the field paths address the register, not the sort.
+  const rows=state().priceAssessments.map((a,i)=>({a,i}))
+   .sort((x,y)=>String(x.a.cargoName).localeCompare(String(y.a.cargoName))
+    ||String(x.a.destination).localeCompare(String(y.a.destination))
+    ||String(x.a.month).localeCompare(String(y.a.month)));
+  return `<section>`+
+   heading('PRICES','Published market assessments by destination and month.','new-assessment','+ Add assessment')+
+   (rows.length?table(PRICE_COLUMNS,rows.map(assessmentRow),'assessment-table'):PRICE_EMPTY)+
+   `<p class="form-note">One figure per cargo, destination and month. These are market ` +
+   `assessments as published, not our own prices: the source and the date are part of the figure.</p>`+
+   `</section>`;
+ }
+
  // ---- VESSEL ----------------------------------------------------------------------------
 
  // Particulars, grouped the way a vessel questionnaire presents them. Naming the groups here
@@ -180,10 +228,10 @@ function create(env){
  }
 
  // VESSEL is what the registers fall back to: it is the remaining tab this module owns.
- const VIEWS={sale:saleView,ports:portView,cargo:cargoView};
+ const VIEWS={sale:saleView,ports:portView,cargo:cargoView,prices:assessmentView};
  const render=tab=>(VIEWS[tab]||vesselView)();
 
- return {render,saleView,portView,cargoView,vesselView,berthSelect,berthOptions};
+ return {render,saleView,portView,cargoView,assessmentView,vesselView,berthSelect,berthOptions};
 }
 
 const api={create};

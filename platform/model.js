@@ -603,12 +603,75 @@ function migratePrices(s){
  }
 }
 
+// ---- price assessments -------------------------------------------------------------------
+// What a tonne of a product is quoted at for a destination and a month. It is a market figure
+// and is entered with the source and the date it was published, exactly like every other
+// figure in this tool: nothing here is forecast, derived or interpolated. Without it a netback
+// cannot be compared across destinations, which is the first of the three questions a desk
+// asks and the only one the voyage engine alone cannot answer.
+//
+// One figure per cargo, destination and month. Two figures for the same cell would leave the
+// forward matrix to choose between them, and a matrix that chooses silently is worse than one
+// that has nothing to show.
+const ASSESSMENT_MONTH=/^\d{4}-(0[1-9]|1[0-2])$/;
+const isAssessmentMonth=value=>typeof value==='string'&&ASSESSMENT_MONTH.test(value);
+const isDay=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+ Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+
+function validateAssessment(s,data,{id=null}={}){
+ const cargo=s.cargoTypes.find(c=>c.id===data.cargoId);
+ if(!cargo||!isBulkCargo(cargo))throw Error('Select a bulk cargo from CARGOES');
+ const destination=String(data.destination??'').trim();
+ if(!s.portRecords.some(p=>p.name===destination))throw Error('Select a destination from PORTS');
+ if(!isAssessmentMonth(data.month))throw Error('Enter the month as YYYY-MM');
+ if(!PRICE_BASES.includes(data.basis))throw Error('Select a price basis: FOB, CFR or CIF');
+ // A price of zero is not an assessment; an absent one is absent, and the matrix says so.
+ if(!ok(data.value,true))throw Error('Enter a positive price');
+ if(!String(data.source??'').trim())throw Error('Name the source of this assessment');
+ if(!isDay(data.date))throw Error('Enter the date this assessment was published');
+ const clash=(s.priceAssessments||[]).some(a=>a.id!==id&&a.cargoId===data.cargoId&&
+  a.destination===destination&&a.month===data.month);
+ if(clash)throw Error('An assessment for this cargo, destination and month already exists');
+ return {...data,destination,basis:data.basis,source:String(data.source).trim(),
+  cargoName:cargo.name};
+}
+
+function addAssessment(s,data){
+ ensureCatalogs(s);
+ const validated=validateAssessment(s,data);
+ let n=1;while(s.priceAssessments.some(a=>a.id==='PA-'+n))n++;
+ const assessment={...validated,id:'PA-'+n};
+ s.priceAssessments.push(assessment);
+ return assessment;
+}
+
+function updateAssessment(s,id,changes){
+ const index=(s.priceAssessments||[]).findIndex(a=>a.id===id);
+ if(index<0)throw Error('Assessment not found');
+ const previous=s.priceAssessments[index];
+ const validated=validateAssessment(s,{...previous,...changes,id:previous.id},{id:previous.id});
+ s.priceAssessments[index]={...validated,id:previous.id};
+ return s.priceAssessments[index];
+}
+
+function removeAssessment(s,id){
+ const index=(s.priceAssessments||[]).findIndex(a=>a.id===id);
+ if(index<0)return;
+ s.priceAssessments.splice(index,1);
+}
+
 function ensureCatalogs(s){s.cargoTypes??=JSON.parse(JSON.stringify(CARGO_TYPES));CargoCatalog.merge(s);s.cargoTypes.forEach((c,i)=>{c.id??='cargo-'+(i+1);c.sf??=null;c.source??='';});s.lots.forEach(l=>{const c=s.cargoTypes.find(c=>c.id===l.cargoId)||s.cargoTypes.find(c=>c.name===l.name);l.cargoId??=c?.id;l.group??=c?.group||'';l.un??=c?.un||'';});if(!s.vesselProfiles){s.vesselProfiles=JSON.parse(JSON.stringify(VESSELS));}s.vesselProfiles.forEach(v=>{v.airDraft??=null;});if(s.vesselSnapshot)s.vesselSnapshot.airDraft??=null;ensureBusinessData(s);mergeRequestedCatalogs(s);mergeDeliveryPorts(s);// A distance already in the file predates the route estimate and counts as the user's own.
  for(const l of [...(s.legs||[]),...(s.ballast?[s.ballast]:[])]){
   if(l.distanceSource==null&&ok(l.distance,true))l.distanceSource='entered';
   l.eca??=0;// an ECA distance the file never carried is none, and an empty one stopped the calculation without saying why
  }
- migratePrices(s);mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
+ migratePrices(s);
+ s.priceAssessments??=[];
+ for(const a of s.priceAssessments){
+  const cargo=s.cargoTypes.find(c=>c.id===a.cargoId);
+  if(cargo)a.cargoName=cargo.name;// a renamed cargo is renamed everywhere it is shown
+ }
+ mergePortProfiles(s);mergePortBerths(s);for(const p of s.portRecords){if(!String(p.berth??'').trim())p.berth='Berth 1';const profile=portProfileOf(p.name);p.lat??=profile?.lat??null;p.lon??=profile?.lon??null;}}
 function applyCargo(s,id){ensureCatalogs(s);const c=s.cargoTypes.find(c=>c.id===id);if(c&&!isBulkCargo(c))throw Error('This product is unavailable for bulk calculation');if(!c||!c.name.trim()||!ok(c.sf,true))throw Error('Enter a name and a positive SF');if(!['','A','B','C','A & B'].includes(c.group))throw Error('Check the cargo group');for(const l of s.lots.filter(l=>l.cargoId===id&&!l.passport)){Object.assign(l,{name:c.name,sf:c.sf,sfBasis:c.sf===c.sfDefault?c.sfBasis:'user-entered',propertySource:c.propertyUrl||'',hazardClass:c.hazardClass||'',group:c.group,un:c.un||''});} }
 // A profile has to be complete before a voyage can be planned on it. These are the figures
 // that must be present and positive, those that may be absent but not nonsense if given,
@@ -656,5 +719,5 @@ function anonymizeProfiles(s){
  for(const item of s.costs||[])if(item.name==="\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0442\u0430\u0442\u044c\u044f")item.name='Additional item';
 }
 function addVesselType(s){ensureCatalogs(s);let n=1;while(s.vesselProfiles.some(v=>v.id==='type-'+n))n++;const base=s.vesselProfiles.find(v=>v.id===s.vesselId)||s.vesselProfiles[0];const v=JSON.parse(JSON.stringify(base));v.id='type-'+n;v.name='New type '+n;v.source='Parameters copied from '+base.name;v.model='Standard bulk carrier';v.revision='custom';s.vesselProfiles.push(v);return v;}
-const api={PRICE_BASES,FREIGHT_IS_OURS,DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,legDays,portDays,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
+const api={PRICE_BASES,FREIGHT_IS_OURS,isAssessmentMonth,validateAssessment,addAssessment,updateAssessment,removeAssessment,DEDUCTIONS,DELIVERY_PLACEHOLDER,DELIVERY_PORTS,deliveryName,legDays,portDays,berthsAt,cargoVolume,intakeLimits,validateSale,updateSale,removePortRecord,updatePortRecord,PORT_PROFILES,portProfileOf,PORT_LIMIT_FIELDS,portLimitBreaches,isBulkCargo,anonymizeProfiles,addVesselType,migrateBaltic,ensureCatalogs,ensureBusinessData,syncSalesToLots,addSale,addSaleToPlanner,applyCargo,applyVessel,VESSELS,vesselOf,moveCall,LOAD_PORT,loadOf,callsOf,syncRoute,CARGO_TYPES,changeLoadPort,addLot,initial,demo,allocate,stowage,compute,stageAllocations,splitCents,ok};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ProjectXModel=api;
 })(globalThis);

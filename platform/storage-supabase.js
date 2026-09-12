@@ -13,7 +13,7 @@ const TABLES={catalogs:'catalogs',sales:'sales',voyages:'voyages',snapshots:'voy
 
 // The shared registers, a row each. Sales were always this shape; the other three joined
 // them so that two people editing different records cannot collide.
-const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesselProfiles:'vessel_profiles',sales:'sales'};
+const REGISTER_TABLES={cargoTypes:'cargo_types',portRecords:'port_records',vesselProfiles:'vessel_profiles',sales:'sales',priceAssessments:'price_assessments'};
 
 // A deployment that has its keys but not its schema is the common first failure, and the
 // raw PostgREST wording ("relation ... does not exist") does not say what to do about it.

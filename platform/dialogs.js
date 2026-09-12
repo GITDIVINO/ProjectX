@@ -1,7 +1,7 @@
 (function(root){
 'use strict';
-// The dialogs: adding sales to the voyage, creating a sale, creating a bulk cargo, and the
-// cargo particulars panel.
+// The dialogs: adding sales to the voyage, creating a sale, creating a bulk cargo, entering a
+// price assessment, and the cargo particulars panel.
 //
 // They are the part of the interface that writes. The sale picker in particular commits a
 // whole selection at once — it builds a candidate state, applies every chosen sale to it, and
@@ -136,9 +136,48 @@ function create(env){
    dialog.close();changed();
   };dialog.showModal();
  }
+ // New assessment. Every field is required: a price without the month it is for, the basis it
+ // is quoted on, or the publication it came from cannot be netted against anything.
+ function showAssessmentDialog(){
+  const ports=[...new Set(state().portRecords.map(p=>p.name?.trim()).filter(Boolean))];
+  const cargoes=state().cargoTypes.filter(c=>M.isBulkCargo(c)&&M.ok(c.sf,true));
+  const options=(list,placeholder)=>`<option value="">${esc(placeholder)}</option>`+
+   list.map(([id,name])=>`<option value="${esc(id)}">${esc(name)}</option>`).join('');
+  const dialog=document.createElement('dialog');
+  dialog.innerHTML=`<form id="assessment-form">`+
+   `<div class="heading"><h2>New assessment</h2><button type="button" data-close aria-label="Close">×</button></div>`+
+   `<div class="grid">`+
+   labelled('Cargo',`<select name="cargoId" required>${options(cargoes.map(c=>[c.id,c.name]),'Select cargo')}</select>`)+
+   labelled('Destination',`<select name="destination" required>${options(ports.map(p=>[p,p]),'Select port')}</select>`)+
+   labelled('Month',`<input name="month" type="month" required>`)+
+   labelled('Basis',`<select name="basis" required>`+
+    M.PRICE_BASES.map(b=>`<option value="${esc(b)}" ${b==='CFR'?'selected':''}>${esc(b)}</option>`).join('')+`</select>`)+
+   amount('Price, USD/MT','value','0.000001')+
+   labelled('Source',`<input name="source" required placeholder="Profercy, ICIS, Argus…">`)+
+   labelled('Published',`<input name="date" type="date" required>`)+
+   `</div>`+
+   // Without a cargo or a port there is nothing to assess, so the form says which is missing.
+   `<p id="assessment-error" class="error" role="alert">${cargoes.length?(ports.length?'':'First add ports in PORTS.'):'First add a bulk cargo in CARGOES.'}</p>`+
+   `<button type="submit" class="primary" ${cargoes.length&&ports.length?'':'disabled'}>Add assessment</button>`+
+   `</form>`;
+  document.body.appendChild(dialog);
+  dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove());
+  dialog.querySelector('form').onsubmit=e=>{
+   e.preventDefault();
+   const f=new FormData(e.target);
+   try{
+    M.addAssessment(state(),{cargoId:f.get('cargoId'),destination:f.get('destination'),
+     month:String(f.get('month')||''),basis:String(f.get('basis')||''),
+     value:Number(f.get('value')),source:String(f.get('source')||''),date:String(f.get('date')||'')});
+    dialog.close();changed();
+   }catch(error){dialog.querySelector('#assessment-error').textContent=error.message;}
+  };
+  dialog.showModal();
+ }
  function cargoDetails(c){const range=v=>v?v.map(n=>numberFormat(0,4).format(Number(n))).join('–'):'SDS required';const link=(url,label)=>url&&/^https:\/\//.test(url)?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';return `<details class="cargo-properties"><summary>${esc(c.propertyStatus||'Properties required')}</summary><dl><dt>BCSN</dt><dd>${esc(c.bcsn||'Shipper declaration required')}</dd><dt>Reference SF, m³/t</dt><dd>${esc(range(c.sfRange))}</dd><dt>Bulk density, kg/m³</dt><dd>${esc(range(c.bulkDensityRange))}</dd><dt>Angle of repose</dt><dd>${esc(c.angleOfRepose||'Not established')}</dd><dt>Applicability</dt><dd>${esc(c.propertyNote||'Confirm the exact product and shipping conditions.')}</dd></dl>${link(c.propertyUrl,'Property source')} ${link(c.sdsUrl,'SDS')} ${link(c.catalogUrl,'Product catalogue')}</details>`;}
 
- return {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,cargoDetails};
+ return {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,showAssessmentDialog,cargoDetails};
 }
 
 const api={create};

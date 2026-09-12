@@ -22,7 +22,7 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
     return result;
    });assert.deepEqual(bad,[]);
   }
-  async function tabs(){for(const tab of ['planner','sale','cargo','ports','market','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
+  async function tabs(){for(const tab of ['planner','forward','sale','cargo','ports','prices','market','vessel']){await page.locator('#tab-'+tab).click();await page.locator('details').evaluateAll(ds=>ds.forEach(d=>d.open=true));await scan();}}
   await tabs();
   // Reproduce the reported legacy 30,000 MT crushed sulphur restriction.
   const originalState=await page.evaluate(()=>ProjectXApp.getState());
@@ -56,14 +56,18 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.equal(await page.locator('#market-region').inputValue(),'US Gulf');
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  // Eight tabs do not fit across 390 px and are not meant to: the strip scrolls, the page does
+  // The tabs do not fit across 390 px and are not meant to: the strip scrolls, the page does
   // not. What must hold is that the page itself never scrolls sideways and that every tab can
-  // be reached — a tab that cannot be scrolled to is a tab that does not exist.
+  // be reached — a tab that cannot be scrolled to is a tab that does not exist. The list is
+  // every tab the page has, so one added without a thought for the phone shows up here.
   assert.equal(await page.evaluate(()=>{
    const strip=document.querySelector('.workspace-tabs');
    return getComputedStyle(strip).overflowX;
   }),'auto','the tab strip is what scrolls');
-  for(const id of ['tab-planner','tab-register','tab-sale','tab-cargo','tab-ports','tab-vessel','tab-market','tab-guide']){
+  const strip=await page.locator('.workspace-tabs button').evaluateAll(bs=>bs.map(b=>b.id));
+  assert.deepEqual(strip,['tab-planner','tab-forward','tab-register','tab-sale','tab-cargo',
+   'tab-ports','tab-vessel','tab-prices','tab-market','tab-guide']);
+  for(const id of strip){
    await page.locator('#'+id).scrollIntoViewIfNeeded();
    const box=await page.locator('#'+id).boundingBox();
    assert.ok(box&&box.x>=-1&&box.x+box.width<=391,id+' can be brought into view');
@@ -191,6 +195,6 @@ const artifact=path.resolve(process.argv[2]||path.join(__dirname,'ProjectX.html'
   assert.equal(await page.evaluate(()=>localStorage.getItem('projectx-current-v2')),'broken','the unreadable original is preserved');
   assert.doesNotMatch(await page.locator('#status').innerText(),/not been saved|could not be opened/,'nothing was lost, so nothing is reported as lost');
   await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Unavailable');};});await page.locator('#save').click();assert.match(await page.locator('#status').innerText(),/have not been saved/);
-  console.log('PASS: shipped HTML, six tabs, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, one-cargo multi-hold stowage, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
+  console.log('PASS: shipped HTML, every tab, MARKET archive/date/region/reload, English text and attributes, CARGO creation, SALE validation, port tampering, one-cargo multi-hold stowage, planner autosave before blur, persistence, print action, confirmations and unchanged user text.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

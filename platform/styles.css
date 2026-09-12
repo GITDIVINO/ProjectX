@@ -173,3 +173,22 @@ dialog.sale-picker{width:min(1120px,94vw);max-height:90dvh;overflow:auto}
 .loading-pattern-scope{max-width:100ch}
 #loading-patterns a{color:var(--muted);text-underline-offset:3px}
 @media print{#loading-patterns button.text-action{display:inline!important;color:#000}#loading-patterns .loading-pattern-alert,#loading-patterns .loading-pattern-text{color:#000}.hold.hold-review .hold-outline{stroke:#88651b}#loading-patterns .fold-body{display:block}}
+
+/* FORWARD — the margin matrix. The figure is the point of the cell, so it is set large
+   enough to read across a row, and the leader of each month is marked rather than coloured
+   in: a month where nothing can be worked out has no leader and nothing is highlighted. */
+.forward-controls{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:4px}
+.forward-basis{margin:14px 0 18px;max-width:96ch}
+.forward-matrix td{font-variant-numeric:tabular-nums}
+.forward-matrix td.name{min-width:170px;font-weight:500}
+.forward-cell{min-width:104px}
+.forward-cell--best{color:var(--text);font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.forward-cell--unknown{font-size:12px}
+.forward-cost,.forward-distance{color:var(--muted)}
+.forward-cost small,.forward-distance small{display:block;font-size:10px}
+.forward-assumptions td.name{min-width:170px}
+.forward-assumptions input{width:120px}
+/* PRICES — a register of published figures, so the source and the date get room to be read. */
+.assessment-table td:nth-child(1) select{min-width:190px}
+.assessment-table td:nth-child(6) input{width:150px}
+@media print{.forward-cell--best{box-shadow:none;text-decoration:underline}}

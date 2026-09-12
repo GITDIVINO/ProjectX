@@ -44,6 +44,7 @@ jobs:
           node platform/sales-browser-check.cjs
           node platform/calculations-browser-check.cjs
           node platform/shared-browser-check.cjs
+          node platform/forward-browser-check.cjs
 
   browser-stale:
     runs-on: ubuntu-latest

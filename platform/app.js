@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','register','sale','cargo','ports','vessel','market','guide'];
+const M=window.ProjectXModel,$=id=>document.getElementById(id),key='projectx-current-v2',backupKey=key+'-backup',currentKey='projectx-open-calculation',tabKey='projectx-current-tab',tabs=['planner','forward','register','sale','cargo','ports','vessel','prices','market','guide'];
 let marketReport='',marketRegion='';
 try{const view=JSON.parse(sessionStorage.getItem('projectx-market-view')||'null');if(view){marketReport=view.report;marketRegion=view.region;}}catch{}
 function renderMarket(){
@@ -80,7 +80,7 @@ const plannerView=window.ProjectXPlannerView.create({M,P,getState:()=>state,esc,
  table,foldBlock,sumOf,field,input,select,chosen,plannerUI,voyageMap,voyageDistanceLine,voyageLegs,
  shipmentWindow:x=>shipmentWindow(x),cargoDetails:x=>cargoDetails(x),portNames:()=>portNames()});
 const {intakeKey}=plannerView;
-function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
+function render(){if(currentTab==='market'){renderMarket();return;}if(currentTab==='forward'){renderForward();return;}if(currentTab==='register'){renderRegister();return;}if(currentTab==='guide'){$('app').innerHTML=window.ProjectXGuide.render();return;}if(currentTab!=='planner'){renderCatalog();return;}P.syncAutoDraftLoss(state);syncRouteDistances();const motion=plannerUI.motionSnapshot();const open=[...document.querySelectorAll('details[open]')].map(d=>d.id);const r=M.compute(state),b=r.budget,ship=r.ship;const lots=chosen();
  const html=plannerView.markup(r,b,ship,lots);
  $('app').innerHTML=html;plannerUI.animate(motion);open.forEach(id=>{if($(id))$(id).open=true;});fitMapFrame();}
 function ensureLegs(){state.vesselId??='tbn-1';M.ensureCatalogs(state);M.anonymizeProfiles(state);M.migrateBaltic(state);M.syncRoute(state);P.ensure(state);P.syncAutoDraftLoss(state);}
@@ -89,6 +89,12 @@ function editableLotField(path){return !path?.startsWith('lots.')||/^lots\.\d+\.
 $('app').addEventListener('change',e=>{const el=e.target;if(!editableLotField(el.dataset.path)){$('status').textContent='Cargo properties are read-only in PLANNER. Edit them in CARGO.';render();return;}if(el.dataset.path==='vesselId'){try{M.applyVessel(state,el.value);changed();}catch(error){$('status').textContent=error.message;render();}return;}if(el.dataset.path){let value=el.type==='checkbox'?el.checked:el.dataset.format==='tonnage'?(el.value.trim()===''?null:tonnage(el.value)):el.type==='number'?(el.value===''?null:Number(el.value)):el.value;noteManualEntry(el.dataset.path,value);if(el.dataset.path.startsWith('sales.')){
  const [,index,fieldName]=el.dataset.path.split('.');
  try{M.updateSale(state,state.sales[Number(index)].id,{[fieldName]:value});changed();}catch(error){render();$('status').textContent=error.message;}
+ return;
+}
+if(el.dataset.path.startsWith('priceAssessments.')){
+ const [,index,fieldName]=el.dataset.path.split('.');
+ const assessment=state.priceAssessments[Number(index)];
+ try{M.updateAssessment(state,assessment.id,{[fieldName]:value});changed();}catch(error){render();$('status').textContent=error.message;}
  return;
 }
 if(el.dataset.path.startsWith('portRecords.')){
@@ -135,6 +141,8 @@ $('app').addEventListener('click',e=>{const el=e.target.closest('[data-action]')
  case'remove-port-record':try{M.removePortRecord(state,Number(el.dataset.index));}catch(error){$('status').textContent=error.message;return;}break;
  case'new-vessel':M.addVesselType(state);changed();$('status').textContent='';return;
  case'new-cargo':showCargoDialog();return;
+ case'new-assessment':showAssessmentDialog();return;
+ case'remove-assessment':M.removeAssessment(state,el.dataset.id);break;
  case'apply-cargo':try{M.applyCargo(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
  case'apply-vessel':try{M.applyVessel(state,el.dataset.id);changed();$('status').textContent='';}catch(error){$('status').textContent=error.message;}return;
  case'add-lot':showLotDialog();return;
@@ -167,12 +175,17 @@ $('pdf').onclick=()=>{window.print();};
 const dialogs=window.ProjectXDialogs.create({M,getState:()=>state,setState:next=>{state=next;},
  document,esc,fmt,numberFormat,input,select,field,table,changed,byId:$,
  openTab:tab=>{currentTab=tab;try{sessionStorage.setItem(tabKey,currentTab);}catch{}syncWorkspace();render();}});
-const {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,cargoDetails}=dialogs;
+const {shipmentWindow,openSale,showLotDialog,showSaleDialog,showCargoDialog,showAssessmentDialog,cargoDetails}=dialogs;
 const portNames=()=>[...new Set(state.portRecords.filter(p=>p.name.trim()).map(p=>p.name))].map(name=>[name,name]);
 // A port with one registered row has nothing to choose; the row still carries the terminal and its limits.
 // SALE, PORT, CARGO and VESSEL are built by catalog-views.js; this places what it returns.
 const catalogViews=window.ProjectXCatalogViews.create({M,getState:()=>state,esc,fmt,input,select,field,table,portNames});
 function renderCatalog(){M.ensureCatalogs(state);$('app').innerHTML=catalogViews.render(currentTab);}
+// FORWARD. forward.js decides what the screen needs — including which assumption rows to
+// bring into being — and forward-view.js draws it; neither of them touches the document.
+const forward=window.ProjectXForward.create({M,Sea:window.ProjectXSeaRoute,getState:()=>state});
+const forwardView=window.ProjectXForwardView.create({M,esc,fmt,input,select,table});
+function renderForward(){M.ensureCatalogs(state);$('app').innerHTML=forwardView.markup(forward.prepare());}
 function setupChrome(){if(document.documentElement)document.documentElement.lang='en';}
 function syncWorkspace(){for(const name of tabs)$('tab-'+name).setAttribute('aria-selected',String(name===currentTab));const outsidePlanner=currentTab!=='planner';$('planner-actions').hidden=outsidePlanner;$('planner-footer').hidden=false;if($('reset-top'))$('reset-top').hidden=outsidePlanner;}
 for(const tab of tabs)$('tab-'+tab).onclick=()=>{currentTab=tab;try{sessionStorage.setItem(tabKey,tab);}catch{}syncWorkspace();render();};
